@@ -9,10 +9,6 @@ pubkey
 pk_pad
 </requires>
 
-<header:internal>
-p11_mechanism.h
-</header:internal>
-
 <header:external>
 pkcs11.h
 pkcs11f.h
@@ -33,4 +29,5 @@ p11_x509.h
 p11_module.h
 p11_slot.h
 p11_session.h
+p11_mechanism.h
 </header:public>

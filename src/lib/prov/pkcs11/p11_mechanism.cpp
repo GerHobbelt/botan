@@ -6,7 +6,7 @@
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#include <botan/internal/p11_mechanism.h>
+#include <botan/p11_mechanism.h>
 #include <botan/scan_name.h>
 #include <botan/parsing.h>
 #include <botan/emsa.h>
