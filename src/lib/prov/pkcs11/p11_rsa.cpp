@@ -11,7 +11,7 @@
 
 #if defined(BOTAN_HAS_RSA)
 
-#include <botan/internal/p11_mechanism.h>
+#include <botan/p11_mechanism.h>
 #include <botan/pk_ops.h>
 #include <botan/rng.h>
 #include <botan/blinding.h>
