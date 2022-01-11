@@ -81,6 +81,7 @@ static std::map<std::string, RSA_SignMechanism> SignMechanisms =
       // RSASSA PKCS#1 v1.5
       { "EMSA3(Raw)", RSA_SignMechanism(MechanismType::RsaPkcs) },
       { "EMSA3(SHA-1)", RSA_SignMechanism(MechanismType::Sha1RsaPkcs) },
+      { "EMSA3(SHA-160)", RSA_SignMechanism(MechanismType::Sha1RsaPkcs) },
       { "EMSA3(SHA-224)", RSA_SignMechanism(MechanismType::Sha224RsaPkcs) },
       { "EMSA3(SHA-256)", RSA_SignMechanism(MechanismType::Sha256RsaPkcs) },
       { "EMSA3(SHA-384)", RSA_SignMechanism(MechanismType::Sha384RsaPkcs) },
