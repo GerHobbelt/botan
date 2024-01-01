@@ -86,7 +86,7 @@ class Verification {
 /**
 * Public key signature creation interface
 */
-class Signature {
+class BOTAN_PUBLIC_API(2, 0) Signature {
    public:
       /**
       * Add more data to the message currently being signed

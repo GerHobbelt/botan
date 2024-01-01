@@ -14,11 +14,11 @@ pk_ops_fwd.h
 pkcs8.h
 pubkey.h
 x509_key.h
+pk_ops.h
 </header:public>
 
 <header:internal>
 blinding.h
-pk_ops.h
 pk_ops_impl.h
 workfactor.h
 </header:internal>

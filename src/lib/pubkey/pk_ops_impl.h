@@ -11,7 +11,7 @@
 #include <botan/hash.h>
 #include <botan/kdf.h>
 #include <botan/internal/eme.h>
-#include <botan/internal/pk_ops.h>
+#include <botan/pk_ops.h>
 
 namespace Botan::PK_Ops {
 

@@ -9,7 +9,7 @@
 #define BOTAN_XMSS_SIGNATURE_OPERATION_H_
 
 #include <botan/xmss.h>
-#include <botan/internal/pk_ops.h>
+#include <botan/pk_ops.h>
 #include <botan/internal/xmss_address.h>
 #include <botan/internal/xmss_signature.h>
 #include <botan/internal/xmss_wots.h>
