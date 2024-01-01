@@ -12,7 +12,7 @@
 #include <botan/rsa.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/hash_id.h>
-#include <botan/internal/pk_ops.h>
+#include <botan/pk_ops.h>
 #include <botan/internal/workfactor.h>
 #include <limits>
 
