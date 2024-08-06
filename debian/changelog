@@ -1,0 +1,37 @@
+botan3 (3.6.0+beta-1) UNRELEASED; urgency=medium
+
+  * Fix to be able to use none botan privat keys. 
+
+ -- Lars Silvén <lars@pkimodules.com>  Tue, 06 Aug 2024 10:01:04 +0200
+
+botan3 (3.5.0+dfsg-1) experimental; urgency=medium
+
+  * New upstream release:
+    - fixes CVE-2024-34702: Denial of Service Due to Excessive Name
+      Constraints,
+    - fixes CVE-2024-39312: Authorization Error due to Name Constraint
+      Decoding Bug.
+  * Library transition from libbotan-3-4 to libbotan-3-5 .
+  * Update Standards-Version to 4.7.0 .
+
+ -- Laszlo Boszormenyi (GCS) <gcs@debian.org>  Sun, 14 Jul 2024 11:24:20 +0200
+
+botan3 (3.4.0+dfsg-1) experimental; urgency=medium
+
+  * New upstream release.
+  * Library transition from libbotan-3-3 to libbotan-3-4 .
+
+ -- Laszlo Boszormenyi (GCS) <gcs@debian.org>  Fri, 12 Apr 2024 19:37:09 +0200
+
+botan3 (3.3.0+dfsg-1) experimental; urgency=medium
+
+  * New upstream release.
+  * Library transition from libbotan-3-2 to libbotan-3-3 .
+
+ -- Laszlo Boszormenyi (GCS) <gcs@debian.org>  Fri, 23 Feb 2024 22:36:42 +0100
+
+botan3 (3.2.0+dfsg-1) experimental; urgency=medium
+
+  * Initial upload (closes: #1055762).
+
+ -- Laszlo Boszormenyi (GCS) <gcs@debian.org>  Fri, 10 Nov 2023 20:04:33 +0100

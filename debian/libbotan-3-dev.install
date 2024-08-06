@@ -1,0 +1,5 @@
+usr/include/
+usr/lib/${DEB_HOST_MULTIARCH}/libbotan-3.a
+usr/lib/${DEB_HOST_MULTIARCH}/libbotan-3.so
+usr/lib/${DEB_HOST_MULTIARCH}/cmake/Botan*/
+usr/lib/${DEB_HOST_MULTIARCH}/pkgconfig/
