@@ -27,6 +27,11 @@ function build_and_install_jitterentropy() {
     rm -rf "${jel_dir}"
 }
 
+if [ -z $REPO_CONFIG_LOADED ]; then
+    echo "Repository configuration not loaded" >&2
+    exit 1
+fi
+
 if type -p "apt-get"; then
     # TPM2-TSS library (to build the library against)
     tpm2_specific_packages=("libtss2-dev")
@@ -139,7 +144,7 @@ if type -p "apt-get"; then
         echo ${SDE_VER} >> "$GITHUB_PATH"
 
     elif [ "$TARGET" = "cross-android-arm32" ] || [ "$TARGET" = "cross-android-arm64" ] || [ "$TARGET" = "cross-android-arm64-amalgamation" ]; then
-        wget -nv https://dl.google.com/android/repository/"$ANDROID_NDK"-linux.zip
+        wget -nv "https://dl.google.com/android/repository/${ANDROID_NDK}-linux.zip"
         unzip -qq "$ANDROID_NDK"-linux.zip
 
     elif [ "$TARGET" = "cross-arm32-baremetal" ]; then
@@ -213,5 +218,3 @@ if type -p "ccache"; then
     cache_location="$( ccache --get-config cache_dir )"
     echo "COMPILER_CACHE_LOCATION=${cache_location}" >> "${GITHUB_ENV}"
 fi
-
-echo "CCACHE_MAXSIZE=200M" >> "${GITHUB_ENV}"
