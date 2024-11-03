@@ -18,7 +18,7 @@ SCRIPT_LOCATION=$(cd "$(dirname "$0")"; pwd)
 
 function build_and_install_jitterentropy() {
     mkdir jitterentropy-library
-    curl -L https://github.com/smuellerDD/jitterentropy-library/archive/refs/tags/v3.6.0.tar.gz | tar -xz -C .
+    curl -L "https://github.com/smuellerDD/jitterentropy-library/archive/refs/tags/v${JITTERENTROPY_VERSION}.tar.gz" | tar -xz -C .
     jel_dir="$(realpath jitterentropy-library-*)"
     cmake -B "${jel_dir}/build" -S "${jel_dir}" -DCMAKE_BUILD_TYPE=Release
     cmake --build "${jel_dir}/build"
@@ -27,7 +27,7 @@ function build_and_install_jitterentropy() {
     rm -rf "${jel_dir}"
 }
 
-if [ -z $REPO_CONFIG_LOADED ]; then
+if [ -z "$REPO_CONFIG_LOADED" ]; then
     echo "Repository configuration not loaded" >&2
     exit 1
 fi
@@ -138,10 +138,9 @@ if type -p "apt-get"; then
         sudo apt-get -qq install qemu-user g++-s390x-linux-gnu
 
     elif [ "$TARGET" = "sde" ]; then
-        SDE_VER=sde-external-9.38.0-2024-04-18-lin
-        wget https://downloadmirror.intel.com/823664/${SDE_VER}.tar.xz
-        tar -xvf ${SDE_VER}.tar.xz
-        echo ${SDE_VER} >> "$GITHUB_PATH"
+        wget "https://downloadmirror.intel.com/823664/${INTEL_SDE_VERSION}.tar.xz"
+        tar -xvf "${INTEL_SDE_VERSION}.tar.xz"
+        echo ${INTEL_SDE_VERSION} >> "$GITHUB_PATH"
 
     elif [ "$TARGET" = "cross-android-arm32" ] || [ "$TARGET" = "cross-android-arm64" ] || [ "$TARGET" = "cross-android-arm64-amalgamation" ]; then
         wget -nv "https://dl.google.com/android/repository/${ANDROID_NDK}-linux.zip"
@@ -161,7 +160,7 @@ if type -p "apt-get"; then
 
     elif [ "$TARGET" = "limbo" ]; then
         sudo apt-get -qq install python3-dateutil
-        wget -nv https://raw.githubusercontent.com/C2SP/x509-limbo/f98aa03f45d108ae4e1bc5a61ec4bd0b8d137559/limbo.json -O "${SCRIPT_LOCATION}/../../../limbo.json"
+        wget -nv "https://raw.githubusercontent.com/C2SP/x509-limbo/${LIMBO_TEST_SUITE_REVISION}/limbo.json" -O "${SCRIPT_LOCATION}/../../../limbo.json"
 
     elif [ "$TARGET" = "coverage" ] || [ "$TARGET" = "sanitizer" ]; then
         if [ "$TARGET" = "coverage" ]; then
