@@ -459,6 +459,119 @@ class IntMod final {
       constexpr Self invert() const { return pow_vartime(Self::P_MINUS_2); }
 
       /**
+      * Helper for variable time BEEA
+      *
+      * Note this function assumes that its arguments are in the standard
+      * domain, not the Montgomery domain. invert_vartime converts its argument
+      * out of Montgomery, and then back to Montgomery when returning the result.
+      */
+      static constexpr void _invert_vartime_div2_helper(Self& a, Self& x) {
+         constexpr auto INV_2 = p_div_2_plus_1(Rep::P);
+
+         while((a.m_val[0] & 1) != 1) {
+            shift_right<1>(a.m_val);
+
+            W borrow = shift_right<1>(x.m_val);
+
+            if(borrow) {
+               bigint_add2_nc(x.m_val.data(), N, INV_2.data(), N);
+            }
+         }
+      }
+
+      /**
+      * Returns the modular inverse, or 0 if no modular inverse exists.
+      *
+      * This function assumes that the modulus is prime
+      *
+      * This function does something a bit nasty and converts from the normal
+      * representation (for scalars, Montgomery) into the "standard"
+      * representation. This relies on the fact that we aren't doing any
+      * multiplications within this function, just additions, subtractions,
+      * division by 2, and comparisons.
+      *
+      * The reason is there is no good way to compare integers in the Montgomery
+      * domain; we could convert out for each comparison but this is slower than
+      * just doing a constant-time inversion.
+      *
+      * This is loosely based on the algorithm BoringSSL uses in
+      * BN_mod_inverse_odd, which is a variant of the Binary Extended Euclidean
+      * algorithm. It is optimized somewhat by taking advantage of a couple of
+      * observations.
+      *
+      * In the first two iterations, the control flow is known because `a` is
+      * less than the modulus and not zero, and we know that the modulus is
+      * odd. So we peel out those iterations. This also avoids having to
+      * initialize `a` with the modulus, because we instead set it directly to
+      * what the first loop iteration would have updated it to. This ensures
+      * that all values are always less than or equal to the modulus.
+      *
+      * Then we take advantage of the fact that in each iteration of the loop,
+      * at the end we update either b/x or a/y, but never both.  In the next
+      * iteration of the loop, we attempt to modify b/x or a/y depending on the
+      * low zero bits of b or a. But if a or b were not updated in the previous
+      * iteration than they will still be odd, and nothing will happen. Instead
+      * update just the pair we need to update, right after writing to b/x or
+      * a/y resp.
+      */
+      constexpr Self invert_vartime() const {
+         if(this->is_zero().as_bool()) {
+            return Self::zero();
+         }
+
+         auto x = Self(std::array<W, N>{1});  // 1 in standard domain
+         auto b = Self(this->to_words());     // *this in standard domain
+
+         // First loop iteration
+         Self::_invert_vartime_div2_helper(b, x);
+
+         auto a = b.negate();
+         // y += x but y is zero at the outset
+         auto y = x;
+
+         // First half of second loop iteration
+         Self::_invert_vartime_div2_helper(a, y);
+
+         for(;;) {
+            if(a.m_val == b.m_val) {
+               // At this point it should be that a == b == 1
+               auto r = y.negate();
+
+               // Convert back to Montgomery if required
+               r.m_val = Rep::to_rep(r.m_val);
+               return r;
+            }
+
+            auto nx = x + y;
+
+            /*
+            * Otherwise either b > a or a > b
+            *
+            * If b > a we want to set b to b - a
+            * Otherwise we want to set a to a - b
+            *
+            * Compute r = b - a and check if it underflowed
+            * If it did not then we are in the b > a path
+            */
+            std::array<W, N> r;
+            word carry = bigint_sub3(r.data(), b.data(), N, a.data(), N);
+
+            if(carry == 0) {
+               // b > a
+               b.m_val = r;
+               x = nx;
+               Self::_invert_vartime_div2_helper(b, x);
+            } else {
+               // We know this can't underflow because a > b
+               bigint_sub3(r.data(), a.data(), N, b.data(), N);
+               a.m_val = r;
+               y = nx;
+               Self::_invert_vartime_div2_helper(a, y);
+            }
+         }
+      }
+
+      /**
       * Return the modular square root if it exists
       *
       * The CT::Choice indicates if the square root exists or not.
@@ -1326,7 +1439,7 @@ concept curve_supports_fe_invert2 = requires(const typename C::FieldElement& fe)
 * (FLT-based) field inversion.
 */
 template <typename C>
-inline auto invert_field_element(const typename C::FieldElement& fe) {
+inline constexpr auto invert_field_element(const typename C::FieldElement& fe) {
    if constexpr(curve_supports_fe_invert2<C>) {
       return C::fe_invert2(fe) * fe;
    } else {
@@ -1881,12 +1994,18 @@ class WindowedMul2Table final {
 
          constexpr size_t Windows = (BlindedScalar::Bits + WindowBits - 1) / WindowBits;
 
-         auto accum = ProjectivePoint::identity();
+         auto accum = [&]() {
+            const size_t w_1 = bits1.get_window((Windows - 1) * WindowBits);
+            const size_t w_2 = bits2.get_window((Windows - 1) * WindowBits);
+            const size_t window = w_1 + (w_2 << WindowBits);
+            auto pt = ProjectivePoint::from_affine(AffinePoint::ct_select(m_table, window));
+            CT::poison(pt);
+            pt.randomize_rep(rng);
+            return pt;
+         }();
 
-         for(size_t i = 0; i != Windows; ++i) {
-            if(i > 0) {
-               accum = accum.dbl_n(WindowBits);
-            }
+         for(size_t i = 1; i != Windows; ++i) {
+            accum = accum.dbl_n(WindowBits);
 
             const size_t w_1 = bits1.get_window((Windows - i - 1) * WindowBits);
             const size_t w_2 = bits2.get_window((Windows - i - 1) * WindowBits);
@@ -1898,6 +2017,7 @@ class WindowedMul2Table final {
             }
          }
 
+         CT::unpoison(accum);
          return accum;
       }
 
@@ -1916,12 +2036,19 @@ class WindowedMul2Table final {
          const UnblindedScalarBits<C, W> bits1(s1);
          const UnblindedScalarBits<C, W> bits2(s2);
 
-         auto accum = ProjectivePoint::identity();
-
-         for(size_t i = 0; i != Windows; ++i) {
-            if(i > 0) {
-               accum = accum.dbl_n(WindowBits);
+         auto accum = [&]() {
+            const size_t w_1 = bits1.get_window((Windows - 1) * WindowBits);
+            const size_t w_2 = bits2.get_window((Windows - 1) * WindowBits);
+            const size_t window = w_1 + (w_2 << WindowBits);
+            if(window > 0) {
+               return ProjectivePoint::from_affine(m_table[window - 1]);
+            } else {
+               return ProjectivePoint::identity();
             }
+         }();
+
+         for(size_t i = 1; i != Windows; ++i) {
+            accum = accum.dbl_n(WindowBits);
 
             const size_t w_1 = bits1.get_window((Windows - i - 1) * WindowBits);
             const size_t w_2 = bits2.get_window((Windows - i - 1) * WindowBits);
@@ -1949,7 +2076,7 @@ template <typename C>
 const auto& SSWU_C2()
    requires C::ValidForSswuHash
 {
-   // This could use a variable time inversion
+   // TODO(Botan4) Make this a constexpr once compilers have caught up
    static const typename C::FieldElement C2 = C::B * invert_field_element<C>(C::SSWU_Z * C::A);
    return C2;
 }
@@ -1963,6 +2090,7 @@ template <typename C>
 const auto& SSWU_C1()
    requires C::ValidForSswuHash
 {
+   // TODO(Botan4) Make this a constexpr
    // We derive it from C2 to avoid a second inversion
    static const typename C::FieldElement C1 = (SSWU_C2<C>() * C::SSWU_Z).negate();
    return C1;
@@ -2013,15 +2141,16 @@ inline auto map_to_curve_sswu(const typename C::FieldElement& u) -> typename C::
 * addition.
 */
 template <typename C, bool RO>
-inline auto hash_to_curve_sswu(std::string_view hash, std::span<const uint8_t> pw, std::span<const uint8_t> dst) {
-   static_assert(C::ValidForSswuHash);
+   requires C::ValidForSswuHash
+inline auto hash_to_curve_sswu(std::string_view hash, std::span<const uint8_t> pw, std::span<const uint8_t> dst)
+   -> std::conditional_t<RO, typename C::ProjectivePoint, typename C::AffinePoint> {
 #if defined(BOTAN_HAS_XMD)
-
    constexpr size_t SecurityLevel = (C::OrderBits + 1) / 2;
    constexpr size_t L = (C::PrimeFieldBits + SecurityLevel + 7) / 8;
    constexpr size_t Cnt = RO ? 2 : 1;
 
    std::array<uint8_t, L * Cnt> xmd;
+
    expand_message_xmd(hash, xmd, pw, dst);
 
    if constexpr(RO) {
@@ -2036,6 +2165,7 @@ inline auto hash_to_curve_sswu(std::string_view hash, std::span<const uint8_t> p
       return map_to_curve_sswu<C>(u);
    }
 #else
+   BOTAN_UNUSED(hash, pw, dst);
    throw Not_Implemented("Hash to curve not available due to missing XMD");
 #endif
 }
