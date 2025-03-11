@@ -6,6 +6,7 @@
 
 #include <botan/internal/ec_inner_bn.h>
 
+#include <botan/mem_ops.h>
 #include <botan/internal/mod_inv.h>
 
 namespace Botan {
@@ -79,16 +80,6 @@ EC_AffinePoint_Data_BN::EC_AffinePoint_Data_BN(std::shared_ptr<const EC_Group_Da
       m_group(std::move(group)), m_pt(std::move(pt)) {
    if(!m_pt.is_zero()) {
       m_pt.force_affine();
-      m_xy = m_pt.xy_bytes();
-   }
-}
-
-EC_AffinePoint_Data_BN::EC_AffinePoint_Data_BN(std::shared_ptr<const EC_Group_Data> group,
-                                               std::span<const uint8_t> pt) :
-      m_group(std::move(group)) {
-   BOTAN_ASSERT_NONNULL(m_group);
-   m_pt = Botan::OS2ECP(pt, m_group->curve());
-   if(!m_pt.is_zero()) {
       m_xy = m_pt.xy_bytes();
    }
 }

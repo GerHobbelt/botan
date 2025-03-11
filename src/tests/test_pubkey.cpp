@@ -309,6 +309,31 @@ std::vector<Test::Result> PK_Sign_Verify_DER_Test::run() {
       }
    }
 
+   // Below follows a regression test for a bug introduced in #4592 that caused
+   // an assertion in PK_Signer when setting the output format explicitly using
+   // signer.set_output_format(Signature_Format::DerSequence)
+   try {
+      auto signer = Botan::PK_Signer(*privkey, this->rng(), padding /*, not setting DerSequence here */);
+      auto verifier = Botan::PK_Verifier(*pubkey, padding /*, not setting DerSequence here */);
+
+      // Setting the in/out formats explicitly, to ensure that PK_Signer/Verifier
+      // handle their internal state properly and not run into an assertion.
+      signer.set_output_format(Botan::Signature_Format::DerSequence);
+      verifier.set_input_format(Botan::Signature_Format::DerSequence);
+
+      const auto sig = signer.sign_message(message, this->rng());
+      const auto verified = verifier.verify_message(message, sig);
+
+      result.confirm("signature checks out", verified);
+      if(test_random_invalid_sigs()) {
+         check_invalid_signatures(result, verifier, message, sig, this->rng());
+      }
+   } catch(const Botan::Lookup_Error&) {
+      result.test_note("Skipping sign/verify regression test");
+   } catch(const std::exception& e) {
+      result.test_failure("regresstion test verification failed", e.what());
+   }
+
    return {result};
 }
 
@@ -330,9 +355,7 @@ Test::Result PK_Encryption_Decryption_Test::run_one_test(const std::string& pad_
    result.confirm("private key claims to support encryption",
                   privkey->supports_operation(Botan::PublicKeyOperation::Encryption));
 
-   // instead slice the private key to work around elgamal test inputs
-   //auto pubkey = Botan::X509::load_key(Botan::X509::BER_encode(*privkey));
-   Botan::Public_Key* pubkey = privkey.get();
+   auto pubkey = privkey->public_key();
 
    std::vector<std::unique_ptr<Botan::PK_Decryptor>> decryptors;
 
@@ -444,13 +467,13 @@ Test::Result PK_KEM_Test::run_one_test(const std::string& /*header*/, const VarM
    result.confirm("private key claims to support KEM",
                   privkey->supports_operation(Botan::PublicKeyOperation::KeyEncapsulation));
 
-   const Botan::Public_Key& pubkey = *privkey;
+   auto pubkey = privkey->public_key();
 
    const size_t desired_key_len = K.size();
 
    std::unique_ptr<Botan::PK_KEM_Encryptor> enc;
    try {
-      enc = std::make_unique<Botan::PK_KEM_Encryptor>(pubkey, kdf);
+      enc = std::make_unique<Botan::PK_KEM_Encryptor>(*pubkey, kdf);
    } catch(Botan::Lookup_Error&) {
       result.test_note("Skipping due to missing KDF: " + kdf);
       return result;
@@ -685,7 +708,7 @@ std::vector<Test::Result> PK_Key_Generation_Test::run() {
 
          // Test PEM public key round trips OK
          try {
-            Botan::DataSource_Memory data_src(Botan::X509::PEM_encode(key));
+            Botan::DataSource_Memory data_src(Botan::X509::PEM_encode(*public_key));
             auto loaded = Botan::X509::load_key(data_src);
 
             result.confirm("recovered public key from private", loaded != nullptr);
@@ -700,7 +723,7 @@ std::vector<Test::Result> PK_Key_Generation_Test::run() {
 
          // Test DER public key round trips OK
          try {
-            const auto ber = key.subject_public_key();
+            const auto ber = public_key->subject_public_key();
             Botan::DataSource_Memory data_src(ber);
             auto loaded = Botan::X509::load_key(data_src);
 
@@ -867,14 +890,14 @@ class PK_API_Sign_Test : public Text_Based_Test {
             return result;
          }
 
-         auto pubkey = Botan::X509::load_key(Botan::X509::BER_encode(*privkey));
+         auto pubkey = Botan::X509::load_key(Botan::X509::BER_encode(*privkey->public_key()));
          result.confirm("Storing and loading public key works", pubkey != nullptr);
 
          result.confirm("private key claims to support signatures",
                         privkey->supports_operation(Botan::PublicKeyOperation::Signature));
          result.confirm("public key claims to support signatures",
                         pubkey->supports_operation(Botan::PublicKeyOperation::Signature));
-         result.test_gt("Public key length must be greater than 0", privkey->key_length(), 0);
+         result.test_gt("Public key length must be greater than 0", pubkey->key_length(), 0);
          if(privkey->stateful_operation()) {
             result.confirm("A stateful key reports the number of remaining operations",
                            privkey->remaining_operations().has_value());

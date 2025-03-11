@@ -5,7 +5,11 @@
 */
 
 #include "perf.h"
+
+#include <botan/assert.h>
 #include <set>
+
+#include <botan/symkey.h>
 
 #if defined(BOTAN_HAS_BLOCK_CIPHER)
    #include <botan/block_cipher.h>

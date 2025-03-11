@@ -11,8 +11,8 @@
 
 #include <botan/concepts.h>
 #include <botan/exceptn.h>
-#include <botan/mem_ops.h>
 #include <botan/secmem.h>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -111,10 +111,7 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
                    std::span<const uint8_t> secret,
                    std::string_view salt = "",
                    std::string_view label = "") const {
-         return derive_key<T>(key_len,
-                              secret,
-                              {cast_char_ptr_to_uint8(salt.data()), salt.length()},
-                              {cast_char_ptr_to_uint8(label.data()), label.length()});
+         return derive_key<T>(key_len, secret, _as_span(salt), _as_span(label));
       }
 
       /**
@@ -165,7 +162,7 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
                    const uint8_t salt[],
                    size_t salt_len,
                    std::string_view label = "") const {
-         return derive_key<T>(key_len, secret, {salt, salt_len}, {cast_char_ptr_to_uint8(label.data()), label.size()});
+         return derive_key<T>(key_len, secret, {salt, salt_len}, _as_span(label));
       }
 
       /**
@@ -184,10 +181,7 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
                    size_t secret_len,
                    std::string_view salt = "",
                    std::string_view label = "") const {
-         return derive_key<T>(key_len,
-                              {secret, secret_len},
-                              {cast_char_ptr_to_uint8(salt.data()), salt.length()},
-                              {cast_char_ptr_to_uint8(label.data()), label.length()});
+         return derive_key<T>(key_len, {secret, secret_len}, _as_span(salt), _as_span(label));
       }
 
       /**
@@ -219,7 +213,7 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
       std::array<uint8_t, key_len> derive_key(std::span<const uint8_t> secret,
                                               std::span<const uint8_t> salt = {},
                                               std::string_view label = "") {
-         return derive_key<key_len>(secret, salt, {cast_char_ptr_to_uint8(label.data()), label.size()});
+         return derive_key<key_len>(secret, salt, _as_span(label));
       }
 
       /**
@@ -234,9 +228,7 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
       std::array<uint8_t, key_len> derive_key(std::span<const uint8_t> secret,
                                               std::string_view salt = "",
                                               std::string_view label = "") {
-         return derive_key<key_len>(secret,
-                                    {cast_char_ptr_to_uint8(salt.data()), salt.size()},
-                                    {cast_char_ptr_to_uint8(label.data()), label.size()});
+         return derive_key<key_len>(secret, _as_span(salt), _as_span(label));
       }
 
       /**
@@ -265,6 +257,11 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
                                std::span<const uint8_t> secret,
                                std::span<const uint8_t> salt,
                                std::span<const uint8_t> label) const = 0;
+
+   private:
+      static std::span<const uint8_t> _as_span(std::string_view s) {
+         return {reinterpret_cast<const uint8_t*>(s.data()), s.size()};
+      }
 };
 
 /**
@@ -277,16 +274,11 @@ class BOTAN_PUBLIC_API(2, 0) KDF {
 BOTAN_DEPRECATED("Use KDF::create")
 
 inline KDF* get_kdf(std::string_view algo_spec) {
-   auto kdf = KDF::create(algo_spec);
-   if(kdf) {
-      return kdf.release();
-   }
-
    if(algo_spec == "Raw") {
       return nullptr;
    }
 
-   throw Algorithm_Not_Found(algo_spec);
+   return KDF::create_or_throw(algo_spec).release();
 }
 
 }  // namespace Botan
