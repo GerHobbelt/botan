@@ -385,7 +385,7 @@ def cli_factor_tests(_tmp_dir):
 
 def cli_mod_inverse_tests(_tmp_dir):
     test_cli("mod_inverse", "97 802", "339")
-    test_cli("mod_inverse", "98 802", "0")
+    test_cli("mod_inverse", "98 802", "No modular inverse exists")
 
 def cli_base64_tests(_tmp_dir):
     test_cli("base64_enc", "-", "YmVlcyE=", "bees!")
@@ -705,7 +705,12 @@ def cli_rng_tests(_tmp_dir):
 
     hex_10 = re.compile('[A-F0-9]{20}')
 
-    for rng in ['system', 'auto', 'entropy']:
+    rngs = ['system', 'auto', 'entropy']
+    # execute ESDM tests only on Linux
+    if platform.system() == "Linux":
+        rngs += ['esdm-full', 'esdm-pr']
+
+    for rng in rngs:
         output = test_cli("rng", ["10", '--%s' % (rng)], use_drbg=False)
         if output == "D80F88F6ADBE65ACB10C":
             logging.error('RNG produced DRBG output')

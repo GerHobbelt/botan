@@ -265,7 +265,7 @@ class IntMod final {
       }
 
       /// Return (*this) multiplied by 2
-      Self mul2() const {
+      constexpr Self mul2() const {
          std::array<W, N> t = value();
          W carry = shift_left<1>(t);
 
@@ -626,10 +626,11 @@ class IntMod final {
       * modular reduces it.
       */
       static constexpr std::optional<Self> from_wide_bytes_varlen(std::span<const uint8_t> bytes) {
-         if(8 * bytes.size() > 2 * Self::BITS) {
+         if(bytes.size() > 2 * Self::BYTES) {
             return {};
          }
-         std::array<uint8_t, 2 * BYTES> padded_bytes = {};
+
+         std::array<uint8_t, 2 * Self::BYTES> padded_bytes = {};
          copy_mem(std::span{padded_bytes}.last(bytes.size()), bytes);
          return Self(Rep::wide_to_rep(bytes_to_words<W, 2 * N, 2 * BYTES>(std::span{padded_bytes})));
       }
@@ -1381,17 +1382,13 @@ auto to_affine_batch(std::span<const typename C::ProjectivePoint> projective) {
    const size_t N = projective.size();
    std::vector<AffinePoint> affine(N, AffinePoint::identity());
 
-   bool any_identity = false;
-   for(size_t i = 0; i != N; ++i) {
-      if(projective[i].is_identity().as_bool()) {
-         any_identity = true;
-         // If any of the elements are the identity we fall back to
-         // performing the conversion without a batch
-         break;
-      }
+   CT::Choice any_identity = CT::Choice::no();
+
+   for(const auto& pt : projective) {
+      any_identity = any_identity || pt.is_identity();
    }
 
-   if(N <= 2 || any_identity) {
+   if(N <= 2 || any_identity.as_bool()) {
       // If there are identity elements, using the batch inversion gets
       // tricky. It can be done, but this should be a rare situation so
       // just punt to the serial conversion if it occurs

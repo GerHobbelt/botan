@@ -4,19 +4,20 @@ Botan: Crypto for Real Systems
 Botan (Japanese for peony flower) is a cryptography library released under the
 permissive `Simplified BSD <https://botan.randombit.net/license.txt>`_ license.
 
-Botan's goal is to be the best option for production cryptography by offering the
-tools necessary to implement a range of practical systems, such as TLSv1.3, X.509
-PKI, modern AEAD ciphers, support for PKCS#11 and TPM hardware, memory-hard password
-hashing, and post quantum cryptography. All of this is covered by an extensive test
-suite, including an automated system for detecting side channels.
+Botan's `goal <https://botan.randombit.net/handbook/goals.html>`_
+is to be the best option for production cryptography by offering the tools
+necessary to implement a range of practical systems, such as TLSv1.3, X.509 PKI,
+modern AEAD ciphers, support for PKCS#11 and TPM hardware, memory-hard password
+hashing, and post quantum cryptography. All of this is covered by an extensive
+test suite, including an automated system for detecting side channels. The
+modular build system allows enabling or disabling features in a fine-grained way,
+and amalgamation builds are also supported.
 
 It comes out of the box with C++, C, and Python APIs, and several other `language
 bindings <https://github.com/randombit/botan/wiki/Language-Bindings>`_ are available.
 The library is accompanied by a featureful `command line interface
-<https://botan.randombit.net/handbook/cli.html>`_. See the `documentation
-<https://botan.randombit.net/handbook>`_ for more information about included
-features, as well as a further outline of the projects `goals
-<https://botan.randombit.net/handbook/goals.html>`_
+<https://botan.randombit.net/handbook/cli.html>`_. Consult the `documentation
+<https://botan.randombit.net/handbook>`_ for more information.
 
 Development is coordinated on `GitHub <https://github.com/randombit/botan>`__ and
 contributions are welcome. If you need help, please open an issue on `GitHub
@@ -114,11 +115,9 @@ Public Key Cryptography
 
 * RSA signatures and encryption
 * DH, ECDH, X25519 and X448 key agreement
-* Signature schemes ECDSA, DSA, Ed25519, Ed448, ECGDSA, ECKCDSA, SM2, GOST 34.10
+* Elliptic curve signature schemes ECDSA, Ed25519, Ed448, ECGDSA, ECKCDSA, SM2
 * Post-quantum signature schemes ML-DSA (Dilithium), SLH-DSA (SPHINCS+), HSS/LMS, XMSS
 * Post-quantum key encapsulation schemes ML-KEM (Kyber), FrodoKEM, Classic McEliece
-* ElGamal encryption
-* Padding schemes OAEP, PSS, PKCS #1 v1.5, X9.31
 
 Ciphers, hashes, MACs, and checksums
 ----------------------------------------
@@ -137,9 +136,9 @@ Other Useful Things
 ----------------------------------------
 
 * Full C++ PKCS #11 API wrapper
-* Interfaces for TPM v1.2 and v2.0 device access
+* Interfaces for TPM v2.0 device access
 * Simple compression API wrapping zlib, bzip2, and lzma libraries
-* RNG wrappers for system RNG and hardware RNGs
+* RNG wrappers for system RNG, ESDM and hardware RNGs
 * HMAC_DRBG and entropy collection system for userspace RNGs
 * SRP-6a password authenticated key exchange
 * Key derivation functions including HKDF, KDF2, SP 800-108, SP 800-56A, SP 800-56C
