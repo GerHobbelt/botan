@@ -122,6 +122,10 @@
 #define BOTAN_USE_GCC_INLINE_ASM
 %{endif}
 
+%{if cxx_ct_value_barrier_type}
+#define BOTAN_CT_VALUE_BARRIER_USE_%{cxx_ct_value_barrier_type|upper}
+%{endif}
+
 %{for sanitizer_types}
 #define BOTAN_HAS_SANITIZER_%{i|upper}
 %{endfor}
@@ -279,6 +283,23 @@
                                              (defined(__GNUG__) && !defined(__i386__)))
 
     #error "Trying to compile Botan configured as x86_32 with non-x86_32 compiler."
+#endif
+
+/**
+* MSVC does define __cplusplus but pins it at 199711L, because "legacy".
+* Note: There is a compiler switch to enable standard behavior (/Zc:__cplusplus),
+*       but we can't control that in downstream applications.
+*
+* See: https://learn.microsoft.com/en-us/cpp/build/reference/zc-cplusplus
+*/
+#if defined(_MSVC_LANG)
+   #define BOTAN_CPLUSPLUS _MSVC_LANG
+#else
+   #define BOTAN_CPLUSPLUS __cplusplus
+#endif
+
+#if BOTAN_CPLUSPLUS < 202002L
+   #error "Botan 3.x requires at least C++20"
 #endif
 
 #endif

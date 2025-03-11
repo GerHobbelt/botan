@@ -9,12 +9,12 @@
 #include <botan/tpm2_rsa.h>
 
 #include <botan/hash.h>
+#include <botan/pss_params.h>
 #include <botan/rsa.h>
 
 #include <botan/internal/ct_utils.h>
 #include <botan/internal/emsa.h>
 #include <botan/internal/fmt.h>
-#include <botan/internal/pss_params.h>
 #include <botan/internal/scan_name.h>
 #include <botan/internal/stl_util.h>
 #include <botan/internal/tpm2_algo_mappings.h>
@@ -340,13 +340,25 @@ class RSA_Decryption_Operation final : public PK_Ops::Decryption {
                                                                         &label,
                                                                         out_ptr(plaintext)));
 
-         valid_mask = CT::Mask<uint8_t>::is_equal(rc, TPM2_RC_SUCCESS).value();
-         if(rc == TPM2_RC_SUCCESS) {
-            BOTAN_ASSERT_NONNULL(plaintext);
-            return copy_into<secure_vector<uint8_t>>(*plaintext);
-         } else {
-            return {};
-         }
+         const auto success = CT::Mask<decltype(rc)>::is_equal(rc, TPM2_RC_SUCCESS).as_choice();
+         valid_mask = CT::Mask<uint8_t>::from_choice(success).value();
+
+         // A "typical" payload size for RSA encryption, assuming that we usually
+         // encrypt some symmetric key of a hybrid encryption scheme.
+         constexpr size_t default_plaintext_length = 32;
+
+         // When Esys_RSA_Decrypt fails to decrypt the ciphertext (e.g. because
+         // of a PKCS#1.5 padding failure), the `plaintext` pointer will be nullptr.
+         // This behaviour in itself is likely exposing a timing side channel already.
+         // Nevertheless, we do our best to mitigate any oracles by always copying a
+         // dummy plaintext value in this case.
+         auto dummy_plaintext = init_with_size<TPM2B_PUBLIC_KEY_RSA>(default_plaintext_length);
+         auto* out = &dummy_plaintext;
+         auto* maybe_plaintext = plaintext.get();
+         CT::conditional_swap_ptr(success.as_bool(), out, maybe_plaintext);
+
+         BOTAN_ASSERT_NONNULL(out);
+         return copy_into<secure_vector<uint8_t>>(*out);
       }
 
       size_t plaintext_length(size_t /* ciphertext_length */) const override {

@@ -17,6 +17,11 @@ concept curve_supports_scalar_invert = requires(const typename C::Scalar& s) {
    { C::scalar_invert(s) } -> std::same_as<typename C::Scalar>;
 };
 
+/**
+* This class provides a bridge between the "public" (actually still
+* internal) PrimeOrderCurve type, and the inner templates which are
+* subclasses of EllipticCurve from pcurves_impl.h
+*/
 template <typename C>
 class PrimeOrderCurveImpl final : public PrimeOrderCurve {
    public:
@@ -51,6 +56,16 @@ class PrimeOrderCurveImpl final : public PrimeOrderCurve {
          return stash(tbl.mul(from_stash(scalar), rng));
       }
 
+      secure_vector<uint8_t> mul_x_only(const AffinePoint& pt,
+                                        const Scalar& scalar,
+                                        RandomNumberGenerator& rng) const override {
+         auto tbl = WindowedMulTable<C, 4>(from_stash(pt));
+         auto pt_x = to_affine_x<C>(tbl.mul(from_stash(scalar), rng));
+         secure_vector<uint8_t> x_bytes(C::FieldElement::BYTES);
+         pt_x.serialize_to(std::span<uint8_t, C::FieldElement::BYTES>{x_bytes});
+         return x_bytes;
+      }
+
       std::unique_ptr<const PrecomputedMul2Table> mul2_setup(const AffinePoint& x,
                                                              const AffinePoint& y) const override {
          return std::make_unique<PrecomputedMul2TableC>(from_stash(x), from_stash(y));
@@ -69,6 +84,20 @@ class PrimeOrderCurveImpl final : public PrimeOrderCurve {
             }
          } catch(std::bad_cast&) {
             throw Invalid_Argument("Curve mismatch");
+         }
+      }
+
+      std::optional<ProjectivePoint> mul_px_qy(const AffinePoint& p,
+                                               const Scalar& x,
+                                               const AffinePoint& q,
+                                               const Scalar& y,
+                                               RandomNumberGenerator& rng) const override {
+         WindowedMul2Table<C, 2> tbl(from_stash(p), from_stash(q));
+         auto pt = tbl.mul2(from_stash(x), from_stash(y), rng);
+         if(pt.is_identity().as_bool()) {
+            return {};
+         } else {
+            return stash(pt);
          }
       }
 
@@ -153,6 +182,7 @@ class PrimeOrderCurveImpl final : public PrimeOrderCurve {
          auto pt = m_mul_by_g.mul(from_stash(scalar), rng);
          std::array<uint8_t, C::FieldElement::BYTES> x_bytes;
          to_affine_x<C>(pt).serialize_to(std::span{x_bytes});
+         // Reduction might be required (if unlikely)
          return stash(C::Scalar::from_wide_bytes(std::span<const uint8_t, C::FieldElement::BYTES>{x_bytes}));
       }
 
@@ -176,7 +206,7 @@ class PrimeOrderCurveImpl final : public PrimeOrderCurve {
          return stash(from_stash(a) + from_stash(b));
       }
 
-      ProjectivePoint point_negate(const ProjectivePoint& pt) const override { return stash(from_stash(pt).negate()); }
+      AffinePoint point_negate(const AffinePoint& pt) const override { return stash(from_stash(pt).negate()); }
 
       bool affine_point_is_identity(const AffinePoint& pt) const override {
          return from_stash(pt).is_identity().as_bool();
@@ -283,8 +313,6 @@ class PrimeOrderCurveImpl final : public PrimeOrderCurve {
       Scalar scalar_zero() const override { return stash(C::Scalar::zero()); }
 
       Scalar scalar_one() const override { return stash(C::Scalar::one()); }
-
-      Scalar scalar_from_u32(uint32_t x) const override { return stash(C::Scalar::from_word(x)); }
 
       Scalar random_scalar(RandomNumberGenerator& rng) const override { return stash(C::Scalar::random(rng)); }
 

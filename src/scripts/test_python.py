@@ -283,7 +283,7 @@ class BotanPythonTests(unittest.TestCase):
             elif mode == 'Serpent/GCM':
                 self.assertEqual(enc.algo_name(), 'Serpent/GCM(16)')
                 self.assertTrue(enc.is_authenticated())
-                self.assertEqual(enc.update_granularity(), 16)
+                self.assertEqual(enc.update_granularity(), 1)
                 self.assertGreater(enc.ideal_update_granularity(), 16)
             elif mode == 'ChaCha20Poly1305':
                 self.assertEqual(enc.algo_name(), 'ChaCha20Poly1305')
@@ -992,6 +992,21 @@ ofvkP1EDmpx50fHLawIDAQAB
 
         self.assertEqual(sk_read.to_raw(), sk_bits)
         self.assertEqual(pk_read.to_raw(), pk_bits)
+
+    def test_classic_mceliece_raw_keys(self):
+        cmce_mode = "mceliece348864f"
+        sk = botan.PrivateKey.create("ClassicMcEliece", cmce_mode, botan.RandomNumberGenerator("user"))
+        pk = sk.get_public_key()
+
+        sk_bits = sk.to_raw()
+        pk_bits = pk.to_raw()
+
+        sk_read = botan.PrivateKey.load_classic_mceliece(cmce_mode, sk_bits)
+        pk_read = botan.PublicKey.load_classic_mceliece(cmce_mode, pk_bits)
+
+        self.assertEqual(sk_read.to_raw(), sk_bits)
+        self.assertEqual(pk_read.to_raw(), pk_bits)
+
 
 class BotanPythonZfecTests(unittest.TestCase):
     """

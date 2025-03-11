@@ -26,6 +26,8 @@ class EC_Point;
 class EC_Group_Data;
 class EC_AffinePoint_Data;
 
+/// Elliptic Curve in Affine Representation
+///
 class BOTAN_UNSTABLE_API EC_AffinePoint final {
    public:
       /// Point deserialization. Throws if wrong length or not a valid point
@@ -75,6 +77,38 @@ class BOTAN_UNSTABLE_API EC_AffinePoint final {
       ///
       /// Workspace argument is transitional
       EC_AffinePoint mul(const EC_Scalar& scalar, RandomNumberGenerator& rng, std::vector<BigInt>& ws) const;
+
+      /// Multiply a point by a scalar, returning the byte encoding of the x coordinate only
+      ///
+      /// Workspace argument is transitional
+      secure_vector<uint8_t> mul_x_only(const EC_Scalar& scalar,
+                                        RandomNumberGenerator& rng,
+                                        std::vector<BigInt>& ws) const;
+
+      /// Compute 2-ary multiscalar multiplication - p*x + q*y
+      ///
+      /// This operation runs in constant time with respect to p, x, q, and y
+      ///
+      /// @returns p*x+q*y, or nullopt if the result was the point at infinity
+      static std::optional<EC_AffinePoint> mul_px_qy(const EC_AffinePoint& p,
+                                                     const EC_Scalar& x,
+                                                     const EC_AffinePoint& q,
+                                                     const EC_Scalar& y,
+                                                     RandomNumberGenerator& rng);
+
+      /// Point addition
+      ///
+      /// Note that this is quite slow since it converts the resulting
+      /// projective point immediately to affine coordinates, which requires a
+      /// field inversion. This can be sufficient when implementing protocols
+      /// that just need to perform a few additions.
+      ///
+      /// In the future a cooresponding EC_ProjectivePoint type may be added
+      /// which would avoid the expensive affine conversions
+      EC_AffinePoint add(const EC_AffinePoint& q) const;
+
+      /// Point negation
+      EC_AffinePoint negate() const;
 
       /// Return the number of bytes of a field element
       ///

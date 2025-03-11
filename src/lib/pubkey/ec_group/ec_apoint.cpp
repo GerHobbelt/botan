@@ -111,6 +111,35 @@ EC_AffinePoint EC_AffinePoint::mul(const EC_Scalar& scalar, RandomNumberGenerato
    return EC_AffinePoint(inner().mul(scalar._inner(), rng, ws));
 }
 
+secure_vector<uint8_t> EC_AffinePoint::mul_x_only(const EC_Scalar& scalar,
+                                                  RandomNumberGenerator& rng,
+                                                  std::vector<BigInt>& ws) const {
+   return inner().mul_x_only(scalar._inner(), rng, ws);
+}
+
+std::optional<EC_AffinePoint> EC_AffinePoint::mul_px_qy(const EC_AffinePoint& p,
+                                                        const EC_Scalar& x,
+                                                        const EC_AffinePoint& q,
+                                                        const EC_Scalar& y,
+                                                        RandomNumberGenerator& rng) {
+   auto pt = p._inner().group()->mul_px_qy(p._inner(), x._inner(), q._inner(), y._inner(), rng);
+   if(pt) {
+      return EC_AffinePoint(std::move(pt));
+   } else {
+      return {};
+   }
+}
+
+EC_AffinePoint EC_AffinePoint::add(const EC_AffinePoint& q) const {
+   auto pt = _inner().group()->affine_add(_inner(), q._inner());
+   return EC_AffinePoint(std::move(pt));
+}
+
+EC_AffinePoint EC_AffinePoint::negate() const {
+   auto pt = this->_inner().group()->affine_neg(this->_inner());
+   return EC_AffinePoint(std::move(pt));
+}
+
 void EC_AffinePoint::serialize_x_to(std::span<uint8_t> bytes) const {
    BOTAN_STATE_CHECK(!this->is_identity());
    m_point->serialize_x_to(bytes);

@@ -81,7 +81,7 @@ EC_AffinePoint_Data_BN::EC_AffinePoint_Data_BN(std::shared_ptr<const EC_Group_Da
                                                std::span<const uint8_t> pt) :
       m_group(std::move(group)) {
    BOTAN_ASSERT_NONNULL(m_group);
-   m_pt = Botan::OS2ECP(pt.data(), pt.size(), m_group->curve());
+   m_pt = Botan::OS2ECP(pt, m_group->curve());
    if(!m_pt.is_zero()) {
       m_xy = m_pt.xy_bytes();
    }
@@ -111,6 +111,24 @@ std::unique_ptr<EC_AffinePoint_Data> EC_AffinePoint_Data_BN::mul(const EC_Scalar
    const auto order = m_group->order() * m_group->cofactor();
    auto pt = mul.mul(bn.value(), rng, order, ws);
    return std::make_unique<EC_AffinePoint_Data_BN>(m_group, std::move(pt));
+}
+
+secure_vector<uint8_t> EC_AffinePoint_Data_BN::mul_x_only(const EC_Scalar_Data& scalar,
+                                                          RandomNumberGenerator& rng,
+                                                          std::vector<BigInt>& ws) const {
+   BOTAN_ARG_CHECK(scalar.group() == m_group, "Curve mismatch");
+   const auto& bn = EC_Scalar_Data_BN::checked_ref(scalar);
+
+   EC_Point_Var_Point_Precompute mul(m_pt, rng, ws);
+
+   // We pass order*cofactor here to "correctly" handle the case where the
+   // point is on the curve but not in the prime order subgroup. This only
+   // matters for groups with cofactor > 1
+   // See https://github.com/randombit/botan/issues/3800
+
+   const auto order = m_group->order() * m_group->cofactor();
+   auto pt = mul.mul(bn.value(), rng, order, ws);
+   return pt.x_bytes();
 }
 
 size_t EC_AffinePoint_Data_BN::field_element_bytes() const {
@@ -191,68 +209,7 @@ bool EC_Mul2Table_Data_BN::mul2_vartime_x_mod_order_eq(const EC_Scalar_Data& v,
    const auto& bn_y = EC_Scalar_Data_BN::checked_ref(y);
    const auto pt = m_tbl.multi_exp(bn_x.value(), bn_y.value());
 
-   if(pt.is_zero()) {
-      return false;
-   }
-
-   /*
-   * The trick used below doesn't work for curves with cofactors
-   */
-   if(m_group->has_cofactor()) {
-      return m_group->mod_order(pt.get_affine_x()) == bn_v.value();
-   }
-
-   /*
-   * Note we're working with the projective coordinate directly here!
-   * Nominally we're comparing v with the affine x coordinate.
-   *
-   * return m_group->mod_order(pt.get_affine_x()) == bn_v.value();
-   *
-   * However by instead projecting r to an identical z as the x
-   * coordinate, we can compare without having to perform an
-   * expensive inversion in the field.
-   *
-   * That is, given (x*z2) and r, instead of checking if
-   *    (x*z2)*z2^-1 == r,
-   * we check if
-   *    (x*z2) == (r*z2)
-   */
-   auto& curve = m_group->curve();
-
-   secure_vector<word> ws;
-   BigInt vr = bn_v.value();
-   curve.to_rep(vr, ws);
-   BigInt z2, v_z2;
-   curve.sqr(z2, pt.get_z(), ws);
-   curve.mul(v_z2, vr, z2, ws);
-
-   /*
-   * Since (typically) the group order is slightly less than the size
-   * of the field elements, its possible the signer had to reduce the
-   * r component. If they did not reduce r, then this value is correct.
-   *
-   * Due to the Hasse bound, this case occurs almost always; the
-   * probability that a reduction was actually required is
-   * approximately 1 in 2^(n/2) where n is the bit length of the curve.
-   */
-   if(pt.get_x() == v_z2) {
-      return true;
-   }
-
-   if(m_group->order_is_less_than_p()) {
-      vr = bn_v.value() + m_group->order();
-      if(vr < m_group->p()) {
-         curve.to_rep(vr, ws);
-         curve.mul(v_z2, vr, z2, ws);
-
-         if(pt.get_x() == v_z2) {
-            return true;
-         }
-      }
-   }
-
-   // Reject:
-   return false;
+   return pt._is_x_eq_to_v_mod_order(bn_v.value());
 }
 
 }  // namespace Botan

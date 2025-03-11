@@ -21,6 +21,11 @@
    #include <set>
 #endif
 
+#if defined(BOTAN_HAS_TPM2)
+   #include <tss2/tss2_esys.h>
+   #include <tss2/tss2_tctildr.h>
+#endif
+
 namespace Botan_Tests {
 
 namespace {
@@ -385,34 +390,11 @@ class FFI_RNG_Test final : public FFI_Test {
          const auto tcti_conf = Test::options().tpm2_tcti_conf().value_or("");
          if(tcti_name.empty() || tcti_name == "disabled") {
             result.test_note("TPM2 tests are disabled.");
-         } else if(TEST_FFI_INIT(botan_tpm2_ctx_init_ex, (&tpm2_ctx, tcti_name.c_str(), tcti_conf.c_str()))) {
-            if(botan_tpm2_supports_crypto_backend() == 1) {
-               TEST_FFI_OK(botan_tpm2_ctx_enable_crypto_backend, (tpm2_ctx, system_rng));
-               result.test_note("TPM2 crypto backend enabled");
-            } else {
-               result.test_note("TPM2 crypto backend not supported");
-            }
-
-            // Create and use an RNG without a TPM2 session
-            // (communication between application and TPM won't be encrypted)
-            if(TEST_FFI_INIT(botan_tpm2_rng_init, (&tpm2_rng, tpm2_ctx, nullptr, nullptr, nullptr))) {
-               Botan::clear_mem(outbuf.data(), outbuf.size());
-
-               TEST_FFI_OK(botan_rng_get, (tpm2_rng, outbuf.data(), outbuf.size()));
-               TEST_FFI_OK(botan_rng_reseed, (tpm2_rng, 256));
-
-               TEST_FFI_OK(botan_rng_reseed_from_rng, (tpm2_rng, system_rng, 256));
-
-               uint8_t not_really_entropy[32] = {0};
-               TEST_FFI_OK(botan_rng_add_entropy, (tpm2_rng, not_really_entropy, 32));
-               TEST_FFI_OK(botan_rng_destroy, (tpm2_rng));
-            }
-
-            // Create an anonymous TPM2 session
-            if(TEST_FFI_INIT(botan_tpm2_unauthenticated_session_init, (&tpm2_session, tpm2_ctx))) {
-               // Create and use an RNG with an anonymous TPM2 session
-               // (communication between application and TPM will be encrypted)
-               if(TEST_FFI_INIT(botan_tpm2_rng_init, (&tpm2_rng, tpm2_ctx, tpm2_session, nullptr, nullptr))) {
+         } else {
+            auto tpm2_test_rng = [&](botan_tpm2_ctx_t tpm2_context) {
+               // Create and use an RNG without a TPM2 session
+               // (communication between application and TPM won't be encrypted)
+               if(TEST_FFI_INIT(botan_tpm2_rng_init, (&tpm2_rng, tpm2_context, nullptr, nullptr, nullptr))) {
                   Botan::clear_mem(outbuf.data(), outbuf.size());
 
                   TEST_FFI_OK(botan_rng_get, (tpm2_rng, outbuf.data(), outbuf.size()));
@@ -425,10 +407,70 @@ class FFI_RNG_Test final : public FFI_Test {
                   TEST_FFI_OK(botan_rng_destroy, (tpm2_rng));
                }
 
-               TEST_FFI_OK(botan_tpm2_session_destroy, (tpm2_session));
+               // Create an anonymous TPM2 session
+               if(TEST_FFI_INIT(botan_tpm2_unauthenticated_session_init, (&tpm2_session, tpm2_context))) {
+                  // Create and use an RNG with an anonymous TPM2 session
+                  // (communication between application and TPM will be encrypted)
+                  if(TEST_FFI_INIT(botan_tpm2_rng_init, (&tpm2_rng, tpm2_context, tpm2_session, nullptr, nullptr))) {
+                     Botan::clear_mem(outbuf.data(), outbuf.size());
+
+                     TEST_FFI_OK(botan_rng_get, (tpm2_rng, outbuf.data(), outbuf.size()));
+                     TEST_FFI_OK(botan_rng_reseed, (tpm2_rng, 256));
+
+                     TEST_FFI_OK(botan_rng_reseed_from_rng, (tpm2_rng, system_rng, 256));
+
+                     uint8_t not_really_entropy[32] = {0};
+                     TEST_FFI_OK(botan_rng_add_entropy, (tpm2_rng, not_really_entropy, 32));
+                     TEST_FFI_OK(botan_rng_destroy, (tpm2_rng));
+                  }
+
+                  TEST_FFI_OK(botan_tpm2_session_destroy, (tpm2_session));
+               }
+            };
+
+            if(TEST_FFI_INIT(botan_tpm2_ctx_init_ex, (&tpm2_ctx, tcti_name.c_str(), tcti_conf.c_str()))) {
+               if(botan_tpm2_supports_crypto_backend() == 1) {
+                  TEST_FFI_OK(botan_tpm2_ctx_enable_crypto_backend, (tpm2_ctx, system_rng));
+                  result.test_note("TPM2 crypto backend enabled");
+               } else {
+                  result.test_note("TPM2 crypto backend not supported");
+               }
+
+               tpm2_test_rng(tpm2_ctx);
+               TEST_FFI_OK(botan_tpm2_ctx_destroy, (tpm2_ctx));
             }
 
-            TEST_FFI_OK(botan_tpm2_ctx_destroy, (tpm2_ctx));
+   #if defined(BOTAN_HAS_TPM2)
+            TSS2_TCTI_CONTEXT* tcti_ctx;
+            ESYS_CONTEXT* esys_ctx;
+
+            if(TEST_FFI_INIT(Tss2_TctiLdr_Initialize_Ex, (tcti_name.c_str(), tcti_conf.c_str(), &tcti_ctx))) {
+               if(TEST_FFI_INIT(Esys_Initialize, (&esys_ctx, tcti_ctx, nullptr /* ABI version */))) {
+                  botan_tpm2_crypto_backend_state_t cbs = nullptr;
+
+                  // enable the botan-based TSS2 crypto backend on a bare ESYS_CONTEXT
+                  if(botan_tpm2_supports_crypto_backend() == 1) {
+                     TEST_FFI_OK(botan_tpm2_enable_crypto_backend, (&cbs, esys_ctx, system_rng));
+                     result.test_note("TPM2 crypto backend enabled");
+                  } else {
+                     result.test_note("TPM2 crypto backend not supported");
+                  }
+
+                  // initialize the Botan TPM2 FFI wrapper from the bare ESYS_CONTEXT
+                  if(TEST_FFI_INIT(botan_tpm2_ctx_from_esys, (&tpm2_ctx, esys_ctx))) {
+                     tpm2_test_rng(tpm2_ctx);
+                     TEST_FFI_OK(botan_tpm2_ctx_destroy, (tpm2_ctx));
+                  }
+
+                  if(cbs != nullptr) {
+                     TEST_FFI_OK(botan_tpm2_crypto_backend_state_destroy, (cbs));
+                  }
+
+                  Esys_Finalize(&esys_ctx);
+               }
+               Tss2_TctiLdr_Finalize(&tcti_ctx);
+            }
+   #endif
          }
 
          TEST_FFI_OK(botan_rng_destroy, (rng));
@@ -3819,6 +3861,45 @@ class FFI_SLH_DSA_Test final : public FFI_Signature_Roundtrip_Test {
       const char* hash_algo_or_padding() const override { return ""; }
 };
 
+class FFI_Classic_McEliece_Test final : public FFI_KEM_Roundtrip_Test {
+   public:
+      std::string name() const override { return "FFI Classic McEliece"; }
+
+   protected:
+      const char* algo() const override { return "ClassicMcEliece"; }
+
+      privkey_loader_fn_t private_key_load_function() const override { return botan_privkey_load_classic_mceliece; }
+
+      pubkey_loader_fn_t public_key_load_function() const override { return botan_pubkey_load_classic_mceliece; }
+
+      std::vector<const char*> modes() const override {
+         auto modes = std::vector{
+            "mceliece348864f",
+            "mceliece460896f",
+         };
+         if(Test::run_long_tests()) {
+            modes = Botan::concat(modes,
+                                  std::vector{
+                                     "mceliece348864",
+                                     "mceliece460896",
+                                     "mceliece6688128",
+                                     "mceliece6688128f",
+                                     "mceliece6688128pc",
+                                     "mceliece6688128pcf",
+                                     "mceliece6960119",
+                                     "mceliece6960119f",
+                                     "mceliece6960119pc",
+                                     "mceliece6960119pcf",
+                                     "mceliece8192128",
+                                     "mceliece8192128f",
+                                     "mceliece8192128pc",
+                                     "mceliece8192128pcf",
+                                  });
+         }
+         return modes;
+      }
+};
+
 class FFI_ElGamal_Test final : public FFI_Test {
    public:
       std::string name() const override { return "FFI ElGamal"; }
@@ -4065,6 +4146,7 @@ BOTAN_REGISTER_TEST("ffi", "ffi_ml_kem", FFI_ML_KEM_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_ml_dsa", FFI_ML_DSA_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_slh_dsa", FFI_SLH_DSA_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_frodokem", FFI_FrodoKEM_Test);
+BOTAN_REGISTER_TEST("ffi", "ffi_cmce", FFI_Classic_McEliece_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_elgamal", FFI_ElGamal_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_dh", FFI_DH_Test);
 

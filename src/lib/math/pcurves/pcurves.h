@@ -192,6 +192,11 @@ class BOTAN_TEST_API PrimeOrderCurve {
             }
 
             /**
+            * Point negation
+            */
+            AffinePoint negate() const { return m_curve->point_negate(*this); }
+
+            /**
             * Return true if this is the curve identity element (aka the point at infinity)
             */
             bool is_identity() const { return m_curve->affine_point_is_identity(*this); }
@@ -242,8 +247,6 @@ class BOTAN_TEST_API PrimeOrderCurve {
             AffinePoint to_affine() const { return m_curve->point_to_affine(*this); }
 
             ProjectivePoint dbl() const { return m_curve->point_double(*this); }
-
-            ProjectivePoint negate() const { return m_curve->point_negate(*this); }
 
             friend ProjectivePoint operator+(const ProjectivePoint& x, const ProjectivePoint& y) {
                return x.m_curve->point_add(x, y);
@@ -310,6 +313,13 @@ class BOTAN_TEST_API PrimeOrderCurve {
       /// Multiply an arbitrary point by a scalar
       virtual ProjectivePoint mul(const AffinePoint& pt, const Scalar& scalar, RandomNumberGenerator& rng) const = 0;
 
+      /// Generic x-only point multiplication
+      ///
+      /// Multiply an arbitrary point by a scalar, returning only the x coordinate
+      virtual secure_vector<uint8_t> mul_x_only(const AffinePoint& pt,
+                                                const Scalar& scalar,
+                                                RandomNumberGenerator& rng) const = 0;
+
       /// Setup a table for 2-ary multiplication
       virtual std::unique_ptr<const PrecomputedMul2Table> mul2_setup(const AffinePoint& pt1,
                                                                      const AffinePoint& pt2) const = 0;
@@ -322,6 +332,17 @@ class BOTAN_TEST_API PrimeOrderCurve {
       virtual std::optional<ProjectivePoint> mul2_vartime(const PrecomputedMul2Table& table,
                                                           const Scalar& s1,
                                                           const Scalar& s2) const = 0;
+
+      /// Perform 2-ary multiplication (constant time)
+      ///
+      /// Compute p*x + q*y
+      ///
+      /// Returns nullopt if the produced point is the point at infinity
+      virtual std::optional<ProjectivePoint> mul_px_qy(const AffinePoint& p,
+                                                       const Scalar& x,
+                                                       const AffinePoint& q,
+                                                       const Scalar& y,
+                                                       RandomNumberGenerator& rng) const = 0;
 
       /// Perform 2-ary multiplication (variable time), reducing x modulo order
       ///
@@ -344,11 +365,14 @@ class BOTAN_TEST_API PrimeOrderCurve {
       /// Note that the deprecated "hybrid" encoding is not supported here
       virtual std::optional<AffinePoint> deserialize_point(std::span<const uint8_t> bytes) const = 0;
 
-      /// Deserialize a scalar
+      /// Deserialize a scalar in [1,p)
       ///
       /// This function requires the input length be exactly scalar_bytes long;
       /// it does not accept inputs that are shorter, or with excess leading
       /// zero padding bytes.
+      ///
+      /// This function also rejects zero as an input, since in normal usage
+      /// scalars are integers in Z_p*
       virtual std::optional<Scalar> deserialize_scalar(std::span<const uint8_t> bytes) const = 0;
 
       /// Reduce an integer modulo the group order
@@ -365,7 +389,7 @@ class BOTAN_TEST_API PrimeOrderCurve {
 
       virtual ProjectivePoint point_double(const ProjectivePoint& pt) const = 0;
 
-      virtual ProjectivePoint point_negate(const ProjectivePoint& pt) const = 0;
+      virtual AffinePoint point_negate(const AffinePoint& pt) const = 0;
 
       virtual ProjectivePoint point_add(const ProjectivePoint& a, const ProjectivePoint& b) const = 0;
 
@@ -388,11 +412,6 @@ class BOTAN_TEST_API PrimeOrderCurve {
       * Return the scalar one
       */
       virtual Scalar scalar_one() const = 0;
-
-      /**
-      * Return a small scalar
-      */
-      virtual Scalar scalar_from_u32(uint32_t x) const = 0;
 
       virtual Scalar scalar_add(const Scalar& a, const Scalar& b) const = 0;
       virtual Scalar scalar_sub(const Scalar& a, const Scalar& b) const = 0;

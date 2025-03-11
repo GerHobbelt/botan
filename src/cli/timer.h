@@ -1,19 +1,19 @@
 /*
-* (C) 2018 Jack Lloyd
+* (C) 2018,2024 Jack Lloyd
 *
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#ifndef BOTAN_TIMER_H_
-#define BOTAN_TIMER_H_
+#ifndef BOTAN_CLI_TIMER_H_
+#define BOTAN_CLI_TIMER_H_
 
 #include <botan/types.h>
 #include <chrono>
 #include <string>
 
-namespace Botan {
+namespace Botan_CLI {
 
-class BOTAN_TEST_API Timer final {
+class Timer final {
    public:
       Timer(std::string_view name,
             std::string_view provider,
@@ -65,9 +65,13 @@ class BOTAN_TEST_API Timer final {
 
       uint64_t value() const { return m_time_used; }
 
-      double seconds() const { return milliseconds() / 1000.0; }
+      double seconds() const { return value() / 1000000000.0; }
 
       double milliseconds() const { return value() / 1000000.0; }
+
+      double microseconds() const { return value() / 1000.0; }
+
+      double nanoseconds() const { return static_cast<double>(value()); }
 
       double ms_per_event() const { return milliseconds() / events(); }
 
@@ -92,16 +96,9 @@ class BOTAN_TEST_API Timer final {
 
       double seconds_per_event() const { return events() > 0 ? seconds() / events() : 0.0; }
 
-      void set_custom_msg(std::string_view s) { m_custom_msg = s; }
-
       bool operator<(const Timer& other) const;
 
-      std::string to_string() const;
-
    private:
-      std::string result_string_bps() const;
-      std::string result_string_ops() const;
-
       // const data
       std::string m_name, m_doing;
       size_t m_buf_size;
@@ -110,7 +107,6 @@ class BOTAN_TEST_API Timer final {
       uint64_t m_clock_speed;
 
       // set at runtime
-      std::string m_custom_msg;
       uint64_t m_event_count = 0;
 
       uint64_t m_time_used = 0;
@@ -120,6 +116,6 @@ class BOTAN_TEST_API Timer final {
       uint64_t m_cpu_cycles_start = 0;
 };
 
-}  // namespace Botan
+}  // namespace Botan_CLI
 
 #endif

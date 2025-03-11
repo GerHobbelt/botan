@@ -156,8 +156,22 @@ class Pcurve_Arithmetic_Tests final : public Test {
             const auto g_plus_g = g_one + g_one;
             result.test_eq("2*g == g+g", g_two.to_affine().serialize(), g_plus_g.to_affine().serialize());
 
-            result.confirm("Scalar::zero is zero", curve->scalar_zero().is_zero());
-            result.confirm("Scalar::one is not zero", !curve->scalar_one().is_zero());
+            result.confirm("Scalar::zero is zero", zero.is_zero());
+            result.confirm("(zero+zero) is zero", (zero + zero).is_zero());
+            result.confirm("(zero*zero) is zero", (zero * zero).is_zero());
+            result.confirm("(zero-zero) is zero", (zero - zero).is_zero());
+
+            const auto neg_zero = zero.negate();
+            result.confirm("zero.negate() is zero", neg_zero.is_zero());
+
+            result.confirm("(zero+nz) is zero", (zero + neg_zero).is_zero());
+            result.confirm("(nz+nz) is zero", (neg_zero + neg_zero).is_zero());
+            result.confirm("(nz+zero) is zero", (neg_zero + zero).is_zero());
+
+            result.confirm("Scalar::one is not zero", !one.is_zero());
+            result.confirm("(one-one) is zero", (one - one).is_zero());
+            result.confirm("(one+one.negate()) is zero", (one + one.negate()).is_zero());
+            result.confirm("(one.negate()+one) is zero", (one.negate() + one).is_zero());
 
             for(size_t i = 0; i != 16; ++i) {
                const auto pt = curve->mul_by_g(curve->random_scalar(rng), rng).to_affine();
@@ -207,12 +221,20 @@ class Pcurve_Arithmetic_Tests final : public Test {
                const auto pt1 = curve->generator();
 
                auto pt2 = [&]() {
-                  const auto lo = curve->scalar_from_u32(static_cast<uint32_t>(i / 2));
-                  auto x = curve->mul_by_g(lo, rng);
+                  const auto lo = [&]() {
+                     if((i / 2) == 0) {
+                        return curve->scalar_zero();
+                     } else {
+                        std::vector<uint8_t> sbytes(curve->scalar_bytes());
+                        sbytes[sbytes.size() - 1] = static_cast<uint8_t>(i / 2);
+                        return curve->deserialize_scalar(sbytes).value();
+                     }
+                  }();
+                  auto x = curve->mul_by_g(lo, rng).to_affine();
                   if(i % 2 == 0) {
                      x = x.negate();
                   }
-                  return x.to_affine();
+                  return x;
                }();
 
                const auto s1 = curve->random_scalar(rng);

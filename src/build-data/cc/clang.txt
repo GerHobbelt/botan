@@ -29,6 +29,7 @@ undefined -> "-fsanitize=undefined -fno-sanitize-recover=undefined"
 coverage  -> "-fsanitize=fuzzer-no-link"
 memory    -> "-fsanitize=memory"
 fuzzer    -> "-fsanitize=fuzzer"
+thread    -> "-fsanitize=thread"
 
 iterator  -> "-D_LIBCPP_DEBUG=1 -D_GLIBCXX_DEBUG"
 </sanitizers>
@@ -106,3 +107,7 @@ ppc64   -> "-m64"
 macos   -> "-stdlib=libc++"
 ios     -> "-stdlib=libc++"
 </mach_abi_linking>
+
+<ct_value_barrier>
+default -> asm
+</ct_value_barrier>

@@ -30,8 +30,8 @@
    #include <botan/x448.h>
 #endif
 
-#if defined(BOTAN_HAS_KYBER)
-   #include <botan/kyber.h>
+#if defined(BOTAN_HAS_ML_KEM)
+   #include <botan/ml_kem.h>
 #endif
 
 #if defined(BOTAN_HAS_FRODOKEM)
@@ -228,9 +228,9 @@ std::unique_ptr<Public_Key> TLS::Callbacks::tls_deserialize_peer_public_key(
    }
 #endif
 
-#if defined(BOTAN_HAS_KYBER)
-   if(group_params.is_pure_kyber()) {
-      return std::make_unique<Kyber_PublicKey>(key_bits, KyberMode(group_params.to_string().value()));
+#if defined(BOTAN_HAS_ML_KEM)
+   if(group_params.is_pure_ml_kem()) {
+      return std::make_unique<ML_KEM_PublicKey>(key_bits, ML_KEM_Mode(group_params.to_string().value()));
    }
 #endif
 
@@ -244,9 +244,9 @@ std::unique_ptr<Public_Key> TLS::Callbacks::tls_deserialize_peer_public_key(
 }
 
 std::unique_ptr<Private_Key> TLS::Callbacks::tls_kem_generate_key(TLS::Group_Params group, RandomNumberGenerator& rng) {
-#if defined(BOTAN_HAS_KYBER)
-   if(group.is_pure_kyber()) {
-      return std::make_unique<Kyber_PrivateKey>(rng, KyberMode(group.to_string().value()));
+#if defined(BOTAN_HAS_ML_KEM)
+   if(group.is_pure_ml_kem()) {
+      return std::make_unique<ML_KEM_PrivateKey>(rng, ML_KEM_Mode(group.to_string().value()));
    }
 #endif
 

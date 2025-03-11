@@ -94,6 +94,8 @@
         "TooManyChangeCipherSpec-Server-TLS13": "Limits on the number of CCS are not implemented",
         "TooManyKeyUpdates": "Limits on the number of KeyUpdates are not implemented",
 
+        "PostQuantumNotEnabledByDefaultInClients": "Oh yes it is",
+
         "TLS12SessionID-TLS13": "We don't offer TLS 1.3 when a TLS 1.2 session was found",
         "Ticket-Forbidden-TLS13": "We don't offer TLS 1.3 when a TLS 1.2 session was found",
         "Resume-Client-NoResume-TLS12-TLS13-TLS": "We don't offer TLS 1.3 when a TLS 1.2 session was found",
@@ -185,6 +187,7 @@
         "NotJustKyberKeyShare": "BoringSSL specific policy test (we may offer solo PQ/T groups)",
         "KyberKeyShareIncludedSecond": "BoringSSL specific policy test (we may offer solo PQ/T groups)",
         "KyberKeyShareIncludedThird": "BoringSSL specific policy test (we may offer solo PQ/T groups)",
+        "CurveTest-*Kyber*": "We no longer support Kyber r3 key exchange",
 
         "ShimTicketRewritable": "Botan has a different ticket format",
         "Resume-Server-DeclineCrossVersion*": "Botan has a different ticket format",
