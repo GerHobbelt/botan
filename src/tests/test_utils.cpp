@@ -11,7 +11,6 @@
 #include <botan/internal/bit_ops.h>
 #include <botan/internal/calendar.h>
 #include <botan/internal/charset.h>
-#include <botan/internal/cpuid.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/int_utils.h>
 #include <botan/internal/loadstor.h>
@@ -19,10 +18,15 @@
 #include <botan/internal/rounding.h>
 #include <botan/internal/stl_util.h>
 #include <botan/internal/target_info.h>
+#include <botan/internal/version_info.h>
 
 #include <bit>
 #include <ctime>
 #include <functional>
+
+#if defined(BOTAN_HAS_CPUID)
+   #include <botan/internal/cpuid.h>
+#endif
 
 #if defined(BOTAN_HAS_POLY_DBL)
    #include <botan/internal/poly_dbl.h>
@@ -473,25 +477,25 @@ class Utility_Function_Tests final : public Test {
 
       template <std::unsigned_integral T>
       static T fb_load_be(std::array<const uint8_t, sizeof(T)> in) {
-         return Botan::detail::fallback_load_any<Botan::detail::Endianness::Big, T>(in);
+         return Botan::detail::fallback_load_any<std::endian::big, T>(in);
       }
 
       template <std::unsigned_integral T>
       static T fb_load_le(std::array<const uint8_t, sizeof(T)> in) {
-         return Botan::detail::fallback_load_any<Botan::detail::Endianness::Little, T>(in);
+         return Botan::detail::fallback_load_any<std::endian::little, T>(in);
       }
 
       template <std::unsigned_integral T>
       static decltype(auto) fb_store_be(const T in) {
          std::array<uint8_t, sizeof(T)> out;
-         Botan::detail::fallback_store_any<Botan::detail::Endianness::Big, T>(in, out);
+         Botan::detail::fallback_store_any<std::endian::big, T>(in, out);
          return out;
       }
 
       template <std::unsigned_integral T>
       static decltype(auto) fb_store_le(const T in) {
          std::array<uint8_t, sizeof(T)> out;
-         Botan::detail::fallback_store_any<Botan::detail::Endianness::Little, T>(in, out);
+         Botan::detail::fallback_store_any<std::endian::little, T>(in, out);
          return out;
       }
 
@@ -968,15 +972,11 @@ class Version_Tests final : public Test {
          std::string sversion_str = Botan::short_version_string();
          result.test_eq("Same short version string", sversion_str, std::string(sversion_cstr));
 
-         std::string expected_sversion = std::to_string(BOTAN_VERSION_MAJOR) + "." +
-                                         std::to_string(BOTAN_VERSION_MINOR) + "." +
-                                         std::to_string(BOTAN_VERSION_PATCH);
+         const auto expected_sversion =
+            Botan::fmt("{}.{}.{}", BOTAN_VERSION_MAJOR, BOTAN_VERSION_MINOR, BOTAN_VERSION_PATCH);
 
-#if defined(BOTAN_VERSION_SUFFIX)
-         expected_sversion += BOTAN_VERSION_SUFFIX_STR;
-#endif
-
-         result.test_eq("Short version string has expected format", sversion_str, expected_sversion);
+         // May have a suffix eg 4.0.0-rc2
+         result.confirm("Short version string has expected format", sversion_str.starts_with(expected_sversion));
 
          const std::string version_check_ok =
             Botan::runtime_version_check(BOTAN_VERSION_MAJOR, BOTAN_VERSION_MINOR, BOTAN_VERSION_PATCH);
@@ -1202,24 +1202,17 @@ class ReadKV_Tests final : public Text_Based_Test {
 
 BOTAN_REGISTER_TEST("utils", "util_read_kv", ReadKV_Tests);
 
+#if defined(BOTAN_HAS_CPUID)
+
 class CPUID_Tests final : public Test {
    public:
       std::vector<Test::Result> run() override {
          Test::Result result("CPUID");
 
-         result.confirm("Endian is either little or big",
-                        Botan::CPUID::is_big_endian() || Botan::CPUID::is_little_endian());
-
-         if(Botan::CPUID::is_little_endian()) {
-            result.test_eq("If endian is little, it is not also big endian", Botan::CPUID::is_big_endian(), false);
-         } else {
-            result.test_eq("If endian is big, it is not also little endian", Botan::CPUID::is_little_endian(), false);
-         }
-
          const std::string cpuid_string = Botan::CPUID::to_string();
          result.test_success("CPUID::to_string doesn't crash");
 
-#if defined(BOTAN_TARGET_CPU_IS_X86_FAMILY)
+   #if defined(BOTAN_TARGET_CPU_IS_X86_FAMILY)
 
          if(Botan::CPUID::has_sse2()) {
             result.confirm("Output string includes sse2", cpuid_string.find("sse2") != std::string::npos);
@@ -1231,13 +1224,15 @@ class CPUID_Tests final : public Test {
             Botan::CPUID::initialize();  // reset state
             result.test_eq("After reinitializing, has_sse2 returns true", Botan::CPUID::has_sse2(), true);
          }
-#endif
+   #endif
 
          return {result};
       }
 };
 
 BOTAN_REGISTER_SERIALIZED_TEST("utils", "cpuid", CPUID_Tests);
+
+#endif
 
 #if defined(BOTAN_HAS_UUID)
 

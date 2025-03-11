@@ -7,8 +7,6 @@ name -> "AES Vector Permutation"
 brief -> "AES using Vector Permutation Instructions"
 </module_info>
 
-endian little
-
 <isa>
 x86_32:sse2
 x86_64:sse2
@@ -30,5 +28,6 @@ ppc64
 </arch>
 
 <requires>
+cpuid
 simd
 </requires>

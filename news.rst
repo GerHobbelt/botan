@@ -4,8 +4,13 @@ Release Notes
 Version 3.8.0, Not Yet Released
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Ongoing elliptic curve optimizations and cleanups (GH #4620 #4623 #4625 #4627
-  #4632 #4634)
+* Discussion has started regarding plans for Botan4, current ETA 2027. Check the
+  tracking ticket in https://github.com/randombit/botan/issues/4666 for the
+  current plans.
+
+* Ongoing elliptic curve optimizations and cleanups (GH #4554 #4620 #4623 #4625
+  #4627 #4632 #4634 #4686 #4687 #4688 #4689 #4690 #4692 #4695 #4703 #4706 #4708
+  #4710 #4711)
 
 * Previously ``build.h`` included various parameters which could be modified by
   end users prior to compilation. These have been removed. (GH #4639)
@@ -24,10 +29,36 @@ Version 3.8.0, Not Yet Released
 * Add an FFI example which also works as a test in CI that prevents accidentally
   making changes to ``ffi.h`` or ``build.h`` that make them incompatible with C. (GH #4640)
 
+* Add new FFI functions regarding stateful private keys (GH #4700)
+
+* Add missing checks for null pointer arguments in FFI (#4704)
+
+* When encoding a RSASSA-PSS-Params struct, skip encoding the trailer field
+  default value, as required by RFC 4055 (GH #4731)
+
+* Fix encoding extended key usage in PKCS10 requests (GH #4725)
+
+* Add internal API for hybrid PQ combiner keys (GH #4067)
+
+* The ``Ed25519_PrivateKey`` constructor had behavior that varied based on the
+  input length. Add explicit ``from_seed`` and ``from_bytes`` functions which
+  make the two options explicit. (GH #4701 #4702)
+
+* Add a new cleaner interface for handling ECIES flags (GH #4691)
+
 * Internal RSA signature padding cleanups (GH #4635)
 
 * Fix a bug that caused the tests to skip testing AES-NI if AES-VAES was supported.
   (GH #4649)
+
+* Now even for purely static library builds, ``-fPIC`` is used to compile the
+  library objects. This allows linking position independent executables (PIE)
+  against the static library. (GH #tkk)
+
+* Remove support for NetBSD `_dlauxinfo` which did not provide the information
+  that the library had expected it to. (GH #4736)
+
+* Add a script for comparing the performance between versions (GH #4693)
 
 * Update GHA CodeQL actions (GH #4644)
 

@@ -10,18 +10,17 @@
 
 #include <botan/exceptn.h>
 #include <botan/mem_ops.h>
-#include <botan/internal/cpuid.h>
 #include <botan/internal/target_info.h>
+
+#if defined(BOTAN_HAS_CPUID)
+   #include <botan/internal/cpuid.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
-
-#if defined(BOTAN_TARGET_OS_HAS_EXPLICIT_BZERO)
-   #include <string.h>
-#endif
 
 #if defined(BOTAN_TARGET_OS_HAS_POSIX1)
    #include <errno.h>
@@ -43,11 +42,6 @@
 
 #if defined(BOTAN_TARGET_OS_HAS_GETAUXVAL) || defined(BOTAN_TARGET_OS_HAS_ELF_AUX_INFO)
    #include <sys/auxv.h>
-#endif
-
-#if defined(BOTAN_TARGET_OS_HAS_AUXINFO)
-   #include <dlfcn.h>
-   #include <elf.h>
 #endif
 
 #if defined(BOTAN_TARGET_OS_HAS_WIN32)
@@ -94,9 +88,7 @@ uint32_t OS::get_process_id() {
 
 namespace {
 
-#if defined(BOTAN_TARGET_OS_HAS_GETAUXVAL) || defined(BOTAN_TARGET_OS_HAS_ELF_AUX_INFO) || \
-   defined(BOTAN_TARGET_OS_HAS_AUXINFO)
-
+#if defined(BOTAN_TARGET_OS_HAS_GETAUXVAL) || defined(BOTAN_TARGET_OS_HAS_ELF_AUX_INFO)
    #define BOTAN_TARGET_HAS_AUXVAL_INTERFACE
 #endif
 
@@ -133,13 +125,6 @@ std::optional<unsigned long> get_auxval(std::optional<unsigned long> id) {
       if(::elf_aux_info(static_cast<int>(*id), &auxinfo, sizeof(auxinfo)) == 0) {
          return auxinfo;
       }
-#elif defined(BOTAN_TARGET_OS_HAS_AUXINFO)
-      for(const AuxInfo* auxinfo = static_cast<AuxInfo*>(::_dlauxinfo()); auxinfo != AT_NULL; ++auxinfo) {
-         if(*id == auxinfo->a_type) {
-            return auxinfo->a_v;
-         }
-      }
-      // no match; fall off the end and return nullopt
 #endif
    }
 
@@ -191,7 +176,13 @@ uint64_t OS::get_cpu_cycle_counter() {
 
 #elif defined(BOTAN_USE_GCC_INLINE_ASM)
 
-   #if defined(BOTAN_TARGET_CPU_IS_X86_FAMILY)
+   #if defined(BOTAN_TARGET_ARCH_IS_X86_64)
+
+   uint32_t rtc_low = 0, rtc_high = 0;
+   asm volatile("rdtsc" : "=d"(rtc_high), "=a"(rtc_low));
+   rtc = (static_cast<uint64_t>(rtc_high) << 32) | rtc_low;
+
+   #elif defined(BOTAN_TARGET_CPU_IS_X86_FAMILY) && defined(BOTAN_HAS_CPUID)
 
    if(CPUID::has_rdtsc()) {
       uint32_t rtc_low = 0, rtc_high = 0;

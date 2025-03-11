@@ -17,8 +17,8 @@ def ops_per_second(events, nanos):
     return (events * 1000000000) / nanos
 
 def format_pct(r):
-    assert r > 1
-    return "%.01f%%" % ((r - 1) * 100)
+    #assert r > 1
+    return "%.01f%%" % (abs(r - 1) * 100)
 
 def parse_perf_report(report):
     if len(report) == 0:
@@ -37,7 +37,12 @@ def parse_perf_report(report):
     results = []
     for t in report:
         if 'algo' in t and 'op' in t and 'events' in t and 'nanos' in t:
-            results.append(((t['algo'], t['op']), ops_per_second(t['events'], t['nanos'])))
+
+            op = t['op']
+            if 'buf_size' in t:
+                op += ' ' + str(t['buf_size']) + ' buffer'
+
+            results.append(((t['algo'], op), ops_per_second(t['events'], t['nanos'])))
         else:
             print("Unexpected record", t)
 

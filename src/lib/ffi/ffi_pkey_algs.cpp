@@ -106,6 +106,9 @@ int privkey_load_ec(std::unique_ptr<ECPrivateKey_t>& key, const Botan::BigInt& s
    if(curve_name == nullptr) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
+   if(!Botan::EC_Group::supports_named_group(curve_name)) {
+      return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+   }
 
    Botan::Null_RNG null_rng;
    const auto grp = Botan::EC_Group::from_name(curve_name);
@@ -120,6 +123,10 @@ int pubkey_load_ec(std::unique_ptr<ECPublicKey_t>& key,
                    const char* curve_name) {
    if(curve_name == nullptr) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+
+   if(!Botan::EC_Group::supports_named_group(curve_name)) {
+      return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
    }
 
    const auto group = Botan::EC_Group::from_name(curve_name);
@@ -212,6 +219,9 @@ int botan_privkey_create_rsa(botan_privkey_t* key_obj, botan_rng_t rng_obj, size
 
 int botan_privkey_load_rsa(botan_privkey_t* key, botan_mp_t rsa_p, botan_mp_t rsa_q, botan_mp_t rsa_e) {
 #if defined(BOTAN_HAS_RSA)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
 
    return ffi_guard_thunk(__func__, [=]() -> int {
@@ -227,12 +237,14 @@ int botan_privkey_load_rsa(botan_privkey_t* key, botan_mp_t rsa_p, botan_mp_t rs
 
 int botan_privkey_load_rsa_pkcs1(botan_privkey_t* key, const uint8_t bits[], size_t len) {
 #if defined(BOTAN_HAS_RSA)
+   if(key == nullptr || bits == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
 
-   Botan::secure_vector<uint8_t> src(bits, bits + len);
    return ffi_guard_thunk(__func__, [=]() -> int {
       Botan::AlgorithmIdentifier alg_id("RSA", Botan::AlgorithmIdentifier::USE_NULL_PARAM);
-      auto rsa = std::make_unique<Botan::RSA_PrivateKey>(alg_id, src);
+      auto rsa = std::make_unique<Botan::RSA_PrivateKey>(alg_id, std::span{bits, len});
       *key = new botan_privkey_struct(std::move(rsa));
       return BOTAN_FFI_SUCCESS;
    });
@@ -244,6 +256,9 @@ int botan_privkey_load_rsa_pkcs1(botan_privkey_t* key, const uint8_t bits[], siz
 
 int botan_pubkey_load_rsa(botan_pubkey_t* key, botan_mp_t n, botan_mp_t e) {
 #if defined(BOTAN_HAS_RSA)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       auto rsa = std::make_unique<Botan::RSA_PublicKey>(safe_get(n), safe_get(e));
@@ -332,6 +347,9 @@ int botan_privkey_create_dsa(botan_privkey_t* key, botan_rng_t rng_obj, size_t p
 
 int botan_privkey_load_dsa(botan_privkey_t* key, botan_mp_t p, botan_mp_t q, botan_mp_t g, botan_mp_t x) {
 #if defined(BOTAN_HAS_DSA)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
 
    return ffi_guard_thunk(__func__, [=]() -> int {
@@ -348,6 +366,9 @@ int botan_privkey_load_dsa(botan_privkey_t* key, botan_mp_t p, botan_mp_t q, bot
 
 int botan_pubkey_load_dsa(botan_pubkey_t* key, botan_mp_t p, botan_mp_t q, botan_mp_t g, botan_mp_t y) {
 #if defined(BOTAN_HAS_DSA)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
 
    return ffi_guard_thunk(__func__, [=]() -> int {
@@ -411,6 +432,11 @@ int botan_pubkey_load_ecdsa(botan_pubkey_t* key,
                             const botan_mp_t public_y,
                             const char* curve_name) {
 #if defined(BOTAN_HAS_ECDSA)
+   if(key == nullptr || curve_name == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+   *key = nullptr;
+
    return ffi_guard_thunk(__func__, [=]() -> int {
       std::unique_ptr<Botan::ECDSA_PublicKey> p_key;
 
@@ -429,6 +455,11 @@ int botan_pubkey_load_ecdsa(botan_pubkey_t* key,
 
 int botan_privkey_load_ecdsa(botan_privkey_t* key, const botan_mp_t scalar, const char* curve_name) {
 #if defined(BOTAN_HAS_ECDSA)
+   if(key == nullptr || curve_name == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+   *key = nullptr;
+
    return ffi_guard_thunk(__func__, [=]() -> int {
       std::unique_ptr<Botan::ECDSA_PrivateKey> p_key;
       int rc = privkey_load_ec(p_key, safe_get(scalar), curve_name);
@@ -446,12 +477,12 @@ int botan_privkey_load_ecdsa(botan_privkey_t* key, const botan_mp_t scalar, cons
 /* ElGamal specific operations */
 int botan_privkey_create_elgamal(botan_privkey_t* key, botan_rng_t rng_obj, size_t pbits, size_t qbits) {
 #if defined(BOTAN_HAS_ELGAMAL)
-
-   if((rng_obj == nullptr) || (key == nullptr)) {
+   if(key == nullptr || rng_obj == nullptr) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
+   *key = nullptr;
 
-   if((pbits < 1024) || (qbits < 160)) {
+   if(pbits < 1024 || qbits < 160) {
       return BOTAN_FFI_ERROR_BAD_PARAMETER;
    }
 
@@ -473,6 +504,9 @@ int botan_privkey_create_elgamal(botan_privkey_t* key, botan_rng_t rng_obj, size
 
 int botan_pubkey_load_elgamal(botan_pubkey_t* key, botan_mp_t p, botan_mp_t g, botan_mp_t y) {
 #if defined(BOTAN_HAS_ELGAMAL)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       Botan::DL_Group group(safe_get(p), safe_get(g));
@@ -488,6 +522,9 @@ int botan_pubkey_load_elgamal(botan_pubkey_t* key, botan_mp_t p, botan_mp_t g, b
 
 int botan_privkey_load_elgamal(botan_privkey_t* key, botan_mp_t p, botan_mp_t g, botan_mp_t x) {
 #if defined(BOTAN_HAS_ELGAMAL)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       Botan::DL_Group group(safe_get(p), safe_get(g));
@@ -509,6 +546,9 @@ int botan_privkey_create_dh(botan_privkey_t* key_obj, botan_rng_t rng_obj, const
 
 int botan_privkey_load_dh(botan_privkey_t* key, botan_mp_t p, botan_mp_t g, botan_mp_t x) {
 #if defined(BOTAN_HAS_DIFFIE_HELLMAN)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       Botan::DL_Group group(safe_get(p), safe_get(g));
@@ -524,6 +564,9 @@ int botan_privkey_load_dh(botan_privkey_t* key, botan_mp_t p, botan_mp_t g, bota
 
 int botan_pubkey_load_dh(botan_pubkey_t* key, botan_mp_t p, botan_mp_t g, botan_mp_t y) {
 #if defined(BOTAN_HAS_DIFFIE_HELLMAN)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       Botan::DL_Group group(safe_get(p), safe_get(g));
@@ -540,17 +583,18 @@ int botan_pubkey_load_dh(botan_pubkey_t* key, botan_mp_t p, botan_mp_t g, botan_
 /* ECDH + x25519/x448 specific operations */
 
 int botan_privkey_create_ecdh(botan_privkey_t* key_obj, botan_rng_t rng_obj, const char* param_str) {
-   if(param_str == nullptr) {
+   if(key_obj == nullptr || param_str == nullptr) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
+   *key_obj = nullptr;
 
    const std::string params(param_str);
 
-   if(params == "x25519" || params == "curve25519") {
+   if(params == "X25519" || params == "x25519" || params == "curve25519") {
       return botan_privkey_create(key_obj, "X25519", "", rng_obj);
    }
 
-   if(params == "x448") {
+   if(params == "X448" || params == "x448") {
       return botan_privkey_create(key_obj, "X448", "", rng_obj);
    }
 
@@ -562,6 +606,10 @@ int botan_pubkey_load_ecdh(botan_pubkey_t* key,
                            const botan_mp_t public_y,
                            const char* curve_name) {
 #if defined(BOTAN_HAS_ECDH)
+   if(key == nullptr || curve_name == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+   *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       std::unique_ptr<Botan::ECDH_PublicKey> p_key;
       int rc = pubkey_load_ec(p_key, safe_get(public_x), safe_get(public_y), curve_name);
@@ -579,6 +627,10 @@ int botan_pubkey_load_ecdh(botan_pubkey_t* key,
 
 int botan_privkey_load_ecdh(botan_privkey_t* key, const botan_mp_t scalar, const char* curve_name) {
 #if defined(BOTAN_HAS_ECDH)
+   if(key == nullptr || curve_name == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+   *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       std::unique_ptr<Botan::ECDH_PrivateKey> p_key;
       int rc = privkey_load_ec(p_key, safe_get(scalar), curve_name);
@@ -597,10 +649,7 @@ int botan_privkey_load_ecdh(botan_privkey_t* key, const botan_mp_t scalar, const
 
 int botan_pubkey_sm2_compute_za(
    uint8_t out[], size_t* out_len, const char* ident, const char* hash_algo, const botan_pubkey_t key) {
-   if(out == nullptr || out_len == nullptr) {
-      return BOTAN_FFI_ERROR_NULL_POINTER;
-   }
-   if(ident == nullptr || hash_algo == nullptr || key == nullptr) {
+   if(out == nullptr || out_len == nullptr || ident == nullptr || hash_algo == nullptr || key == nullptr) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
 
@@ -620,8 +669,9 @@ int botan_pubkey_sm2_compute_za(
       const std::string ident_str(ident);
       std::unique_ptr<Botan::HashFunction> hash = Botan::HashFunction::create_or_throw(hash_algo);
 
-      const std::vector<uint8_t> za =
-         Botan::sm2_compute_za(*hash, ident_str, ec_key->domain(), ec_key->_public_ec_point());
+      const auto& pt = ec_key->_public_ec_point();
+
+      const auto za = Botan::sm2_compute_za(*hash, ident_str, ec_key->domain(), pt);
 
       return write_vec_output(out, out_len, za);
    });
@@ -635,6 +685,11 @@ int botan_pubkey_load_sm2(botan_pubkey_t* key,
                           const botan_mp_t public_y,
                           const char* curve_name) {
 #if defined(BOTAN_HAS_SM2)
+   if(key == nullptr || curve_name == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+   *key = nullptr;
+
    return ffi_guard_thunk(__func__, [=]() -> int {
       std::unique_ptr<Botan::SM2_PublicKey> p_key;
       if(!pubkey_load_ec(p_key, safe_get(public_x), safe_get(public_y), curve_name)) {
@@ -651,6 +706,11 @@ int botan_pubkey_load_sm2(botan_pubkey_t* key,
 
 int botan_privkey_load_sm2(botan_privkey_t* key, const botan_mp_t scalar, const char* curve_name) {
 #if defined(BOTAN_HAS_SM2)
+   if(key == nullptr || curve_name == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+   *key = nullptr;
+
    return ffi_guard_thunk(__func__, [=]() -> int {
       std::unique_ptr<Botan::SM2_PrivateKey> p_key;
       int rc = privkey_load_ec(p_key, safe_get(scalar), curve_name);
@@ -681,10 +741,13 @@ int botan_privkey_load_sm2_enc(botan_privkey_t* key, const botan_mp_t scalar, co
 
 int botan_privkey_load_ed25519(botan_privkey_t* key, const uint8_t privkey[32]) {
 #if defined(BOTAN_HAS_ED25519)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
-      const Botan::secure_vector<uint8_t> privkey_vec(privkey, privkey + 32);
-      auto ed25519 = std::make_unique<Botan::Ed25519_PrivateKey>(privkey_vec);
+      auto ed25519 =
+         std::make_unique<Botan::Ed25519_PrivateKey>(Botan::Ed25519_PrivateKey::from_seed(std::span{privkey, 32}));
       *key = new botan_privkey_struct(std::move(ed25519));
       return BOTAN_FFI_SUCCESS;
    });
@@ -696,6 +759,9 @@ int botan_privkey_load_ed25519(botan_privkey_t* key, const uint8_t privkey[32]) 
 
 int botan_pubkey_load_ed25519(botan_pubkey_t* key, const uint8_t pubkey[32]) {
 #if defined(BOTAN_HAS_ED25519)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       const std::vector<uint8_t> pubkey_vec(pubkey, pubkey + 32);
@@ -753,6 +819,9 @@ int botan_pubkey_ed25519_get_pubkey(botan_pubkey_t key, uint8_t output[32]) {
 
 int botan_privkey_load_ed448(botan_privkey_t* key, const uint8_t privkey[57]) {
 #if defined(BOTAN_HAS_ED448)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       auto ed448 = std::make_unique<Botan::Ed448_PrivateKey>(std::span(privkey, 57));
@@ -767,6 +836,9 @@ int botan_privkey_load_ed448(botan_privkey_t* key, const uint8_t privkey[57]) {
 
 int botan_pubkey_load_ed448(botan_pubkey_t* key, const uint8_t pubkey[57]) {
 #if defined(BOTAN_HAS_ED448)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
       auto ed448 = std::make_unique<Botan::Ed448_PublicKey>(std::span(pubkey, 57));
@@ -817,10 +889,12 @@ int botan_pubkey_ed448_get_pubkey(botan_pubkey_t key, uint8_t output[57]) {
 
 int botan_privkey_load_x25519(botan_privkey_t* key, const uint8_t privkey[32]) {
 #if defined(BOTAN_HAS_X25519)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
-      const Botan::secure_vector<uint8_t> privkey_vec(privkey, privkey + 32);
-      auto x25519 = std::make_unique<Botan::X25519_PrivateKey>(privkey_vec);
+      auto x25519 = std::make_unique<Botan::X25519_PrivateKey>(std::span{privkey, 32});
       *key = new botan_privkey_struct(std::move(x25519));
       return BOTAN_FFI_SUCCESS;
    });
@@ -832,10 +906,12 @@ int botan_privkey_load_x25519(botan_privkey_t* key, const uint8_t privkey[32]) {
 
 int botan_pubkey_load_x25519(botan_pubkey_t* key, const uint8_t pubkey[32]) {
 #if defined(BOTAN_HAS_X25519)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
-      const std::vector<uint8_t> pubkey_vec(pubkey, pubkey + 32);
-      auto x25519 = std::make_unique<Botan::X25519_PublicKey>(pubkey_vec);
+      auto x25519 = std::make_unique<Botan::X25519_PublicKey>(std::span{pubkey, 32});
       *key = new botan_pubkey_struct(std::move(x25519));
       return BOTAN_FFI_SUCCESS;
    });
@@ -869,11 +945,7 @@ int botan_pubkey_x25519_get_pubkey(botan_pubkey_t key, uint8_t output[32]) {
 #if defined(BOTAN_HAS_X25519)
    return BOTAN_FFI_VISIT(key, [=](const auto& k) {
       if(auto x25519 = dynamic_cast<const Botan::X25519_PublicKey*>(&k)) {
-         const std::vector<uint8_t>& x25519_key = x25519->public_value();
-         if(x25519_key.size() != 32) {
-            return BOTAN_FFI_ERROR_INSUFFICIENT_BUFFER_SPACE;
-         }
-         Botan::copy_mem(output, x25519_key.data(), x25519_key.size());
+         Botan::copy_mem(std::span{output, 32}, x25519->raw_public_key_bits());
          return BOTAN_FFI_SUCCESS;
       } else {
          return BOTAN_FFI_ERROR_BAD_PARAMETER;
@@ -889,9 +961,12 @@ int botan_pubkey_x25519_get_pubkey(botan_pubkey_t key, uint8_t output[32]) {
 
 int botan_privkey_load_x448(botan_privkey_t* key, const uint8_t privkey[56]) {
 #if defined(BOTAN_HAS_X448)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
-      auto x448 = std::make_unique<Botan::X448_PrivateKey>(std::span(privkey, 56));
+      auto x448 = std::make_unique<Botan::X448_PrivateKey>(std::span{privkey, 56});
       *key = new botan_privkey_struct(std::move(x448));
       return BOTAN_FFI_SUCCESS;
    });
@@ -903,9 +978,12 @@ int botan_privkey_load_x448(botan_privkey_t* key, const uint8_t privkey[56]) {
 
 int botan_pubkey_load_x448(botan_pubkey_t* key, const uint8_t pubkey[56]) {
 #if defined(BOTAN_HAS_X448)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
    return ffi_guard_thunk(__func__, [=]() -> int {
-      auto x448 = std::make_unique<Botan::X448_PublicKey>(std::span(pubkey, 56));
+      auto x448 = std::make_unique<Botan::X448_PublicKey>(std::span{pubkey, 56});
       *key = new botan_pubkey_struct(std::move(x448));
       return BOTAN_FFI_SUCCESS;
    });
@@ -920,7 +998,7 @@ int botan_privkey_x448_get_privkey(botan_privkey_t key, uint8_t output[56]) {
    return BOTAN_FFI_VISIT(key, [=](const auto& k) {
       if(auto x448 = dynamic_cast<const Botan::X448_PrivateKey*>(&k)) {
          const auto x448_key = x448->raw_private_key_bits();
-         Botan::copy_mem(std::span(output, 56), x448_key);
+         Botan::copy_mem(std::span{output, 56}, x448_key);
          return BOTAN_FFI_SUCCESS;
       } else {
          return BOTAN_FFI_ERROR_BAD_PARAMETER;
@@ -936,8 +1014,7 @@ int botan_pubkey_x448_get_pubkey(botan_pubkey_t key, uint8_t output[56]) {
 #if defined(BOTAN_HAS_X448)
    return BOTAN_FFI_VISIT(key, [=](const auto& k) {
       if(auto x448 = dynamic_cast<const Botan::X448_PublicKey*>(&k)) {
-         const std::vector<uint8_t>& x448_key = x448->public_value();
-         Botan::copy_mem(std::span(output, 56), x448_key);
+         Botan::copy_mem(std::span{output, 56}, x448->raw_public_key_bits());
          return BOTAN_FFI_SUCCESS;
       } else {
          return BOTAN_FFI_ERROR_BAD_PARAMETER;
@@ -955,32 +1032,31 @@ int botan_pubkey_x448_get_pubkey(botan_pubkey_t key, uint8_t output[56]) {
 
 int botan_privkey_load_kyber(botan_privkey_t* key, const uint8_t privkey[], size_t key_len) {
 #if defined(BOTAN_HAS_KYBER)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
-   switch(key_len) {
-      case 1632:
-         return ffi_guard_thunk(__func__, [=]() -> int {
-            const Botan::secure_vector<uint8_t> privkey_vec(privkey, privkey + 1632);
-            auto kyber512 = std::make_unique<Botan::Kyber_PrivateKey>(privkey_vec, Botan::KyberMode::Kyber512_R3);
-            *key = new botan_privkey_struct(std::move(kyber512));
-            return BOTAN_FFI_SUCCESS;
-         });
-      case 2400:
-         return ffi_guard_thunk(__func__, [=]() -> int {
-            const Botan::secure_vector<uint8_t> privkey_vec(privkey, privkey + 2400);
-            auto kyber768 = std::make_unique<Botan::Kyber_PrivateKey>(privkey_vec, Botan::KyberMode::Kyber768_R3);
-            *key = new botan_privkey_struct(std::move(kyber768));
-            return BOTAN_FFI_SUCCESS;
-         });
-      case 3168:
-         return ffi_guard_thunk(__func__, [=]() -> int {
-            const Botan::secure_vector<uint8_t> privkey_vec(privkey, privkey + 3168);
-            auto kyber1024 = std::make_unique<Botan::Kyber_PrivateKey>(privkey_vec, Botan::KyberMode::Kyber1024_R3);
-            *key = new botan_privkey_struct(std::move(kyber1024));
-            return BOTAN_FFI_SUCCESS;
-         });
-      default:
-         BOTAN_UNUSED(key, privkey, key_len);
-         return BOTAN_FFI_ERROR_BAD_PARAMETER;
+
+   const auto mode = [](size_t len) -> std::optional<Botan::KyberMode> {
+      if(len == 1632) {
+         return Botan::KyberMode::Kyber512_R3;
+      } else if(len == 2400) {
+         return Botan::KyberMode::Kyber768_R3;
+      } else if(len == 3168) {
+         return Botan::KyberMode::Kyber1024_R3;
+      } else {
+         return {};
+      }
+   }(key_len);
+
+   if(mode.has_value()) {
+      return ffi_guard_thunk(__func__, [=]() -> int {
+         auto kyber = std::make_unique<Botan::Kyber_PrivateKey>(std::span{privkey, key_len}, *mode);
+         *key = new botan_privkey_struct(std::move(kyber));
+         return BOTAN_FFI_SUCCESS;
+      });
+   } else {
+      return BOTAN_FFI_ERROR_BAD_PARAMETER;
    }
 #else
    BOTAN_UNUSED(key, key_len, privkey);
@@ -990,32 +1066,29 @@ int botan_privkey_load_kyber(botan_privkey_t* key, const uint8_t privkey[], size
 
 int botan_pubkey_load_kyber(botan_pubkey_t* key, const uint8_t pubkey[], size_t key_len) {
 #if defined(BOTAN_HAS_KYBER)
+   if(key == nullptr) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
    *key = nullptr;
-   switch(key_len) {
-      case 800:
-         return ffi_guard_thunk(__func__, [=]() -> int {
-            const std::vector<uint8_t> pubkey_vec(pubkey, pubkey + 800);
-            auto kyber512 = std::make_unique<Botan::Kyber_PublicKey>(pubkey_vec, Botan::KyberMode::Kyber512_R3);
-            *key = new botan_pubkey_struct(std::move(kyber512));
-            return BOTAN_FFI_SUCCESS;
-         });
-      case 1184:
-         return ffi_guard_thunk(__func__, [=]() -> int {
-            const std::vector<uint8_t> pubkey_vec(pubkey, pubkey + 1184);
-            auto kyber768 = std::make_unique<Botan::Kyber_PublicKey>(pubkey_vec, Botan::KyberMode::Kyber768_R3);
-            *key = new botan_pubkey_struct(std::move(kyber768));
-            return BOTAN_FFI_SUCCESS;
-         });
-      case 1568:
-         return ffi_guard_thunk(__func__, [=]() -> int {
-            const std::vector<uint8_t> pubkey_vec(pubkey, pubkey + 1568);
-            auto kyber1024 = std::make_unique<Botan::Kyber_PublicKey>(pubkey_vec, Botan::KyberMode::Kyber1024_R3);
-            *key = new botan_pubkey_struct(std::move(kyber1024));
-            return BOTAN_FFI_SUCCESS;
-         });
-      default:
-         BOTAN_UNUSED(key, pubkey, key_len);
-         return BOTAN_FFI_ERROR_BAD_PARAMETER;
+
+   const auto mode = [](size_t len) -> std::optional<Botan::KyberMode> {
+      if(len == 800) {
+         return Botan::KyberMode::Kyber512_R3;
+      } else if(len == 1184) {
+         return Botan::KyberMode::Kyber768_R3;
+      } else if(len == 1568) {
+         return Botan::KyberMode::Kyber1024_R3;
+      } else {
+         return {};
+      }
+   }(key_len);
+
+   if(mode.has_value()) {
+      auto kyber = std::make_unique<Botan::Kyber_PublicKey>(std::span{pubkey, key_len}, *mode);
+      *key = new botan_pubkey_struct(std::move(kyber));
+      return BOTAN_FFI_SUCCESS;
+   } else {
+      return BOTAN_FFI_ERROR_BAD_PARAMETER;
    }
 #else
    BOTAN_UNUSED(key, pubkey, key_len);
