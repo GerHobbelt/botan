@@ -12,6 +12,9 @@ Version 3.8.0, Not Yet Released
   #4627 #4632 #4634 #4686 #4687 #4688 #4689 #4690 #4692 #4695 #4703 #4706 #4708
   #4710 #4711 #4746 #4794)
 
+* Add support for extended private keys in ML-KEM to handle certain implementations
+  which do not use the seed encoding. (GH #4817)
+
 * Add support for SHA-512 instructions added in upcoming Intel processors (GH #4766)
 
 * Add support for SM4 instructions added in upcoming Intel processors (GH #4768)
@@ -21,7 +24,11 @@ Version 3.8.0, Not Yet Released
 
 * Add SHA-256 and SHA-512 implementations using AVX2/BMI2 (GH #4818 #4821)
 
+* Add SHA-512 implementation using AVX-512/BMI2 (GH #4842 #4849)
+
 * Add SHA-256 implementation using SSSE3 or NEON for message expansion (GH #4819)
+
+* The default TLS policy now prefers AES/GCM over ChaCha20Poly1305 (GH #4843)
 
 * Add support for TLS 1.3 post-quantum KEM secp384r1/ML-KEM-1024 (GH #4752)
 
@@ -45,7 +52,8 @@ Version 3.8.0, Not Yet Released
 * Add an FFI example which also works as a test in CI that prevents accidentally
   making changes to ``ffi.h`` or ``build.h`` that make them incompatible with C. (GH #4640)
 
-* Add new FFI functions regarding stateful private keys (GH #4700)
+* Add new FFI functions regarding stateful private keys (GH #4700), OIDS (GH #4816),
+  and EC_Group (GH #4834)
 
 * Add missing checks for null pointer arguments in FFI (#4704)
 
@@ -91,14 +99,21 @@ Version 3.8.0, Not Yet Released
 
 * Add a new cleaner interface for handling ECIES flags (GH #4691)
 
+* Reduce use of heap in GCM/GMAC (GH #4826) and hex/base64 (GH #4832)
+
+* New faster Barrett reduction implementation (GH #4835)
+
 * Internal RSA signature padding cleanups (GH #4635)
 
 * Cleanups to the implementations of SHA-1 and SHA-256 using SHA-NI (GH #4773 #4774)
 
-* Cleanups to reduce code size where possible (GH #4775 #4777 #4781)
+* Cleanups to reduce code size where possible (GH #4775 #4777 #4781 #4825)
 
 * Fix a bug that caused the tests to skip testing AES-NI if AES-VAES was supported.
   (GH #4649)
+
+* Fix issues with CMake integration when built in Debian-style multiarch setups.
+  (GH #4839)
 
 * Now even for purely static library builds, ``-fPIC`` is used to compile the
   library objects. This allows linking position independent executables (PIE)

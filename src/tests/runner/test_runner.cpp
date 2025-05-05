@@ -117,9 +117,9 @@ std::vector<Test::Result> run_a_test(const std::string& test_name) {
    std::vector<Test::Result> results;
 
    try {
-#if defined(BOTAN_HAS_CPUID)
-      if(test_name == "simd_32" && Botan::CPUID::has_simd_4x32() == false) {
-         results.push_back(Test::Result::Note(test_name, "SIMD not available on this platform"));
+#if defined(BOTAN_HAS_CPUID) && defined(BOTAN_HAS_SIMD_4X32)
+      if(test_name == "simd_4x32" && Botan::CPUID::has(Botan::CPUID::Feature::SIMD_4X32) == false) {
+         results.push_back(Test::Result::Note(test_name, "SIMD 4x32 not available on this platform"));
          return results;
       }
 #endif
@@ -164,7 +164,7 @@ bool Test_Runner::run_tests_multithreaded(const std::vector<std::string>& tests_
    Botan::Thread_Pool pool(test_threads);
    Botan::RWLock rwlock;
 
-   std::vector<std::future<std::vector<Test::Result>>> m_fut_results;
+   std::vector<std::future<std::vector<Test::Result>>> fut_results;
 
    auto run_test_exclusive = [&](const std::string& test_name) {
       std::unique_lock lk(rwlock);
@@ -178,15 +178,18 @@ bool Test_Runner::run_tests_multithreaded(const std::vector<std::string>& tests_
 
    for(const auto& test_name : tests_to_run) {
       if(Test::test_needs_serialization(test_name)) {
-         m_fut_results.push_back(pool.run(run_test_exclusive, test_name));
+         fut_results.push_back(pool.run(run_test_exclusive, test_name));
       } else {
-         m_fut_results.push_back(pool.run(run_test_shared, test_name));
+         fut_results.push_back(pool.run(run_test_shared, test_name));
       }
    }
 
    bool passed = true;
-   for(size_t i = 0; i != m_fut_results.size(); ++i) {
-      const auto results = m_fut_results[i].get();
+   for(size_t i = 0; i != fut_results.size(); ++i) {
+      for(auto& reporter : m_reporters) {
+         reporter->waiting_for_next_results(tests_to_run[i]);
+      }
+      const auto results = fut_results[i].get();
       for(auto& reporter : m_reporters) {
          reporter->record(tests_to_run[i], results);
       }
@@ -202,6 +205,9 @@ bool Test_Runner::run_tests_multithreaded(const std::vector<std::string>& tests_
 bool Test_Runner::run_tests(const std::vector<std::string>& tests_to_run) {
    bool passed = true;
    for(const auto& test_name : tests_to_run) {
+      for(auto& reporter : m_reporters) {
+         reporter->waiting_for_next_results(test_name);
+      }
       const auto results = run_a_test(test_name);
 
       for(auto& reporter : m_reporters) {
