@@ -11,6 +11,7 @@
 #include <botan/exceptn.h>
 #include <botan/mem_ops.h>
 #include <botan/internal/fmt.h>
+#include <botan/internal/mem_utils.h>
 #include <botan/internal/time_utils.h>
 #include <algorithm>
 
@@ -35,7 +36,7 @@ void pgp_s2k(HashFunction& hash,
       copy_mem(input_buf.data(), salt, salt_len);
    }
    if(password_size > 0) {
-      copy_mem(&input_buf[salt_len], cast_char_ptr_to_uint8(password), password_size);
+      copy_mem(std::span(input_buf).subspan(salt_len), as_span_of_bytes(password, password_size));
    }
 
    secure_vector<uint8_t> hash_buf(hash.output_length());
@@ -51,7 +52,7 @@ void pgp_s2k(HashFunction& hash,
       hash.update(zero_padding);
 
       // The input is always fully processed even if iterations is very small
-      if(input_buf.empty() == false) {
+      if(!input_buf.empty()) {
          size_t left = std::max(iterations, input_buf.size());
          while(left > 0) {
             const size_t input_to_take = std::min(left, input_buf.size());

@@ -455,7 +455,7 @@ std::string Test::Result::result_string() const {
       report << " in " << format_time(m_ns_taken);
    }
 
-   if(tests_failed()) {
+   if(tests_failed() > 0) {
       report << " " << tests_failed() << " FAILED";
    } else {
       report << " all ok";
@@ -1140,7 +1140,8 @@ bool Text_Based_Test::skip_this_test(const std::string& /*header*/, const VarMap
 std::vector<Test::Result> Text_Based_Test::run() {
    std::vector<Test::Result> results;
 
-   std::string header, header_or_name = m_data_src;
+   std::string header;
+   std::string header_or_name = m_data_src;
    VarMap vars;
    size_t test_cnt = 0;
 

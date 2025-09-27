@@ -40,7 +40,7 @@ BigInt sqrt_modulo_prime(const BigInt& a, const BigInt& p) {
    }
 
    auto mod_p = Barrett_Reduction::for_public_modulus(p);
-   auto monty_p = std::make_shared<Montgomery_Params>(p, mod_p);
+   const Montgomery_Params monty_p(p, mod_p);
 
    // If p == 3 (mod 4) there is a simple solution
    if(p % 4 == 3) {
@@ -218,13 +218,14 @@ BigInt gcd(const BigInt& a, const BigInt& b) {
    // Note however, that `ct_cond_assign()` will invalidate the 'sig_words'
    // cache, which _does not_ shrink the capacity of the underlying buffer.
    auto tmp = BigInt::with_capacity(sz);
+   secure_vector<word> ws(sz * 2);
    size_t factors_of_two = 0;
    for(size_t i = 0; i != loop_cnt; ++i) {
       auto both_odd = CT::Mask<word>::expand_bool(u.is_odd()) & CT::Mask<word>::expand_bool(v.is_odd());
 
       // Subtract the smaller from the larger if both are odd
-      auto u_gt_v = CT::Mask<word>::expand(bigint_cmp(u._data(), u.size(), v._data(), v.size()) > 0);
-      bigint_sub_abs(tmp.mutable_data(), u._data(), sz, v._data(), sz);
+      auto u_gt_v = CT::Mask<word>::expand_bool(bigint_cmp(u._data(), u.size(), v._data(), v.size()) > 0);
+      bigint_sub_abs(tmp.mutable_data(), u._data(), v._data(), sz, ws.data());
       u.ct_cond_assign((u_gt_v & both_odd).as_bool(), tmp);
       v.ct_cond_assign((~u_gt_v & both_odd).as_bool(), tmp);
 
@@ -296,7 +297,7 @@ BigInt power_mod(const BigInt& base, const BigInt& exp, const BigInt& mod) {
    const size_t exp_bits = exp.bits();
 
    if(mod.is_odd()) {
-      auto monty_params = std::make_shared<Montgomery_Params>(mod, reduce_mod);
+      const Montgomery_Params monty_params(mod, reduce_mod);
       return monty_exp(monty_params, ct_modulo(base, mod), exp, exp_bits).value();
    }
 
@@ -372,7 +373,7 @@ bool is_prime(const BigInt& n, RandomNumberGenerator& rng, size_t prob, bool is_
    if(rng.is_seeded()) {
       const size_t t = miller_rabin_test_iterations(n_bits, prob, is_random);
 
-      if(is_miller_rabin_probable_prime(n, mod_n, rng, t) == false) {
+      if(!is_miller_rabin_probable_prime(n, mod_n, rng, t)) {
          return false;
       }
 

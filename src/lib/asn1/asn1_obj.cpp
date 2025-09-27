@@ -9,8 +9,8 @@
 
 #include <botan/data_src.h>
 #include <botan/der_enc.h>
-#include <botan/mem_ops.h>
 #include <botan/internal/fmt.h>
+#include <botan/internal/mem_utils.h>
 #include <botan/internal/stl_util.h>
 #include <sstream>
 
@@ -27,7 +27,7 @@ std::vector<uint8_t> ASN1_Object::BER_encode() const {
 * Check a type invariant on BER data
 */
 void BER_Object::assert_is_a(ASN1_Type expected_type_tag, ASN1_Class expected_class_tag, std::string_view descr) const {
-   if(this->is_a(expected_type_tag, expected_class_tag) == false) {
+   if(!this->is_a(expected_type_tag, expected_class_tag)) {
       std::stringstream msg;
 
       msg << "Tag mismatch when decoding " << descr << " got ";
@@ -183,7 +183,7 @@ std::vector<uint8_t> put_in_sequence(const uint8_t bits[], size_t len) {
 * Convert a BER object into a string object
 */
 std::string to_string(const BER_Object& obj) {
-   return std::string(cast_uint8_ptr_to_char(obj.bits()), obj.length());
+   return bytes_to_string(obj.data());
 }
 
 /*
@@ -197,10 +197,7 @@ bool maybe_BER(DataSource& source) {
    }
 
    const auto cons_seq = static_cast<uint8_t>(ASN1_Class::Constructed) | static_cast<uint8_t>(ASN1_Type::Sequence);
-   if(first_u8 == cons_seq) {
-      return true;
-   }
-   return false;
+   return first_u8 == cons_seq;
 }
 
 }  // namespace ASN1

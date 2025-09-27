@@ -20,6 +20,8 @@
 
 namespace Botan {
 
+// NOLINTBEGIN(*-implicit-bool-conversion)
+
 namespace {
 
 gf2m generate_gf2m_mask(gf2m a) {
@@ -194,7 +196,8 @@ gf2m polyn_gf2m::eval(gf2m a) {
 
 // p will contain it's remainder modulo g
 void polyn_gf2m::remainder(polyn_gf2m& p, const polyn_gf2m& g) {
-   int i = 0, j = 0;
+   int i = 0;
+   int j = 0;
    std::shared_ptr<GF2m_Field> m_sp_field = g.m_sp_field;
    int d = p.get_degree() - g.get_degree();
    if(d >= 0) {
@@ -386,7 +389,8 @@ std::pair<polyn_gf2m, polyn_gf2m> polyn_gf2m::eea_with_coefficients(const polyn_
    dr = r1.get_degree();
    int delta = r0.get_degree() - dr;
 
-   int i = 0, j = 0;
+   int i = 0;
+   int j = 0;
    while(dr >= break_deg) {
       for(j = delta; j >= 0; --j) {
          gf2m a = m_sp_field->gf_div(r0[dr + j], r1[dr]);
@@ -410,7 +414,8 @@ std::pair<polyn_gf2m, polyn_gf2m> polyn_gf2m::eea_with_coefficients(const polyn_
          * */
 
          volatile gf2m fake_elem = 0x01;
-         volatile gf2m cond1 = 0, cond2 = 0;
+         volatile gf2m cond1 = 0;
+         volatile gf2m cond2 = 0;
          int trgt_deg = r1.get_degree() - 1;
          r0.calc_degree_secure();
          u0.calc_degree_secure();
@@ -558,7 +563,8 @@ void polyn_gf2m::poly_shiftmod(const polyn_gf2m& g) {
 }
 
 std::vector<polyn_gf2m> polyn_gf2m::sqrt_mod_init(const polyn_gf2m& g) {
-   uint32_t i = 0, t = 0;
+   uint32_t i = 0;
+   uint32_t t = 0;
    uint32_t nb_polyn_sqrt_mat = 0;
    std::shared_ptr<GF2m_Field> m_sp_field = g.m_sp_field;
    std::vector<polyn_gf2m> result;
@@ -598,7 +604,9 @@ std::vector<polyn_gf2m> polyn_gf2m::sqrt_mod_init(const polyn_gf2m& g) {
 }
 
 std::vector<polyn_gf2m> syndrome_init(const polyn_gf2m& generator, const std::vector<gf2m>& support, int n) {
-   int i = 0, j = 0, t = 0;
+   int i = 0;
+   int j = 0;
+   int t = 0;
    gf2m a = 0;
 
    std::shared_ptr<GF2m_Field> m_sp_field = generator.get_sp_field();
@@ -661,10 +669,9 @@ void polyn_gf2m::swap(polyn_gf2m& other) noexcept {
 }
 
 bool polyn_gf2m::operator==(const polyn_gf2m& other) const {
-   if(m_deg != other.m_deg || m_coeff != other.m_coeff) {
-      return false;
-   }
-   return true;
+   return m_deg == other.m_deg && m_coeff == other.m_coeff;
 }
+
+// NOLINTEND(*-implicit-bool-conversion)
 
 }  // namespace Botan

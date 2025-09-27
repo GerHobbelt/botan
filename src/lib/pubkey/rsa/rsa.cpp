@@ -14,7 +14,6 @@
 #include <botan/internal/barrett.h>
 #include <botan/internal/blinding.h>
 #include <botan/internal/divide.h>
-#include <botan/internal/emsa.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/keypair.h>
 #include <botan/internal/mod_inv.h>
@@ -23,6 +22,7 @@
 #include <botan/internal/mp_core.h>
 #include <botan/internal/parsing.h>
 #include <botan/internal/pk_ops_impl.h>
+#include <botan/internal/sig_padding.h>
 #include <botan/internal/target_info.h>
 #include <botan/internal/workfactor.h>
 
@@ -38,7 +38,7 @@ class RSA_Public_Data final {
             m_n(std::move(n)),
             m_e(std::move(e)),
             m_mod_n(Barrett_Reduction::for_public_modulus(m_n)),
-            m_monty_n(std::make_shared<Montgomery_Params>(m_n, m_mod_n)),
+            m_monty_n(m_n, m_mod_n),
             m_public_modulus_bits(m_n.bits()),
             m_public_modulus_bytes(m_n.bytes()) {}
 
@@ -56,7 +56,7 @@ class RSA_Public_Data final {
 
       size_t public_modulus_bytes() const { return m_public_modulus_bytes; }
 
-      const std::shared_ptr<const Montgomery_Params>& monty_n() const { return m_monty_n; }
+      const Montgomery_Params& monty_n() const { return m_monty_n; }
 
       const Barrett_Reduction& reducer_mod_n() const { return m_mod_n; }
 
@@ -64,7 +64,7 @@ class RSA_Public_Data final {
       BigInt m_n;
       BigInt m_e;
       Barrett_Reduction m_mod_n;
-      std::shared_ptr<const Montgomery_Params> m_monty_n;
+      const Montgomery_Params m_monty_n;
       size_t m_public_modulus_bits;
       size_t m_public_modulus_bytes;
 };
@@ -78,8 +78,8 @@ class RSA_Private_Data final {
             m_d1(std::move(d1)),
             m_d2(std::move(d2)),
             m_c(std::move(c)),
-            m_monty_p(std::make_shared<Montgomery_Params>(m_p)),
-            m_monty_q(std::make_shared<Montgomery_Params>(m_q)),
+            m_monty_p(m_p),
+            m_monty_q(m_q),
             m_c_monty(m_monty_p, m_c),
             m_p_bits(m_p.bits()),
             m_q_bits(m_q.bits()) {}
@@ -98,9 +98,9 @@ class RSA_Private_Data final {
 
       const Montgomery_Int& get_c_monty() const { return m_c_monty; }
 
-      const std::shared_ptr<const Montgomery_Params>& monty_p() const { return m_monty_p; }
+      const Montgomery_Params& monty_p() const { return m_monty_p; }
 
-      const std::shared_ptr<const Montgomery_Params>& monty_q() const { return m_monty_q; }
+      const Montgomery_Params& monty_q() const { return m_monty_q; }
 
       size_t p_bits() const { return m_p_bits; }
 
@@ -116,8 +116,8 @@ class RSA_Private_Data final {
       BigInt m_d2;
       BigInt m_c;
 
-      std::shared_ptr<const Montgomery_Params> m_monty_p;
-      std::shared_ptr<const Montgomery_Params> m_monty_q;
+      const Montgomery_Params m_monty_p;
+      const Montgomery_Params m_monty_q;
       Montgomery_Int m_c_monty;
       size_t m_p_bits;
       size_t m_q_bits;
@@ -157,7 +157,8 @@ void RSA_PublicKey::init(BigInt&& n, BigInt&& e) {
 }
 
 RSA_PublicKey::RSA_PublicKey(const AlgorithmIdentifier& /*unused*/, std::span<const uint8_t> key_bits) {
-   BigInt n, e;
+   BigInt n;
+   BigInt e;
    BER_Decoder(key_bits).start_sequence().decode(n).decode(e).end_cons();
 
    init(std::move(n), std::move(e));
@@ -258,7 +259,14 @@ void RSA_PrivateKey::init(BigInt&& d, BigInt&& p, BigInt&& q, BigInt&& d1, BigIn
 }
 
 RSA_PrivateKey::RSA_PrivateKey(const AlgorithmIdentifier& /*unused*/, std::span<const uint8_t> key_bits) {
-   BigInt n, e, d, p, q, d1, d2, c;
+   BigInt n;
+   BigInt e;
+   BigInt d;
+   BigInt p;
+   BigInt q;
+   BigInt d1;
+   BigInt d2;
+   BigInt c;
 
    BER_Decoder(key_bits)
       .start_sequence()
@@ -323,7 +331,9 @@ RSA_PrivateKey::RSA_PrivateKey(RandomNumberGenerator& rng, size_t bits, size_t e
    const size_t p_bits = (bits + 1) / 2;
    const size_t q_bits = bits - p_bits;
 
-   BigInt p, q, n;
+   BigInt p;
+   BigInt q;
+   BigInt n;
    BigInt e = BigInt::from_u64(exp);
 
    for(size_t attempt = 0;; ++attempt) {
@@ -477,7 +487,9 @@ BigInt crt_recombine(const Montgomery_Int& j1,
    * multiply by a precomputed c * R2, which would have the effect of both
    * multiplying by c and immediately converting from Montgomery to standard form.
    */
-   const Montgomery_Int h_monty = (j1 - j2_p) * c_monty;
+   secure_vector<word> ws(2 * p_words);
+
+   const Montgomery_Int h_monty = (j1 - j2_p).mul(c_monty, ws);
 
    const BigInt h = h_monty.value();
    // Montgomery_Int always returns values sized to the modulus
@@ -486,12 +498,11 @@ BigInt crt_recombine(const Montgomery_Int& j1,
 
    // Compute r = h * q
    secure_vector<word> r(2 * p_words);
-   secure_vector<word> ws(2 * p_words);
 
    bigint_mul(r.data(), r.size(), h._data(), h.size(), p_words, q._data(), q.size(), p_words, ws.data(), ws.size());
 
    // r += j2
-   const word carry = bigint_add2_nc(r.data(), n_words, j2._data(), p_words);
+   const word carry = bigint_add2(r.data(), n_words, j2._data(), p_words);
    BOTAN_ASSERT_NOMSG(carry == 0);  // should not be possible since it would imply r > the public modulus
 
    return BigInt::_from_words(r);
@@ -601,12 +612,12 @@ class RSA_Private_Operation {
 class RSA_Signature_Operation final : public PK_Ops::Signature,
                                       private RSA_Private_Operation {
    public:
-      void update(std::span<const uint8_t> msg) override { m_emsa->update(msg.data(), msg.size()); }
+      void update(std::span<const uint8_t> msg) override { m_padding->update(msg.data(), msg.size()); }
 
       std::vector<uint8_t> sign(RandomNumberGenerator& rng) override {
          const size_t max_input_bits = public_modulus_bits() - 1;
-         const auto msg = m_emsa->raw_data();
-         const auto padded = m_emsa->encoding_of(msg, max_input_bits, rng);
+         const auto msg = m_padding->raw_data();
+         const auto padded = m_padding->encoding_of(msg, max_input_bits, rng);
 
          std::vector<uint8_t> out(public_modulus_bytes());
          raw_op(out, padded);
@@ -617,30 +628,30 @@ class RSA_Signature_Operation final : public PK_Ops::Signature,
 
       AlgorithmIdentifier algorithm_identifier() const override;
 
-      std::string hash_function() const override { return m_emsa->hash_function(); }
+      std::string hash_function() const override { return m_padding->hash_function(); }
 
       RSA_Signature_Operation(const RSA_PrivateKey& rsa, std::string_view padding, RandomNumberGenerator& rng) :
-            RSA_Private_Operation(rsa, rng), m_emsa(EMSA::create_or_throw(padding)) {}
+            RSA_Private_Operation(rsa, rng), m_padding(SignaturePaddingScheme::create_or_throw(padding)) {}
 
    private:
-      std::unique_ptr<EMSA> m_emsa;
+      std::unique_ptr<SignaturePaddingScheme> m_padding;
 };
 
 AlgorithmIdentifier RSA_Signature_Operation::algorithm_identifier() const {
-   const std::string emsa_name = m_emsa->name();
+   const std::string padding_name = m_padding->name();
 
    try {
-      const std::string full_name = "RSA/" + emsa_name;
+      const std::string full_name = "RSA/" + padding_name;
       const OID oid = OID::from_string(full_name);
       return AlgorithmIdentifier(oid, AlgorithmIdentifier::USE_EMPTY_PARAM);
    } catch(Lookup_Error&) {}
 
-   if(emsa_name.starts_with("PSS(")) {
-      auto parameters = PSS_Params::from_emsa_name(m_emsa->name()).serialize();
+   if(padding_name.starts_with("PSS(")) {
+      auto parameters = PSS_Params::from_padding_name(m_padding->name()).serialize();
       return AlgorithmIdentifier("RSA/PSS", parameters);
    }
 
-   throw Invalid_Argument(fmt("Signatures using RSA/{} are not supported", emsa_name));
+   throw Invalid_Argument(fmt("Signatures using RSA/{} are not supported", padding_name));
 }
 
 class RSA_Decryption_Operation final : public PK_Ops::Decryption_with_EME,
@@ -718,18 +729,18 @@ class RSA_Encryption_Operation final : public PK_Ops::Encryption_with_EME,
 class RSA_Verify_Operation final : public PK_Ops::Verification,
                                    private RSA_Public_Operation {
    public:
-      void update(std::span<const uint8_t> msg) override { m_emsa->update(msg.data(), msg.size()); }
+      void update(std::span<const uint8_t> msg) override { m_padding->update(msg.data(), msg.size()); }
 
       bool is_valid_signature(std::span<const uint8_t> sig) override {
-         const auto msg = m_emsa->raw_data();
+         const auto msg = m_padding->raw_data();
          const auto message_repr = recover_message_repr(sig.data(), sig.size());
-         return m_emsa->verify(message_repr, msg, public_modulus_bits() - 1);
+         return m_padding->verify(message_repr, msg, public_modulus_bits() - 1);
       }
 
       RSA_Verify_Operation(const RSA_PublicKey& rsa, std::string_view padding) :
-            RSA_Public_Operation(rsa), m_emsa(EMSA::create_or_throw(padding)) {}
+            RSA_Public_Operation(rsa), m_padding(SignaturePaddingScheme::create_or_throw(padding)) {}
 
-      std::string hash_function() const override { return m_emsa->hash_function(); }
+      std::string hash_function() const override { return m_padding->hash_function(); }
 
    private:
       std::vector<uint8_t> recover_message_repr(const uint8_t input[], size_t input_len) {
@@ -740,7 +751,7 @@ class RSA_Verify_Operation final : public PK_Ops::Verification,
          return public_op(input_bn).serialize();
       }
 
-      std::unique_ptr<EMSA> m_emsa;
+      std::unique_ptr<SignaturePaddingScheme> m_padding;
 };
 
 class RSA_KEM_Encryption_Operation final : public PK_Ops::KEM_Encryption_with_KDF,

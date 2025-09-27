@@ -9,6 +9,7 @@
 
 #include <botan/mem_ops.h>
 #include <botan/internal/fmt.h>
+#include <botan/internal/mem_utils.h>
 #include <botan/internal/out_buf.h>
 #include <botan/internal/secqueue.h>
 #include <memory>
@@ -110,22 +111,26 @@ void Pipe::process_msg(const uint8_t input[], size_t length) {
    end_msg();
 }
 
+void Pipe::process_msg(std::span<const uint8_t> input) {
+   this->process_msg(input.data(), input.size());
+}
+
 /*
 * Process a full message at once
 */
 void Pipe::process_msg(const secure_vector<uint8_t>& input) {
-   process_msg(input.data(), input.size());
+   this->process_msg(std::span{input});
 }
 
 void Pipe::process_msg(const std::vector<uint8_t>& input) {
-   process_msg(input.data(), input.size());
+   this->process_msg(std::span{input});
 }
 
 /*
 * Process a full message at once
 */
 void Pipe::process_msg(std::string_view input) {
-   process_msg(cast_char_ptr_to_uint8(input.data()), input.length());
+   process_msg(as_span_of_bytes(input));
 }
 
 /*
@@ -189,11 +194,11 @@ void Pipe::find_endpoints(Filter* f) {
 * Remove the SecureQueues attached to the Filter
 */
 void Pipe::clear_endpoints(Filter* f) {
-   if(!f) {
+   if(f == nullptr) {
       return;
    }
    for(size_t j = 0; j != f->total_ports(); ++j) {
-      if(f->m_next[j] && dynamic_cast<SecureQueue*>(f->m_next[j])) {
+      if(f->m_next[j] != nullptr && dynamic_cast<SecureQueue*>(f->m_next[j]) != nullptr) {
          f->m_next[j] = nullptr;
       }
       clear_endpoints(f->m_next[j]);
@@ -228,10 +233,10 @@ void Pipe::prepend_filter(Filter* filter) {
 * Append a Filter to the Pipe
 */
 void Pipe::do_append(Filter* filter) {
-   if(!filter) {
+   if(filter == nullptr) {
       return;
    }
-   if(dynamic_cast<SecureQueue*>(filter)) {
+   if(dynamic_cast<SecureQueue*>(filter) != nullptr) {
       throw Invalid_Argument("Pipe::append: SecureQueue cannot be used");
    }
    if(filter->m_owned) {
@@ -244,7 +249,7 @@ void Pipe::do_append(Filter* filter) {
 
    filter->m_owned = true;
 
-   if(!m_pipe) {
+   if(m_pipe == nullptr) {
       m_pipe = filter;
    } else {
       m_pipe->attach(filter);
@@ -258,10 +263,10 @@ void Pipe::do_prepend(Filter* filter) {
    if(m_inside_msg) {
       throw Invalid_State("Cannot prepend to a Pipe while it is processing");
    }
-   if(!filter) {
+   if(filter == nullptr) {
       return;
    }
-   if(dynamic_cast<SecureQueue*>(filter)) {
+   if(dynamic_cast<SecureQueue*>(filter) != nullptr) {
       throw Invalid_Argument("Pipe::prepend: SecureQueue cannot be used");
    }
    if(filter->m_owned) {
@@ -270,7 +275,7 @@ void Pipe::do_prepend(Filter* filter) {
 
    filter->m_owned = true;
 
-   if(m_pipe) {
+   if(m_pipe != nullptr) {
       filter->attach(m_pipe);
    }
    m_pipe = filter;
@@ -284,7 +289,7 @@ void Pipe::pop() {
       throw Invalid_State("Cannot pop off a Pipe while it is processing");
    }
 
-   if(!m_pipe) {
+   if(m_pipe == nullptr) {
       return;
    }
 
@@ -294,9 +299,10 @@ void Pipe::pop() {
 
    size_t to_remove = m_pipe->owns() + 1;
 
-   while(to_remove--) {
+   while(to_remove > 0) {
       std::unique_ptr<Filter> to_destroy(m_pipe);
       m_pipe = m_pipe->m_next[0];
+      to_remove -= 1;
    }
 }
 

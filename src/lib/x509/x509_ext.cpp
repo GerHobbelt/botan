@@ -243,17 +243,16 @@ std::map<OID, std::pair<std::vector<uint8_t>, bool>> Extensions::extensions_raw(
 * Encode an Extensions list
 */
 void Extensions::encode_into(DER_Encoder& to_object) const {
-   for(const auto& ext_info : m_extension_info) {
-      const OID& oid = ext_info.first;
-      const bool should_encode = ext_info.second.obj().should_encode();
+   for(const auto& [oid, extn] : m_extension_info) {
+      const bool should_encode = extn.obj().should_encode();
 
       if(should_encode) {
-         const bool is_critical = ext_info.second.is_critical();
-         const std::vector<uint8_t>& ext_value = ext_info.second.bits();
+         const auto is_critical = extn.is_critical() ? std::optional<bool>{true} : std::nullopt;
+         const std::vector<uint8_t>& ext_value = extn.bits();
 
          to_object.start_sequence()
             .encode(oid)
-            .encode_optional(is_critical, false)
+            .encode_optional(is_critical)
             .encode(ext_value, ASN1_Type::OctetString)
             .end_cons();
       }
@@ -291,14 +290,27 @@ void Extensions::decode_from(BER_Decoder& from_source) {
 
 namespace Cert_Extension {
 
+Basic_Constraints::Basic_Constraints(bool is_ca, size_t path_length_constraint) :
+      Basic_Constraints(is_ca, is_ca ? std::optional<size_t>(path_length_constraint) : std::nullopt) {}
+
+Basic_Constraints::Basic_Constraints(bool is_ca, std::optional<size_t> path_length_constraint) :
+      m_is_ca(is_ca), m_path_length_constraint(path_length_constraint) {
+   if(!m_is_ca && m_path_length_constraint.has_value()) {
+      // RFC 5280 Sec 4.2.1.9 "CAs MUST NOT include the pathLenConstraint field unless the cA boolean is asserted"
+      throw Invalid_Argument(
+         "Basic_Constraints nonsensical to set a path length constraint for a non-CA basicConstraints");
+   }
+}
+
 /*
-* Checked accessor for the path_limit member
+* Checked accessor for the path_length_constraint member
 */
 size_t Basic_Constraints::get_path_limit() const {
-   if(!m_is_ca) {
+   if(m_is_ca) {
+      return m_path_length_constraint.value_or(NO_CERT_PATH_LIMIT);
+   } else {
       throw Invalid_State("Basic_Constraints::get_path_limit: Not a CA");
    }
-   return m_path_limit;
 }
 
 /*
@@ -306,10 +318,13 @@ size_t Basic_Constraints::get_path_limit() const {
 */
 std::vector<uint8_t> Basic_Constraints::encode_inner() const {
    std::vector<uint8_t> output;
-   DER_Encoder(output)
-      .start_sequence()
-      .encode_if(m_is_ca, DER_Encoder().encode(m_is_ca).encode_optional(m_path_limit, NO_CERT_PATH_LIMIT))
-      .end_cons();
+
+   if(m_is_ca) {
+      DER_Encoder(output).start_sequence().encode(m_is_ca).encode_optional(m_path_length_constraint).end_cons();
+   } else {
+      DER_Encoder(output).start_sequence().end_cons();
+   }
+
    return output;
 }
 
@@ -320,12 +335,8 @@ void Basic_Constraints::decode_inner(const std::vector<uint8_t>& in) {
    BER_Decoder(in)
       .start_sequence()
       .decode_optional(m_is_ca, ASN1_Type::Boolean, ASN1_Class::Universal, false)
-      .decode_optional(m_path_limit, ASN1_Type::Integer, ASN1_Class::Universal, NO_CERT_PATH_LIMIT)
+      .decode_optional(m_path_length_constraint, ASN1_Type::Integer, ASN1_Class::Universal)
       .end_cons();
-
-   if(m_is_ca == false) {
-      m_path_limit = 0;
-   }
 }
 
 /*
@@ -343,9 +354,9 @@ std::vector<uint8_t> Key_Usage::encode_inner() const {
    der.push_back(static_cast<uint8_t>(ASN1_Type::BitString));
    der.push_back(2 + ((unused_bits < 8) ? 1 : 0));
    der.push_back(unused_bits % 8);
-   der.push_back((constraint_bits >> 8) & 0xFF);
-   if(constraint_bits & 0xFF) {
-      der.push_back(constraint_bits & 0xFF);
+   der.push_back(static_cast<uint8_t>((constraint_bits >> 8) & 0xFF));
+   if((constraint_bits & 0xFF) != 0) {
+      der.push_back(static_cast<uint8_t>(constraint_bits & 0xFF));
    }
 
    return der;
@@ -1473,6 +1484,17 @@ std::vector<uint8_t> ASBlocks::encode_inner() const {
 
 void ASBlocks::decode_inner(const std::vector<uint8_t>& in) {
    BER_Decoder(in).decode(m_as_identifiers).verify_end();
+}
+
+ASBlocks::ASIdentifierChoice ASBlocks::add_new(const std::optional<ASIdentifierChoice>& old, asnum_t min, asnum_t max) {
+   std::vector<ASIdOrRange> range;
+   if(!old.has_value() || !old.value().ranges().has_value()) {
+      range = {ASIdOrRange(min, max)};
+   } else {
+      range = old.value().ranges().value();
+      range.push_back(ASIdOrRange(min, max));
+   }
+   return ASIdentifierChoice(range);
 }
 
 void ASBlocks::ASIdentifiers::encode_into(Botan::DER_Encoder& into) const {

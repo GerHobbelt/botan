@@ -116,7 +116,8 @@ size_t decode_length(DataSource* ber, size_t& field_size, size_t allow_indef) {
 * Find the EOC marker
 */
 size_t find_eoc(DataSource* ber, size_t allow_indef) {
-   secure_vector<uint8_t> buffer(DefaultBufferSize), data;
+   secure_vector<uint8_t> buffer(DefaultBufferSize);
+   secure_vector<uint8_t> data;
 
    while(true) {
       const size_t got = ber->peek(buffer.data(), buffer.size(), data.size());
@@ -468,7 +469,9 @@ BER_Decoder& BER_Decoder::decode(BigInt& out, ASN1_Type type_tag, ASN1_Class cla
       if(negative) {
          secure_vector<uint8_t> vec(obj.bits(), obj.bits() + obj.length());
          for(size_t i = obj.length(); i > 0; --i) {
-            if(vec[i - 1]--) {
+            const bool gt0 = (vec[i - 1] > 0);
+            vec[i - 1] -= 1;
+            if(gt0) {
                break;
             }
          }

@@ -20,12 +20,12 @@ namespace {
 
 namespace {
 
-bool caseless_cmp(char a, char b) {
+bool caseless_eq(char a, char b) {
    return (std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)));
 }
 
 bool is_space(char c) {
-   return std::isspace(static_cast<unsigned char>(c));
+   return c == ' ' || c == '\t';
 }
 
 }  // namespace
@@ -66,23 +66,29 @@ bool x500_name_cmp(std::string_view name1, std::string_view name2) {
          }
       }
 
-      if(!caseless_cmp(*p1, *p2)) {
+      if(!caseless_eq(*p1, *p2)) {
          return false;
       }
       ++p1;
       ++p2;
    }
 
+   // Accept/ignore trailing spaces
    while((p1 != name1.end()) && is_space(*p1)) {
       ++p1;
    }
+   if(p1 != name1.end()) {
+      return false;
+   }
+
    while((p2 != name2.end()) && is_space(*p2)) {
       ++p2;
    }
-
-   if((p1 != name1.end()) || (p2 != name2.end())) {
+   if(p2 != name2.end()) {
       return false;
    }
+
+   // accept:
    return true;
 }
 
@@ -437,9 +443,9 @@ std::istream& operator>>(std::istream& in, X509_DN& dn) {
       while(in.good()) {
          in >> c;
 
-         if(std::isspace(c) && key.empty()) {
+         if(is_space(c) && key.empty()) {
             continue;
-         } else if(!std::isspace(c)) {
+         } else if(!is_space(c)) {
             key.push_back(c);
             break;
          } else {
@@ -450,7 +456,7 @@ std::istream& operator>>(std::istream& in, X509_DN& dn) {
       while(in.good()) {
          in >> c;
 
-         if(!std::isspace(c) && c != '=') {
+         if(!is_space(c) && c != '=') {
             key.push_back(c);
          } else if(c == '=') {
             break;
@@ -463,7 +469,7 @@ std::istream& operator>>(std::istream& in, X509_DN& dn) {
       while(in.good()) {
          in >> c;
 
-         if(std::isspace(c)) {
+         if(is_space(c)) {
             if(!in_quotes && !val.empty()) {
                break;
             } else if(in_quotes) {

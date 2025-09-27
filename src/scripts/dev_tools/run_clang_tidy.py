@@ -38,19 +38,16 @@ enabled_checks = [
 # but currently are not
 disabled_needs_work = [
     '*-named-parameter',
-    'readability-redundant-member-init',
     'cppcoreguidelines-use-default-member-init',
-    'bugprone-unchecked-optional-access', # clang-tidy seems buggy (many false positives)
+    'bugprone-unchecked-optional-access',
     'bugprone-empty-catch',
     'cppcoreguidelines-avoid-const-or-ref-data-members',
     'misc-const-correctness', # pretty noisy
     'misc-include-cleaner',
-    'misc-misplaced-const',
     'modernize-pass-by-value',
     'modernize-use-ranges', # limited by compiler support currently
     'performance-avoid-endl',
     'readability-convert-member-functions-to-static',
-    'readability-implicit-bool-conversion',
     'readability-inconsistent-declaration-parameter-name', # should fix this, blocked by https://github.com/llvm/llvm-project/issues/60845
     'readability-simplify-boolean-expr', # sometimes ok
     'readability-static-accessed-through-instance',
@@ -59,7 +56,7 @@ disabled_needs_work = [
 # these we are probably not interested in ever being clang-tidy clean for
 disabled_not_interested = [
     '*-array-to-pointer-decay',
-    '*-avoid-c-arrays',
+    '*-avoid-c-arrays', # triggers also on foo(T x[], size_t len) decls
     '*-else-after-return',
     '*-function-size',
     '*-magic-numbers', # can't stop the magic
@@ -69,11 +66,8 @@ disabled_not_interested = [
     '*-use-emplace', # often less clear
     '*-deprecated-headers', # wrong for system headers like stdlib.h
     'cert-dcl21-cpp', # invalid, and removed already in clang-tidy 19
-    'bugprone-argument-comment',
-    'bugprone-branch-clone', # doesn't interact well with feature macros
     'bugprone-easily-swappable-parameters',
     'bugprone-implicit-widening-of-multiplication-result',
-    'bugprone-suspicious-stringview-data-usage', # triggers on every use of string_view::data ??
     'cppcoreguidelines-pro-bounds-pointer-arithmetic',
     'cppcoreguidelines-pro-bounds-constant-array-index',
     'cppcoreguidelines-pro-type-const-cast', # see above
@@ -91,7 +85,6 @@ disabled_not_interested = [
     'readability-avoid-return-with-void-value', # Jack likes doing this
     'readability-function-cognitive-complexity',
     'readability-identifier-length', # lol, lmao
-    'readability-isolate-declaration',
     'readability-math-missing-parentheses',
     'readability-non-const-parameter',
     'readability-redundant-inline-specifier', # Jack likes doing this
@@ -377,6 +370,7 @@ def main(args = None): # pylint: disable=too-many-return-statements
 
         if options.verbose:
             print("Preprocessing/hashing %d files took %.02f sec" % (len(results), time.time() - start_time))
+            sys.stdout.flush()
 
         start_time = time.time()
 

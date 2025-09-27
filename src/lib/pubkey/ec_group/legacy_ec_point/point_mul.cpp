@@ -49,7 +49,8 @@ EC_Point_Base_Point_Precompute::EC_Point_Base_Point_Precompute(const EC_Point& b
    std::vector<EC_Point> T(WindowSize * T_bits);
 
    EC_Point g = base;
-   EC_Point g2, g4;
+   EC_Point g2;
+   EC_Point g4;
 
    for(size_t i = 0; i != T_bits; i++) {
       g2 = g;
@@ -278,7 +279,7 @@ EC_Point EC_Point_Var_Point_Precompute::mul(const BigInt& k,
 }
 
 EC_Point_Multi_Point_Precompute::EC_Point_Multi_Point_Precompute(const EC_Point& x, const EC_Point& y) {
-   if(x.on_the_curve() == false || y.on_the_curve() == false) {
+   if(!x.on_the_curve() || !y.on_the_curve()) {
       m_M.push_back(x.zero());
       return;
    }

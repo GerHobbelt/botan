@@ -13,6 +13,7 @@
 #include <botan/tls_policy.h>
 #include <botan/x509cert.h>
 #include <botan/internal/loadstor.h>
+#include <botan/internal/mem_utils.h>
 #include <botan/internal/stl_util.h>
 #include <botan/internal/tls_handshake_state.h>
 #include <botan/internal/tls_record.h>
@@ -102,7 +103,7 @@ std::vector<X509_Certificate> Channel_Impl_12::peer_cert_chain() const {
 
 std::optional<std::string> Channel_Impl_12::external_psk_identity() const {
    const auto* state = (active_state() != nullptr) ? active_state() : pending_state();
-   if(state) {
+   if(state != nullptr) {
       return state->psk_identity();
    } else {
       return std::nullopt;
@@ -110,7 +111,7 @@ std::optional<std::string> Channel_Impl_12::external_psk_identity() const {
 }
 
 Handshake_State& Channel_Impl_12::create_handshake_state(Protocol_Version version) {
-   if(pending_state()) {
+   if(pending_state() != nullptr) {
       throw Internal_Error("create_handshake_state called during handshake");
    }
 
@@ -171,12 +172,12 @@ bool Channel_Impl_12::timeout_check() {
 }
 
 void Channel_Impl_12::renegotiate(bool force_full_renegotiation) {
-   if(pending_state()) {  // currently in handshake?
+   if(pending_state() != nullptr) {  // currently in handshake?
       return;
    }
 
    if(const auto* active = active_state()) {
-      if(force_full_renegotiation == false) {
+      if(!force_full_renegotiation) {
          force_full_renegotiation = !policy().allow_resumption_for_renegotiation();
       }
 
@@ -279,7 +280,7 @@ size_t Channel_Impl_12::from_peer(std::span<const uint8_t> data) {
    auto input_size = data.size();
 
    try {
-      while(input_size) {
+      while(input_size > 0) {
          size_t consumed = 0;
 
          auto get_epoch = [this](uint16_t epoch) { return read_cipher_state_epoch(epoch); };
@@ -318,10 +319,10 @@ size_t Channel_Impl_12::from_peer(std::span<const uint8_t> data) {
             throw TLS_Exception(Alert::RecordOverflow, "TLS plaintext record is larger than allowed maximum");
          }
 
-         const bool epoch0_restart = m_is_datagram && record.epoch() == 0 && active_state();
+         const bool epoch0_restart = m_is_datagram && record.epoch() == 0 && active_state() != nullptr;
          BOTAN_ASSERT_IMPLICATION(epoch0_restart, allow_epoch0_restart, "Allowed state");
 
-         const bool initial_record = epoch0_restart || (!pending_state() && !active_state());
+         const bool initial_record = epoch0_restart || (pending_state() == nullptr && active_state() == nullptr);
          bool initial_handshake_message = false;
          if(record.type() == Record_Type::Handshake && !m_record_buf.empty()) {
             Handshake_Type type = static_cast<Handshake_Type>(m_record_buf[0]);
@@ -435,7 +436,7 @@ void Channel_Impl_12::process_handshake_ccs(const secure_vector<uint8_t>& record
 }
 
 void Channel_Impl_12::process_application_data(uint64_t seq_no, const secure_vector<uint8_t>& record) {
-   if(!active_state()) {
+   if(active_state() == nullptr) {
       throw Unexpected_Message("Application data before handshake done");
    }
 
@@ -500,7 +501,7 @@ void Channel_Impl_12::send_record_array(uint16_t epoch, Record_Type type, const 
 
    auto cipher_state = write_cipher_state_epoch(epoch);
 
-   while(length) {
+   while(length > 0) {
       const size_t sending = std::min<size_t>(length, MAX_PLAINTEXT_SIZE);
       write_record(cipher_state.get(), epoch, type, input, sending);
 
@@ -649,10 +650,10 @@ SymmetricKey Channel_Impl_12::key_material_export(std::string_view label,
          }
          salt.push_back(get_byte<0>(static_cast<uint16_t>(context_size)));
          salt.push_back(get_byte<1>(static_cast<uint16_t>(context_size)));
-         salt += to_byte_vector(context);
+         salt += as_span_of_bytes(context);
       }
 
-      return SymmetricKey(prf->derive_key(length, master_secret, salt, to_byte_vector(label)));
+      return SymmetricKey(prf->derive_key(length, master_secret, salt, as_span_of_bytes(label)));
    } else {
       throw Invalid_State("Channel_Impl_12::key_material_export connection not active");
    }

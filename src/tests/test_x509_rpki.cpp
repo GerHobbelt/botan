@@ -26,7 +26,8 @@ namespace Botan_Tests {
 
 namespace {
 
-#if defined(BOTAN_HAS_X509_CERTIFICATES)
+#if defined(BOTAN_HAS_X509_CERTIFICATES) && \
+   (defined(BOTAN_HAS_ECDSA) || defined(BOTAN_HAS_RSA) || defined(BOTAN_HAS_ED25519))
 
 struct CA_Creation_Result {
       Botan::X509_Certificate ca_cert;
@@ -108,7 +109,7 @@ std::tuple<std::string, std::string, std::string> get_sig_algo_padding() {
    const std::string hash_fn{"SHA-512"};
    #elif defined(BOTAN_HAS_RSA)
    const std::string sig_algo{"RSA"};
-   const std::string padding_method{"EMSA3(SHA-256)"};
+   const std::string padding_method{"PKCS1v15(SHA-256)"};
    const std::string hash_fn{"SHA-256"};
    #endif
 
@@ -523,6 +524,19 @@ Test::Result test_x509_ip_addr_blocks_encode_builder() {
    return result;
 }
 
+namespace {
+
+template <size_t I>
+bool bit_set(size_t v) {
+   if(((v >> I) & 1) == 1) {
+      return true;
+   } else {
+      return false;
+   }
+}
+
+}  // namespace
+
 Test::Result test_x509_ip_addr_blocks_extension_encode_ctor() {
    Test::Result result("X509 IP Address Block encode (ctor)");
    result.start_timer();
@@ -534,12 +548,12 @@ Test::Result test_x509_ip_addr_blocks_extension_encode_ctor() {
    auto [ca_cert, ca, sub_key, sig_algo, hash_fn] = make_ca(rng);
 
    for(size_t i = 0; i < 64; i++) {
-      bool push_ipv4_ranges = i & 1;
-      bool push_ipv6_ranges = i >> 1 & 1;
-      bool inherit_ipv4 = i >> 2 & 1;
-      bool inherit_ipv6 = i >> 3 & 1;
-      bool push_ipv4_family = i >> 4 & 1;
-      bool push_ipv6_family = i >> 5 & 1;
+      bool push_ipv4_ranges = bit_set<0>(i);
+      bool push_ipv6_ranges = bit_set<1>(i);
+      bool inherit_ipv4 = bit_set<2>(i);
+      bool inherit_ipv6 = bit_set<3>(i);
+      bool push_ipv4_family = bit_set<4>(i);
+      bool push_ipv6_family = bit_set<5>(i);
 
       Botan::X509_Cert_Options opts = req_opts(sig_algo);
 
@@ -712,8 +726,8 @@ Test::Result test_x509_ip_addr_blocks_extension_encode_edge_cases_ctor() {
 
    for(size_t i = 0; i < edge_values.size(); i++) {
       for(size_t j = 0; j < 4; j++) {
-         bool modify_min = j & 1;
-         bool modify_max = (j >> 1) & 1;
+         bool modify_min = bit_set<0>(j);
+         bool modify_max = bit_set<1>(j);
 
          for(size_t k = 0; k < 18; k++) {
             if(!modify_min && !modify_max && (k > 0 || i > 0)) {
@@ -1081,8 +1095,8 @@ Test::Result test_x509_ip_addr_blocks_path_validation_success_builder() {
    trusted.add_certificate(root_cert);
 
    for(size_t i = 0; i < 4; i++) {
-      bool include_v4 = i & 1;
-      bool include_v6 = (i >> 1) & 1;
+      bool include_v4 = bit_set<0>(i);
+      bool include_v6 = bit_set<1>(i);
 
       // Dynamic Cert
       std::unique_ptr<IPAddressBlocks> dyn_blocks = std::make_unique<IPAddressBlocks>();
@@ -1246,8 +1260,8 @@ Test::Result test_x509_ip_addr_blocks_path_validation_success_ctor() {
    trusted.add_certificate(root_cert);
 
    for(size_t i = 0; i < 4; i++) {
-      bool include_v4 = i & 1;
-      bool include_v6 = (i >> 1) & 1;
+      bool include_v4 = bit_set<0>(i);
+      bool include_v6 = bit_set<1>(i);
 
       auto dyn_ipv4_choice =
          IPAddressBlocks::IPAddressChoice<IPv4>(include_v4 ? std::optional(dyn_ipv4_ranges) : std::nullopt);
@@ -1538,10 +1552,10 @@ Test::Result test_x509_as_blocks_extension_encode_ctor() {
    auto [ca_cert, ca, sub_key, sig_algo, hash_fn] = make_ca(rng);
 
    for(size_t i = 0; i < 16; i++) {
-      bool push_asnum = i & 1;
-      bool push_rdi = (i >> 1) & 1;
-      bool include_asnum = (i >> 2) & 1;
-      bool include_rdi = (i >> 3) & 1;
+      bool push_asnum = bit_set<0>(i);
+      bool push_rdi = bit_set<1>(i);
+      bool include_asnum = bit_set<2>(i);
+      bool include_rdi = bit_set<3>(i);
       if(!include_asnum && !include_rdi) {
          continue;
       }
@@ -1738,8 +1752,8 @@ Test::Result test_x509_as_blocks_path_validation_success_builder() {
    trusted.add_certificate(root_cert);
 
    for(size_t i = 0; i < 4; i++) {
-      bool include_asnum = i & 1;
-      bool include_rdi = (i >> 1) & 1;
+      bool include_asnum = bit_set<0>(i);
+      bool include_rdi = bit_set<1>(i);
 
       std::unique_ptr<ASBlocks> dyn_blocks = std::make_unique<ASBlocks>();
       if(include_asnum) {
@@ -1877,8 +1891,8 @@ Test::Result test_x509_as_blocks_path_validation_success_ctor() {
    trusted.add_certificate(root_cert);
 
    for(size_t i = 0; i < 4; i++) {
-      bool include_asnum = i & 1;
-      bool include_rdi = (i >> 1) & 1;
+      bool include_asnum = bit_set<0>(i);
+      bool include_rdi = bit_set<1>(i);
 
       ASBlocks::ASIdentifierChoice dyn_asnum =
          ASBlocks::ASIdentifierChoice(include_asnum ? std::optional(dyn_as_ranges) : std::nullopt);

@@ -60,7 +60,7 @@ PKCS11_RSA_PrivateKey::PKCS11_RSA_PrivateKey(Session& session, const RSA_Private
 PKCS11_RSA_PrivateKey::PKCS11_RSA_PrivateKey(Session& session,
                                              uint32_t bits,
                                              const RSA_PrivateKeyGenerationProperties& priv_key_props) :
-      Object(session), RSA_PublicKey() {
+      Object(session) {
    RSA_PublicKeyGenerationProperties pub_key_props(bits);
    pub_key_props.set_encrypt(true);
    pub_key_props.set_verify(true);
@@ -119,7 +119,7 @@ class PKCS11_RSA_Decryption_Operation final : public PK_Ops::Decryption {
             m_key(key),
             m_mechanism(MechanismWrapper::create_rsa_crypt_mechanism(padding)),
             m_mod_n(Barrett_Reduction::for_public_modulus(m_key.get_n())),
-            m_monty_n(std::make_shared<Montgomery_Params>(m_key.get_n(), m_mod_n)),
+            m_monty_n(m_key.get_n(), m_mod_n),
             m_bits(m_key.get_n().bits() - 1),
             m_blinder(
                m_mod_n,
@@ -168,7 +168,7 @@ class PKCS11_RSA_Decryption_Operation final : public PK_Ops::Decryption {
       const PKCS11_RSA_PrivateKey& m_key;
       MechanismWrapper m_mechanism;
       Barrett_Reduction m_mod_n;
-      std::shared_ptr<const Montgomery_Params> m_monty_n;
+      const Montgomery_Params m_monty_n;
       size_t m_bits;
       Blinder m_blinder;
 };

@@ -36,7 +36,6 @@ class RAII_LowLevel {
       RAII_LowLevel() :
             m_module(Test::pkcs11_lib()),
             m_func_list(nullptr),
-            m_low_level(),
             m_session_handle(0),
             m_is_session_open(false),
             m_is_logged_in(false) {
@@ -449,7 +448,8 @@ Test::Result test_c_close_all_sessions() {
    auto open_two_sessions = [&slot_vec, &p11_low_level]() -> void {
       // public read only session
       Flags flags = PKCS11::flags(Flag::SerialSession);
-      SessionHandle first_session_handle = 0, second_session_handle = 0;
+      SessionHandle first_session_handle = 0;
+      SessionHandle second_session_handle = 0;
 
       p11_low_level.get()->C_OpenSession(slot_vec.at(0), flags, nullptr, nullptr, &first_session_handle);
 

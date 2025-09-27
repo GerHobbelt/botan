@@ -283,7 +283,10 @@ class Utility_Function_Tests final : public Test {
          }
 
          std::array<uint8_t, 8> outarr{};
-         uint16_t i0 = 0, i1 = 0, i2 = 0, i3 = 0;
+         uint16_t i0 = 0;
+         uint16_t i1 = 0;
+         uint16_t i2 = 0;
+         uint16_t i3 = 0;
          Botan::store_be(in64, outarr);
 
          Botan::load_be(outarr, i0, i1, i2, i3);
@@ -1266,7 +1269,7 @@ class CPUID_Tests final : public Test {
             }
          }
 
-   #if defined(BOTAN_TARGET_CPU_IS_X86_FAMILY)
+   #if defined(BOTAN_TARGET_ARCH_IS_X86_FAMILY)
 
          const auto bit = Botan::CPUID::Feature::SSE2;
 

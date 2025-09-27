@@ -528,15 +528,15 @@ void TLS_Handshake_Test::go() {
          break;
       }
 
-      if(client_handshake_completed == false && client->is_active()) {
+      if(!client_handshake_completed && client->is_active()) {
          client_handshake_completed = true;
       }
 
-      if(server_handshake_completed == false && m_server->is_active()) {
+      if(!server_handshake_completed && m_server->is_active()) {
          server_handshake_completed = true;
       }
 
-      if(client->is_active() && client_has_written == false) {
+      if(client->is_active() && !client_has_written) {
          m_results.test_eq("client ALPN protocol", client->application_protocol(), "test/3");
 
          size_t sent_so_far = 0;
@@ -552,7 +552,7 @@ void TLS_Handshake_Test::go() {
          client_has_written = true;
       }
 
-      if(m_server->is_active() && server_has_written == false) {
+      if(m_server->is_active() && !server_has_written) {
          m_results.test_eq("server ALPN protocol", m_server->application_protocol(), "test/3");
 
          size_t sent_so_far = 0;
@@ -1208,11 +1208,13 @@ class DTLS_Reconnection_Test : public Test {
          auto server_sessions = std::make_shared<Botan::TLS::Session_Manager_In_Memory>(rng);
          auto client_sessions = std::make_shared<Botan::TLS::Session_Manager_Noop>();
 
-         std::vector<uint8_t> s2c, server_recv;
+         std::vector<uint8_t> s2c;
+         std::vector<uint8_t> server_recv;
          auto server_callbacks = std::make_shared<Test_Callbacks>(result, s2c, server_recv);
          Botan::TLS::Server server(server_callbacks, server_sessions, creds, server_policy, rng, true);
 
-         std::vector<uint8_t> c1_c2s, client1_recv;
+         std::vector<uint8_t> c1_c2s;
+         std::vector<uint8_t> client1_recv;
          auto client1_callbacks = std::make_shared<Test_Callbacks>(result, c1_c2s, client1_recv);
          Botan::TLS::Client client1(client1_callbacks,
                                     client_sessions,
@@ -1274,7 +1276,8 @@ class DTLS_Reconnection_Test : public Test {
          server_recv.clear();
          s2c.clear();
 
-         std::vector<uint8_t> c2_c2s, client2_recv;
+         std::vector<uint8_t> c2_c2s;
+         std::vector<uint8_t> client2_recv;
          auto client2_callbacks = std::make_shared<Test_Callbacks>(result, c2_c2s, client2_recv);
          Botan::TLS::Client client2(client2_callbacks,
                                     client_sessions,

@@ -8,19 +8,16 @@
 
 #include <botan/tls_messages.h>
 
-#include <botan/rng.h>
-#include <botan/tls_extensions.h>
-
 #include <botan/credentials_manager.h>
+#include <botan/ecdh.h>
+#include <botan/rng.h>
+#include <botan/rsa.h>
+#include <botan/tls_extensions.h>
 #include <botan/internal/ct_utils.h>
-#include <botan/internal/stl_util.h>
 #include <botan/internal/tls_handshake_hash.h>
 #include <botan/internal/tls_handshake_io.h>
 #include <botan/internal/tls_handshake_state.h>
 #include <botan/internal/tls_reader.h>
-
-#include <botan/ecdh.h>
-#include <botan/rsa.h>
 
 namespace Botan::TLS {
 
@@ -39,14 +36,14 @@ Client_Key_Exchange::Client_Key_Exchange(Handshake_IO& io,
    if(kex_algo == Kex_Algo::PSK) {
       std::string identity_hint;
 
-      if(state.server_kex()) {
+      if(state.server_kex() != nullptr) {
          TLS_Data_Reader reader("ClientKeyExchange", state.server_kex()->params());
          identity_hint = reader.get_string(2, 0, 65535);
       }
 
       m_psk_identity = creds.psk_identity("tls-client", std::string(hostname), identity_hint);
 
-      append_tls_length_value(m_key_material, to_byte_vector(m_psk_identity.value()), 2);
+      append_tls_length_value(m_key_material, as_span_of_bytes(m_psk_identity.value()), 2);
 
       SymmetricKey psk = creds.psk("tls-client", std::string(hostname), m_psk_identity.value());
 
@@ -54,7 +51,7 @@ Client_Key_Exchange::Client_Key_Exchange(Handshake_IO& io,
 
       append_tls_length_value(m_pre_master, zeros, 2);
       append_tls_length_value(m_pre_master, psk.bits_of(), 2);
-   } else if(state.server_kex()) {
+   } else if(state.server_kex() != nullptr) {
       TLS_Data_Reader reader("ClientKeyExchange", state.server_kex()->params());
 
       SymmetricKey psk;
@@ -64,7 +61,7 @@ Client_Key_Exchange::Client_Key_Exchange(Handshake_IO& io,
 
          m_psk_identity = creds.psk_identity("tls-client", std::string(hostname), identity_hint);
 
-         append_tls_length_value(m_key_material, to_byte_vector(m_psk_identity.value()), 2);
+         append_tls_length_value(m_key_material, as_span_of_bytes(m_psk_identity.value()), 2);
 
          psk = creds.psk("tls-client", std::string(hostname), m_psk_identity.value());
       }
@@ -74,7 +71,7 @@ Client_Key_Exchange::Client_Key_Exchange(Handshake_IO& io,
          const auto generator = BigInt::from_bytes(reader.get_range<uint8_t>(2, 1, 65535));
          const std::vector<uint8_t> peer_public_value = reader.get_range<uint8_t>(2, 1, 65535);
 
-         if(reader.remaining_bytes()) {
+         if(reader.remaining_bytes() > 0) {
             throw Decoding_Error("Bad params size for DH key exchange");
          }
 
@@ -119,7 +116,7 @@ Client_Key_Exchange::Client_Key_Exchange(Handshake_IO& io,
 
          if(curve_id.is_ecdh_named_curve()) {
             auto* ecdh_key = dynamic_cast<ECDH_PublicKey*>(private_key.get());
-            if(!ecdh_key) {
+            if(ecdh_key == nullptr) {
                throw TLS_Exception(Alert::InternalError, "Application did not provide a ECDH_PublicKey");
             }
             append_tls_length_value(m_key_material,
@@ -142,7 +139,7 @@ Client_Key_Exchange::Client_Key_Exchange(Handshake_IO& io,
          throw Unexpected_Message("No server kex message, but negotiated a key exchange that required it");
       }
 
-      if(!server_public_key) {
+      if(server_public_key == nullptr) {
          throw Internal_Error("No server public key for RSA exchange");
       }
 
@@ -182,7 +179,7 @@ Client_Key_Exchange::Client_Key_Exchange(const std::vector<uint8_t>& contents,
       BOTAN_ASSERT(state.server_certs() && !state.server_certs()->cert_chain().empty(),
                    "RSA key exchange negotiated so server sent a certificate");
 
-      if(!server_rsa_kex_key) {
+      if(server_rsa_kex_key == nullptr) {
          throw Internal_Error("Expected RSA kex but no server kex key set");
       }
 
