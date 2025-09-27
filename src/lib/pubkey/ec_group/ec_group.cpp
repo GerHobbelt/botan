@@ -404,7 +404,7 @@ EC_Group::EC_Group(std::string_view str) {
    } catch(...) {}
 
    if(m_data == nullptr) {
-      if(str.size() > 30 && str.substr(0, 29) == "-----BEGIN EC PARAMETERS-----") {
+      if(str.size() > 30 && str.starts_with("-----BEGIN EC PARAMETERS-----")) {
          // OK try it as PEM ...
          const auto ber = PEM_Code::decode_check_label(str, "EC PARAMETERS");
 
@@ -499,7 +499,8 @@ EC_Group::EC_Group(const OID& oid,
    BOTAN_ARG_CHECK((p - order).abs().bits() <= (p.bits() / 2) + 1, "Hasse bound invalid");
 
    // Check that 4*a^3 + 27*b^2 != 0
-   const auto discriminant = mod_p.reduce(mod_p.multiply(4, mod_p.cube(a)) + mod_p.multiply(27, mod_p.square(b)));
+   const auto discriminant = mod_p.reduce(mod_p.multiply(BigInt::from_s32(4), mod_p.cube(a)) +
+                                          mod_p.multiply(BigInt::from_s32(27), mod_p.square(b)));
    BOTAN_ARG_CHECK(discriminant != 0, "EC_Group discriminant is invalid");
 
    // Check that the generator (base_x,base_y) is on the curve; y^2 = x^3 + a*x + b
@@ -724,7 +725,8 @@ bool EC_Group::verify_group(RandomNumberGenerator& rng, bool strong) const {
    //compute the discriminant: 4*a^3 + 27*b^2 which must be nonzero
    auto mod_p = Barrett_Reduction::for_public_modulus(p);
 
-   const BigInt discriminant = mod_p.reduce(mod_p.multiply(4, mod_p.cube(a)) + mod_p.multiply(27, mod_p.square(b)));
+   const BigInt discriminant = mod_p.reduce(mod_p.multiply(BigInt::from_s32(4), mod_p.cube(a)) +
+                                            mod_p.multiply(BigInt::from_s32(27), mod_p.square(b)));
 
    if(discriminant == 0) {
       return false;
@@ -757,6 +759,10 @@ bool EC_Group::verify_group(RandomNumberGenerator& rng, bool strong) const {
 
    return true;
 }
+
+EC_Group::Mul2Table::Mul2Table(EC_Group::Mul2Table&& other) noexcept = default;
+
+EC_Group::Mul2Table& EC_Group::Mul2Table::operator=(EC_Group::Mul2Table&& other) noexcept = default;
 
 EC_Group::Mul2Table::Mul2Table(const EC_AffinePoint& h) : m_tbl(h._group()->make_mul2_table(h._inner())) {}
 

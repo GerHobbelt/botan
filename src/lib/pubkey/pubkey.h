@@ -566,7 +566,8 @@ class KEM_Encapsulation final {
       /**
        * @returns the pair (encapsulated key, key) extracted from @p kem
        */
-      static std::pair<std::vector<uint8_t>, secure_vector<uint8_t>> destructure(KEM_Encapsulation&& kem) {
+      static std::pair<std::vector<uint8_t>, secure_vector<uint8_t>> destructure(
+         KEM_Encapsulation&& kem) /* NOLINT(*param-not-moved*) */ {
          return std::make_pair(std::exchange(kem.m_encapsulated_shared_key, {}), std::exchange(kem.m_shared_key, {}));
       }
 
@@ -592,7 +593,9 @@ class BOTAN_PUBLIC_API(2, 0) PK_KEM_Encryptor final {
       * @param kem_param additional KEM parameters
       * @param provider the provider to use
       */
-      PK_KEM_Encryptor(const Public_Key& key, std::string_view kem_param = "", std::string_view provider = "");
+      BOTAN_FUTURE_EXPLICIT PK_KEM_Encryptor(const Public_Key& key,
+                                             std::string_view kem_param = "",
+                                             std::string_view provider = "");
 
       /**
       * Construct an instance.

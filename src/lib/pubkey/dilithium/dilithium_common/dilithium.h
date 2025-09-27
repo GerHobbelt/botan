@@ -20,7 +20,7 @@ namespace Botan {
 
 class BOTAN_PUBLIC_API(3, 0) DilithiumMode {
    public:
-      enum Mode {
+      enum Mode : uint8_t {
          Dilithium4x4 = 1,
          Dilithium4x4_AES BOTAN_DEPRECATED("Dilithium AES mode is deprecated"),
          Dilithium6x5,
@@ -33,6 +33,7 @@ class BOTAN_PUBLIC_API(3, 0) DilithiumMode {
       };
 
    public:
+      // NOLINTNEXTLINE(*-explicit-conversions)
       DilithiumMode(Mode mode) : m_mode(mode) {}
 
       explicit DilithiumMode(const OID& oid);
@@ -66,10 +67,6 @@ class Dilithium_PrivateKeyInternal;
  */
 class BOTAN_PUBLIC_API(3, 0) Dilithium_PublicKey : public virtual Public_Key {
    public:
-      Dilithium_PublicKey& operator=(const Dilithium_PublicKey& other) = default;
-
-      ~Dilithium_PublicKey() override = default;
-
       std::string algo_name() const override;
 
       AlgorithmIdentifier algorithm_identifier() const override;
@@ -106,7 +103,7 @@ class BOTAN_PUBLIC_API(3, 0) Dilithium_PublicKey : public virtual Public_Key {
       friend class Dilithium_Verification_Operation;
       friend class Dilithium_Signature_Operation;
 
-      std::shared_ptr<Dilithium_PublicKeyInternal> m_public;
+      std::shared_ptr<Dilithium_PublicKeyInternal> m_public;  // NOLINT(*non-private-member-variable*)
 };
 
 BOTAN_DIAGNOSTIC_PUSH

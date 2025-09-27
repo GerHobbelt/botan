@@ -26,7 +26,7 @@ BigInt blinding_mask(const BigInt& group_order, RandomNumberGenerator& rng) {
       mask.set_bit(0);
       return mask;
    } else {
-      return 1;
+      return BigInt::one();
    }
 }
 
@@ -44,9 +44,9 @@ EC_Point_Base_Point_Precompute::EC_Point_Base_Point_Precompute(const EC_Point& b
 
    const size_t order_bits = mod_order.modulus_bits();
 
-   const size_t T_bits = round_up(order_bits + blinding_size(order_bits), WINDOW_BITS) / WINDOW_BITS;
+   const size_t T_bits = round_up(order_bits + blinding_size(order_bits), WindowBits) / WindowBits;
 
-   std::vector<EC_Point> T(WINDOW_SIZE * T_bits);
+   std::vector<EC_Point> T(WindowSize * T_bits);
 
    EC_Point g = base;
    EC_Point g2, g4;
@@ -110,7 +110,7 @@ EC_Point EC_Point_Base_Point_Precompute::mul(const BigInt& k,
       BOTAN_DEBUG_ASSERT(scalar.bits() == group_order.bits() + 1);
    }
 
-   const size_t windows = round_up(scalar.bits(), WINDOW_BITS) / WINDOW_BITS;
+   const size_t windows = round_up(scalar.bits(), WindowBits) / WindowBits;
 
    const size_t elem_size = 2 * m_p_words;
 
@@ -127,9 +127,9 @@ EC_Point EC_Point_Base_Point_Precompute::mul(const BigInt& k,
 
    for(size_t i = 0; i != windows; ++i) {
       const size_t window = windows - i - 1;
-      const size_t base_addr = (WINDOW_SIZE * window) * elem_size;
+      const size_t base_addr = (WindowSize * window) * elem_size;
 
-      const word w = scalar.get_substring(WINDOW_BITS * window, WINDOW_BITS);
+      const word w = scalar.get_substring(WindowBits * window, WindowBits);
 
       const auto w_is_1 = CT::Mask<word>::is_equal(w, 1);
       const auto w_is_2 = CT::Mask<word>::is_equal(w, 2);
@@ -172,7 +172,7 @@ EC_Point EC_Point_Base_Point_Precompute::mul(const BigInt& k,
 EC_Point_Var_Point_Precompute::EC_Point_Var_Point_Precompute(const EC_Point& ipoint,
                                                              RandomNumberGenerator& rng,
                                                              std::vector<BigInt>& ws) :
-      m_curve(ipoint.get_curve()), m_p_words(m_curve.get_p_words()), m_window_bits(4) {
+      m_curve(ipoint.get_curve()), m_p_words(m_curve.get_p_words()) {
    if(ws.size() < EC_Point::WORKSPACE_SIZE) {
       ws.resize(EC_Point::WORKSPACE_SIZE);
    }
@@ -180,7 +180,7 @@ EC_Point_Var_Point_Precompute::EC_Point_Var_Point_Precompute(const EC_Point& ipo
    auto point = ipoint;
    point.randomize_repr(rng);
 
-   std::vector<EC_Point> U(static_cast<size_t>(1) << m_window_bits);
+   std::vector<EC_Point> U(static_cast<size_t>(1) << WindowBits);
    U[0] = point.zero();
    U[1] = point;
 
@@ -223,16 +223,16 @@ EC_Point EC_Point_Var_Point_Precompute::mul(const BigInt& k,
    const BigInt scalar = k + group_order * blinding_mask(group_order, rng);
 
    const size_t elem_size = 3 * m_p_words;
-   const size_t window_elems = static_cast<size_t>(1) << m_window_bits;
+   const size_t window_elems = static_cast<size_t>(1) << WindowBits;
 
-   size_t windows = round_up(scalar.bits(), m_window_bits) / m_window_bits;
+   size_t windows = round_up(scalar.bits(), WindowBits) / WindowBits;
    EC_Point R(m_curve);
    secure_vector<word> e(elem_size);
 
    if(windows > 0) {
       windows--;
 
-      const uint32_t w = scalar.get_substring(windows * m_window_bits, m_window_bits);
+      const uint32_t w = scalar.get_substring(windows * WindowBits, WindowBits);
 
       clear_mem(e.data(), e.size());
       for(size_t i = 1; i != window_elems; ++i) {
@@ -253,10 +253,10 @@ EC_Point EC_Point_Var_Point_Precompute::mul(const BigInt& k,
       R.randomize_repr(rng, ws[0].get_word_vector());
    }
 
-   while(windows) {
-      R.mult2i(m_window_bits, ws);
+   while(windows > 0) {
+      R.mult2i(WindowBits, ws);
 
-      const uint32_t w = scalar.get_substring((windows - 1) * m_window_bits, m_window_bits);
+      const uint32_t w = scalar.get_substring((windows - 1) * WindowBits, WindowBits);
 
       clear_mem(e.data(), e.size());
       for(size_t i = 1; i != window_elems; ++i) {
@@ -352,7 +352,7 @@ EC_Point EC_Point_Multi_Point_Precompute::multi_exp(const BigInt& z1, const BigI
       const uint32_t z12 = (4 * z2_b) + z1_b;
 
       // This function is not intended to be const time
-      if(z12) {
+      if(z12 != 0) {
          if(m_no_infinity) {
             H.add_affine(m_M[z12 - 1], ws);
          } else {

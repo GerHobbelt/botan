@@ -396,7 +396,7 @@ bool Test::Result::test_rc(const std::string& func, int expected, int rc) {
 
 void Test::initialize(std::string test_name, CodeLocation location) {
    m_test_name = std::move(test_name);
-   m_registration_location = std::move(location);
+   m_registration_location = location;
 }
 
 Botan::RandomNumberGenerator& Test::rng() const {
@@ -546,7 +546,7 @@ class Test_Registry {
 
          // TODO: this is O(n^2), but we have a relatively small number of tests.
          auto insert_if_not_exists_and_not_skipped = [&](const std::string& test_name) {
-            if(!Botan::value_exists(result, test_name) && to_be_skipped.find(test_name) == to_be_skipped.end()) {
+            if(!Botan::value_exists(result, test_name) && !to_be_skipped.contains(test_name)) {
                result.push_back(test_name);
             }
          };
@@ -563,7 +563,7 @@ class Test_Registry {
             }
          } else {
             for(const auto& r : requested) {
-               if(m_tests.find(r) != m_tests.end()) {
+               if(m_tests.contains(r)) {
                   insert_if_not_exists_and_not_skipped(r);
                } else if(auto elems = m_categories.equal_range(r); elems.first != m_categories.end()) {
                   for(; elems.first != elems.second; ++elems.first) {
@@ -1009,9 +1009,7 @@ Botan::BigInt VarMap::get_req_bn(const std::string& key) const {
    }
 }
 
-Botan::BigInt VarMap::get_opt_bn(const std::string& key, const Botan::BigInt& def_value) const
-
-{
+Botan::BigInt VarMap::get_opt_bn(const std::string& key, const Botan::BigInt& def_value) const {
    auto i = m_vars.find(key);
    if(i == m_vars.end()) {
       return def_value;

@@ -279,11 +279,12 @@ class bitvector_base final {
             ~bitref_base() = default;
 
          public:
+            // NOLINTNEXTLINE(*-explicit-conversions) FIXME
             constexpr operator bool() const noexcept { return is_set(); }
 
             constexpr bool is_set() const noexcept { return (m_block & m_mask) > 0; }
 
-            template <std::integral T>
+            template <std::unsigned_integral T>
             constexpr T as() const noexcept {
                return static_cast<T>(is_set());
             }
@@ -293,8 +294,8 @@ class bitvector_base final {
             }
 
          protected:
-            BlockT& m_block;  // NOLINT(*-non-private-member-variables-in-classes)
-            BlockT m_mask;    // NOLINT(*-non-private-member-variables-in-classes)
+            BlockT& m_block;  // NOLINT(*-non-private-member-variable*)
+            BlockT m_mask;    // NOLINT(*-non-private-member-variable*)
       };
 
    public:
@@ -373,7 +374,7 @@ class bitvector_base final {
    public:
       bitvector_base() : m_bits(0) {}
 
-      bitvector_base(size_type bits) : m_bits(bits), m_blocks(ceil_toblocks(bits)) {}
+      explicit bitvector_base(size_type bits) : m_bits(bits), m_blocks(ceil_toblocks(bits)) {}
 
       /**
        * Initialize the bitvector from a byte-array. Bits are taken byte-wise
@@ -388,7 +389,8 @@ class bitvector_base final {
        * @param bits  The number of bits to be loaded. This must not be more
        *              than the number of bytes in @p bytes.
        */
-      bitvector_base(std::span<const uint8_t> bytes, std::optional<size_type> bits = std::nullopt) {
+      bitvector_base(std::span<const uint8_t> bytes, /* NOLINT(*-explicit-conversions) FIXME */
+                     std::optional<size_type> bits = std::nullopt) {
          from_bytes(bytes, bits);
       }
 
@@ -600,7 +602,9 @@ class bitvector_base final {
        */
       bitvector_base& set() {
          full_range_operation(
-            [](std::unsigned_integral auto block) -> decltype(block) { return static_cast<decltype(block)>(~0); },
+            [](std::unsigned_integral auto block) -> decltype(block) {
+               return static_cast<decltype(block)>(~static_cast<decltype(block)>(0));
+            },
             *this);
          zero_unused_bits();
          return *this;
@@ -923,7 +927,7 @@ class bitvector_base final {
       auto ref(size_type pos) { return bitref<block_type>(m_blocks, pos); }
 
    private:
-      enum class BitRangeAlignment { byte_aligned, no_alignment };
+      enum class BitRangeAlignment : uint8_t { byte_aligned, no_alignment };
 
       /**
        * Helper construction to implement bit range operations on the bitvector.
@@ -960,7 +964,7 @@ class bitvector_base final {
                BOTAN_ASSERT(m_source.size() >= m_start_bitoffset + m_bitlength, "enough bytes in underlying source");
             }
 
-            BitRangeOperator(BitvectorT& source) : BitRangeOperator(source, 0, source.size()) {}
+            explicit BitRangeOperator(BitvectorT& source) : BitRangeOperator(source, 0, source.size()) {}
 
             static constexpr bool is_byte_aligned() { return alignment == BitRangeAlignment::byte_aligned; }
 

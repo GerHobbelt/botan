@@ -31,7 +31,7 @@ namespace Botan {
  * input data is available in the BufferSlicer<>. This might result in some
  * performance overhead when using the must_be_deferred strategy.
  */
-enum class AlignmentBufferFinalBlock : size_t {
+enum class AlignmentBufferFinalBlock : uint8_t {
    is_not_special = 0,
    must_be_deferred = 1,
 };
@@ -60,7 +60,7 @@ template <typename T,
    requires(BLOCK_SIZE > 0)
 class AlignmentBuffer {
    public:
-      AlignmentBuffer() : m_position(0) {}
+      AlignmentBuffer() = default;
 
       ~AlignmentBuffer() { secure_scrub_memory(m_buffer.data(), m_buffer.size()); }
 
@@ -236,8 +236,8 @@ class AlignmentBuffer {
       }
 
    private:
-      std::array<T, BLOCK_SIZE> m_buffer;
-      size_t m_position;
+      std::array<T, BLOCK_SIZE> m_buffer = {};
+      size_t m_position = 0;
 };
 
 }  // namespace Botan

@@ -27,7 +27,7 @@ class BOTAN_TEST_API Dynamically_Loaded_Library final {
       * qualified pathnames can help prevent code injection attacks (eg
       * via manipulation of LD_LIBRARY_PATH on Linux)
       */
-      Dynamically_Loaded_Library(std::string_view lib_name);
+      explicit Dynamically_Loaded_Library(std::string_view lib_name);
 
       /**
       * Unload the DLL
@@ -53,10 +53,12 @@ class BOTAN_TEST_API Dynamically_Loaded_Library final {
          return reinterpret_cast<T>(resolve_symbol(symbol));
       }
 
-   private:
-      Dynamically_Loaded_Library(const Dynamically_Loaded_Library&);
-      Dynamically_Loaded_Library& operator=(const Dynamically_Loaded_Library&);
+      Dynamically_Loaded_Library(const Dynamically_Loaded_Library&) = delete;
+      Dynamically_Loaded_Library(Dynamically_Loaded_Library&&) = default;
+      Dynamically_Loaded_Library& operator=(const Dynamically_Loaded_Library&) = delete;
+      Dynamically_Loaded_Library& operator=(Dynamically_Loaded_Library&&) = default;
 
+   private:
       std::string m_lib_name;
       void* m_lib;
 };

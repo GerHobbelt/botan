@@ -27,7 +27,7 @@ class Skein_512 final : public HashFunction {
       * @param personalization is a string that will parameterize the
       * hash output
       */
-      Skein_512(size_t output_bits = 512, std::string_view personalization = "");
+      explicit Skein_512(size_t output_bits = 512, std::string_view personalization = "");
 
       size_t hash_block_size() const override { return 64; }
 
@@ -39,7 +39,7 @@ class Skein_512 final : public HashFunction {
       void clear() override;
 
    private:
-      enum type_code {
+      enum type_code : uint8_t {
          SKEIN_KEY = 0,
          SKEIN_CONFIG = 4,
          SKEIN_PERSONALIZATION = 8,

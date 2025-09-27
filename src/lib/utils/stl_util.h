@@ -84,7 +84,7 @@ void map_remove_if(Pred pred, T& assoc) {
  */
 class BufferSlicer final {
    public:
-      BufferSlicer(std::span<const uint8_t> buffer) : m_remaining(buffer) {}
+      explicit BufferSlicer(std::span<const uint8_t> buffer) : m_remaining(buffer) {}
 
       template <concepts::contiguous_container ContainerT>
       auto copy(const size_t count) {
@@ -142,7 +142,7 @@ class BufferSlicer final {
  */
 class BufferStuffer final {
    public:
-      constexpr BufferStuffer(std::span<uint8_t> buffer) : m_buffer(buffer) {}
+      constexpr explicit BufferStuffer(std::span<uint8_t> buffer) : m_buffer(buffer) {}
 
       /**
        * @returns a span for the next @p bytes bytes in the concatenated buffer.
@@ -313,7 +313,7 @@ constexpr bool is_generalizable_to(const std::variant<SpecialTs...>&) noexcept {
  * variants types.
  */
 template <typename GeneralVariantT, typename SpecialT>
-constexpr GeneralVariantT generalize_to(SpecialT&& specific) noexcept
+constexpr GeneralVariantT generalize_to(SpecialT&& specific)
    requires(std::is_constructible_v<GeneralVariantT, std::decay_t<SpecialT>>)
 {
    return std::forward<SpecialT>(specific);
@@ -327,7 +327,7 @@ constexpr GeneralVariantT generalize_to(SpecialT&& specific) noexcept
  * variants types.
  */
 template <typename GeneralVariantT, typename... SpecialTs>
-constexpr GeneralVariantT generalize_to(std::variant<SpecialTs...> specific) noexcept {
+constexpr GeneralVariantT generalize_to(std::variant<SpecialTs...> specific) {
    static_assert(
       is_generalizable_to<GeneralVariantT>(specific),
       "Desired general type must be implicitly constructible by all types of the specialized std::variant<>");
@@ -396,6 +396,7 @@ T assert_is_some(std::optional<T> v, const char* expr, const char* func, const c
    }
 }
 
+// NOLINTNEXTLINE(*-macro-usage)
 #define BOTAN_ASSERT_IS_SOME(v) assert_is_some(v, #v, __func__, __FILE__, __LINE__)
 
 /*
@@ -404,9 +405,10 @@ T assert_is_some(std::optional<T> v, const char* expr, const char* func, const c
 template <size_t N>
 class StringLiteral final {
    public:
-      constexpr StringLiteral(const char (&str)[N]) { std::copy_n(str, N, value); }
+      // NOLINTNEXTLINE(*-explicit-conversions)
+      constexpr StringLiteral(const char (&str)[N]) : value() { std::copy_n(str, N, value); }
 
-      // NOLINTNEXTLINE(*non-private-member-variables-in-classes)
+      // NOLINTNEXTLINE(*non-private-member-variable*)
       char value[N];
 };
 

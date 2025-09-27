@@ -93,16 +93,21 @@ inline bool poison_has_effect() {
 /// @name Constant Time Check Annotation Convenience overloads
 /// @{
 
+template <typename T>
+concept custom_poisonable = requires(const T& v) { v._const_time_poison(); };
+template <typename T>
+concept custom_unpoisonable = requires(const T& v) { v._const_time_unpoison(); };
+
 /**
  * Poison a single integral object
  */
 template <std::integral T>
-constexpr void poison(T& p) {
+constexpr void poison(const T& p) {
    poison(&p, 1);
 }
 
 template <std::integral T>
-constexpr void unpoison(T& p) {
+constexpr void unpoison(const T& p) {
    unpoison(&p, 1);
 }
 
@@ -110,15 +115,15 @@ constexpr void unpoison(T& p) {
  * Poison a contiguous buffer of trivial objects (e.g. integers and such)
  */
 template <ranges::spanable_range R>
-   requires std::is_trivially_copyable_v<std::ranges::range_value_t<R>>
-constexpr void poison(R&& r) {
+   requires std::is_trivially_copyable_v<std::ranges::range_value_t<R>> && (!custom_poisonable<R>)
+constexpr void poison(const R& r) {
    std::span s{r};
    poison(s.data(), s.size());
 }
 
 template <ranges::spanable_range R>
-   requires std::is_trivially_copyable_v<std::ranges::range_value_t<R>>
-constexpr void unpoison(R&& r) {
+   requires std::is_trivially_copyable_v<std::ranges::range_value_t<R>> && (!custom_unpoisonable<R>)
+constexpr void unpoison(const R& r) {
    std::span s{r};
    unpoison(s.data(), s.size());
 }
@@ -127,14 +132,12 @@ constexpr void unpoison(R&& r) {
  * Poison a class type that provides a public `_const_time_poison()` method
  * For instance: BigInt, CT::Mask<>, FrodoMatrix, ...
  */
-template <typename T>
-   requires requires(const T& x) { x._const_time_poison(); }
+template <custom_poisonable T>
 constexpr void poison(const T& x) {
    x._const_time_poison();
 }
 
-template <typename T>
-   requires requires(const T& x) { x._const_time_unpoison(); }
+template <custom_unpoisonable T>
 constexpr void unpoison(const T& x) {
    x._const_time_unpoison();
 }
@@ -173,7 +176,7 @@ concept unpoisonable = requires(const T& v) { ::Botan::CT::unpoison(v); };
  */
 template <std::ranges::range R>
    requires poisonable<std::ranges::range_value_t<R>>
-constexpr void poison_range(R&& r) {
+constexpr void poison_range(const R& r) {
    for(const auto& v : r) {
       poison(v);
    }
@@ -181,7 +184,7 @@ constexpr void poison_range(R&& r) {
 
 template <std::ranges::range R>
    requires unpoisonable<std::ranges::range_value_t<R>>
-constexpr void unpoison_range(R&& r) {
+constexpr void unpoison_range(const R& r) {
    for(const auto& v : r) {
       unpoison(v);
    }
@@ -193,13 +196,13 @@ constexpr void unpoison_range(R&& r) {
  */
 template <poisonable... Ts>
    requires(sizeof...(Ts) > 0)
-constexpr void poison_all(Ts&&... ts) {
+constexpr void poison_all(const Ts&... ts) {
    (poison(ts), ...);
 }
 
 template <unpoisonable... Ts>
    requires(sizeof...(Ts) > 0)
-constexpr void unpoison_all(Ts&&... ts) {
+constexpr void unpoison_all(const Ts&... ts) {
    (unpoison(ts), ...);
 }
 
@@ -269,10 +272,9 @@ template <unpoisonable T>
 *    constant time code and which does not support GCC-style inline asm.
 *
 */
-template <typename T>
-constexpr inline T value_barrier(T x)
-   requires std::unsigned_integral<T> && (!std::same_as<bool, T>)
-{
+template <std::unsigned_integral T>
+   requires(!std::same_as<bool, T>)
+constexpr inline T value_barrier(T x) {
    if(std::is_constant_evaluated()) {
       return x;
    } else {
@@ -322,6 +324,11 @@ class Choice final {
          // so even just the low bit is sufficient.
          return Choice(ct_is_zero<uint32_t>(static_cast<uint32_t>(v_is_0)));
       }
+
+      /**
+      * Create a Choice directly from a mask value - this assumes v is either |0| or |1|
+      */
+      constexpr static Choice from_mask(uint32_t v) { return Choice(v); }
 
       constexpr static Choice yes() { return Choice(static_cast<uint32_t>(-1)); }
 
@@ -393,7 +400,7 @@ class Mask final {
       * Derive a Mask from a Mask of a larger type
       */
       template <typename U>
-      constexpr Mask(Mask<U> o) : m_mask(static_cast<T>(o.value())) {
+      constexpr explicit Mask(Mask<U> o) : m_mask(static_cast<T>(o.value())) {
          static_assert(sizeof(U) > sizeof(T), "sizes ok");
       }
 
@@ -632,7 +639,13 @@ class Mask final {
       /**
       * Return a Choice based on this mask
       */
-      constexpr CT::Choice as_choice() const { return CT::Choice::from_int(unpoisoned_value()); }
+      constexpr CT::Choice as_choice() const {
+         if constexpr(sizeof(T) >= sizeof(uint32_t)) {
+            return CT::Choice::from_mask(static_cast<uint32_t>(unpoisoned_value()));
+         } else {
+            return CT::Choice::from_int(unpoisoned_value());
+         }
+      }
 
       /**
       * Return the underlying value of the mask
@@ -644,7 +657,7 @@ class Mask final {
       constexpr void _const_time_unpoison() const { CT::unpoison(m_mask); }
 
    private:
-      constexpr Mask(T m) : m_mask(m) {}
+      constexpr explicit Mask(T m) : m_mask(m) {}
 
       T m_mask;
 };
@@ -663,7 +676,7 @@ class Option final {
       constexpr Option(T v, Choice valid) : m_has_value(valid), m_value(std::move(v)) {}
 
       /// Construct a set option with the provided value
-      constexpr Option(T v) : Option(std::move(v), Choice::yes()) {}
+      constexpr explicit Option(T v) : Option(std::move(v), Choice::yes()) {}
 
       /// Construct an unset option with a default inner value
       constexpr Option()
@@ -787,8 +800,8 @@ constexpr inline void conditional_swap_ptr(bool cnd, T& x, T& y) {
 
    conditional_swap<uintptr_t>(cnd, xp, yp);
 
-   x = reinterpret_cast<T>(xp);
-   y = reinterpret_cast<T>(yp);
+   x = reinterpret_cast<T>(xp);  // NOLINT(*-no-int-to-ptr)
+   y = reinterpret_cast<T>(yp);  // NOLINT(*-no-int-to-ptr)
 }
 
 template <typename T>

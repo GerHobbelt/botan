@@ -110,7 +110,7 @@ class BOTAN_PUBLIC_API(2, 0) Request final {
 *
 * see https://tools.ietf.org/html/rfc6960#section-4.2.1
 */
-enum class Response_Status_Code {
+enum class Response_Status_Code : uint8_t {
    Successful = 0,
    Malformed_Request = 1,
    Internal_Error = 2,
@@ -130,13 +130,14 @@ class BOTAN_PUBLIC_API(2, 0) Response final {
       * Create a fake OCSP response from a given status code.
       * @param status the status code the check functions will return
       */
-      Response(Certificate_Status_Code status);
+      BOTAN_FUTURE_EXPLICIT Response(Certificate_Status_Code status);
 
       /**
       * Parses an OCSP response.
       * @param response_bits response bits received
       */
-      Response(const std::vector<uint8_t>& response_bits) : Response(response_bits.data(), response_bits.size()) {}
+      BOTAN_FUTURE_EXPLICIT Response(const std::vector<uint8_t>& response_bits) :
+            Response(response_bits.data(), response_bits.size()) {}
 
       /**
       * Parses an OCSP response.

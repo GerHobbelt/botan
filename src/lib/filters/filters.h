@@ -37,7 +37,7 @@ namespace Botan {
 * Filter mixin that breaks input into blocks, useful for
 * cipher modes
 */
-class BOTAN_PUBLIC_API(2, 0) Buffered_Filter {
+class BOTAN_PUBLIC_API(2, 0) Buffered_Filter /* NOLINT(*-special-member-functions) */ {
    public:
       /**
       * Write bytes into the buffered filter, which will them emit them
@@ -324,7 +324,7 @@ class BOTAN_PUBLIC_API(2, 0) Hash_Filter final : public Filter {
       * hash. Otherwise, specify a smaller value here so that the
       * output of the hash algorithm will be cut off.
       */
-      Hash_Filter(HashFunction* hash, size_t len = 0) : m_hash(hash), m_out_len(len) {}
+      BOTAN_FUTURE_EXPLICIT Hash_Filter(HashFunction* hash, size_t len = 0) : m_hash(hash), m_out_len(len) {}
 
       /**
       * Construct a hash filter.
@@ -334,7 +334,7 @@ class BOTAN_PUBLIC_API(2, 0) Hash_Filter final : public Filter {
       * hash. Otherwise, specify a smaller value here so that the
       * output of the hash algorithm will be cut off.
       */
-      Hash_Filter(std::string_view request, size_t len = 0);
+      BOTAN_FUTURE_EXPLICIT Hash_Filter(std::string_view request, size_t len = 0);
 
    private:
       std::unique_ptr<HashFunction> m_hash;
@@ -371,7 +371,8 @@ class BOTAN_PUBLIC_API(2, 0) MAC_Filter final : public Keyed_Filter {
       * MAC. Otherwise, specify a smaller value here so that the
       * output of the MAC will be cut off.
       */
-      MAC_Filter(MessageAuthenticationCode* mac, size_t out_len = 0) : m_mac(mac), m_out_len(out_len) {}
+      BOTAN_FUTURE_EXPLICIT MAC_Filter(MessageAuthenticationCode* mac, size_t out_len = 0) :
+            m_mac(mac), m_out_len(out_len) {}
 
       /**
       * Construct a MAC filter.
@@ -395,7 +396,7 @@ class BOTAN_PUBLIC_API(2, 0) MAC_Filter final : public Keyed_Filter {
       * MAC. Otherwise, specify a smaller value here so that the
       * output of the MAC will be cut off.
       */
-      MAC_Filter(std::string_view mac, size_t len = 0);
+      BOTAN_FUTURE_EXPLICIT MAC_Filter(std::string_view mac, size_t len = 0);
 
       /**
       * Construct a MAC filter.
@@ -436,6 +437,11 @@ class BOTAN_PUBLIC_API(2, 0) Compression_Filter final : public Filter {
 
       ~Compression_Filter() override;
 
+      Compression_Filter(const Compression_Filter& other) = delete;
+      Compression_Filter(Compression_Filter&& other) = delete;
+      Compression_Filter& operator=(const Compression_Filter& other) = delete;
+      Compression_Filter& operator=(Compression_Filter&& other) = delete;
+
    private:
       std::unique_ptr<Compression_Algorithm> m_comp;
       size_t m_buffersize, m_level;
@@ -453,9 +459,14 @@ class BOTAN_PUBLIC_API(2, 0) Decompression_Filter final : public Filter {
 
       std::string name() const override;
 
-      Decompression_Filter(std::string_view type, size_t buffer_size = 4096);
+      BOTAN_FUTURE_EXPLICIT Decompression_Filter(std::string_view type, size_t buffer_size = 4096);
 
       ~Decompression_Filter() override;
+
+      Decompression_Filter(const Decompression_Filter& other) = delete;
+      Decompression_Filter(Decompression_Filter&& other) = delete;
+      Decompression_Filter& operator=(const Decompression_Filter& other) = delete;
+      Decompression_Filter& operator=(Decompression_Filter&& other) = delete;
 
    private:
       std::unique_ptr<Decompression_Algorithm> m_comp;
@@ -490,7 +501,9 @@ class BOTAN_PUBLIC_API(2, 0) Base64_Encoder final : public Filter {
       * @param line_length the length of the lines of the output
       * @param trailing_newline whether to use a trailing newline
       */
-      Base64_Encoder(bool line_breaks = false, size_t line_length = 72, bool trailing_newline = false);
+      BOTAN_FUTURE_EXPLICIT Base64_Encoder(bool line_breaks = false,
+                                           size_t line_length = 72,
+                                           bool trailing_newline = false);
 
    private:
       void encode_and_send(const uint8_t input[], size_t length, bool final_inputs = false);
@@ -499,7 +512,8 @@ class BOTAN_PUBLIC_API(2, 0) Base64_Encoder final : public Filter {
       const size_t m_line_length;
       const bool m_trailing_newline;
       std::vector<uint8_t> m_in, m_out;
-      size_t m_position, m_out_position;
+      size_t m_position = 0;
+      size_t m_out_position = 0;
 };
 
 /**
@@ -530,8 +544,9 @@ class BOTAN_PUBLIC_API(2, 0) Base64_Decoder final : public Filter {
 
    private:
       const Decoder_Checking m_checking;
-      std::vector<uint8_t> m_in, m_out;
-      size_t m_position;
+      std::vector<uint8_t> m_in;
+      std::vector<uint8_t> m_out;
+      size_t m_position = 0;
 };
 
 /**
@@ -543,7 +558,7 @@ class BOTAN_PUBLIC_API(2, 0) Hex_Encoder final : public Filter {
       /**
       * Whether to use uppercase or lowercase letters for the encoded string.
       */
-      enum Case { Uppercase, Lowercase };
+      enum Case : uint8_t { Uppercase, Lowercase };
 
       std::string name() const override { return "Hex_Encoder"; }
 
@@ -562,7 +577,7 @@ class BOTAN_PUBLIC_API(2, 0) Hex_Encoder final : public Filter {
       * @param line_length if newlines are used, how long are lines
       * @param the_case the case to use in the encoded strings
       */
-      Hex_Encoder(bool newlines = false, size_t line_length = 72, Case the_case = Uppercase);
+      BOTAN_FUTURE_EXPLICIT Hex_Encoder(bool newlines = false, size_t line_length = 72, Case the_case = Uppercase);
 
    private:
       void encode_and_send(const uint8_t[], size_t);
@@ -623,7 +638,7 @@ class BOTAN_PUBLIC_API(2, 0) Chain final : public Fanout_Filter {
       * Construct a chain of up to four filters. The filters are set
       * up in the same order as the arguments.
       */
-      Chain(Filter* = nullptr, Filter* = nullptr, Filter* = nullptr, Filter* = nullptr);
+      BOTAN_FUTURE_EXPLICIT Chain(Filter* = nullptr, Filter* = nullptr, Filter* = nullptr, Filter* = nullptr);
 
       /**
       * Construct a chain from range of filters
@@ -683,6 +698,11 @@ class BOTAN_PUBLIC_API(2, 0) Threaded_Fork final : public Fork {
       Threaded_Fork(Filter* filter_arr[], size_t length);
 
       ~Threaded_Fork() override;
+
+      Threaded_Fork(const Threaded_Fork& other) = delete;
+      Threaded_Fork(Threaded_Fork&& other) = delete;
+      Threaded_Fork& operator=(const Threaded_Fork& other) = delete;
+      Threaded_Fork& operator=(Threaded_Fork&& other) = delete;
 
    private:
       void set_next(Filter* f[], size_t n);

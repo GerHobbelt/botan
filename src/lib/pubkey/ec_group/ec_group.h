@@ -53,7 +53,7 @@ enum class EC_Group_Encoding : uint8_t {
 * ExternalSource means the curve parameters came from either an explicit
 * curve encoding or an application defined curve.
 */
-enum class EC_Group_Source {
+enum class EC_Group_Source : uint8_t {
    Builtin,
    ExternalSource,
 };
@@ -63,7 +63,7 @@ enum class EC_Group_Source {
 *
 * This is returned by EC_Group::engine
 */
-enum class EC_Group_Engine {
+enum class EC_Group_Engine : uint8_t {
    /// Using per curve implementation; fastest available
    Optimized,
    /// A generic implementation that handles many curves in one implementation
@@ -336,7 +336,7 @@ class BOTAN_PUBLIC_API(2, 0) EC_Group final {
             /**
             * Create a table for computing g*x + h*y
             */
-            Mul2Table(const EC_AffinePoint& h);
+            BOTAN_FUTURE_EXPLICIT Mul2Table(const EC_AffinePoint& h);
 
             /**
             * Return the elliptic curve point g*x + h*y
@@ -375,6 +375,10 @@ class BOTAN_PUBLIC_API(2, 0) EC_Group final {
                                              const EC_Scalar& y) const;
 
             ~Mul2Table();
+            Mul2Table(const Mul2Table& other) = delete;
+            Mul2Table(Mul2Table&& other) noexcept;
+            Mul2Table& operator=(const Mul2Table& other) = delete;
+            Mul2Table& operator=(Mul2Table&& other) noexcept;
 
          private:
             std::unique_ptr<EC_Mul2Table_Data> m_tbl;
@@ -714,7 +718,7 @@ class BOTAN_PUBLIC_API(2, 0) EC_Group final {
    private:
       static EC_Group_Data_Map& ec_group_data();
 
-      EC_Group(std::shared_ptr<EC_Group_Data>&& data);
+      explicit EC_Group(std::shared_ptr<EC_Group_Data>&& data);
 
       static std::pair<std::shared_ptr<EC_Group_Data>, bool> BER_decode_EC_group(std::span<const uint8_t> ber,
                                                                                  EC_Group_Source source);
