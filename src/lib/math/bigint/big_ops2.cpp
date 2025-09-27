@@ -202,7 +202,7 @@ BigInt& BigInt::operator*=(word y) {
 * Division Operator
 */
 BigInt& BigInt::operator/=(const BigInt& y) {
-   if(y.sig_words() == 1 && is_power_of_2(y.word_at(0))) {
+   if(y.sig_words() == 1 && is_positive() && y.is_positive() && is_power_of_2(y.word_at(0))) {
       (*this) >>= (y.bits() - 1);
    } else {
       (*this) = (*this) / y;
@@ -230,9 +230,10 @@ word BigInt::operator%=(word mod) {
    if(is_power_of_2(mod)) {
       remainder = (word_at(0) & (mod - 1));
    } else {
+      divide_precomp redc_mod(mod);
       const size_t sw = sig_words();
       for(size_t i = sw; i > 0; --i) {
-         remainder = bigint_modop_vartime(remainder, word_at(i - 1), mod);
+         remainder = redc_mod.vartime_mod_2to1(remainder, word_at(i - 1));
       }
    }
 

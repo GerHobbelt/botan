@@ -922,8 +922,8 @@ def cli_dl_group_info_tests(_tmp_dir):
         if len(lines) != 2:
             logging.error('Unexpected output from dl_group_info')
 
-        for l in lines:
-            if not dl_output.match(l):
+        for line in lines:
+            if not dl_output.match(line):
                 logging.error('Unexpected output from dl_group_info')
 
 
@@ -1433,7 +1433,7 @@ def cli_tls_http_server_tests(tmp_dir):
     asyncio.run(run_async_test())
 
 def cli_tls_proxy_tests(tmp_dir):
-    # This was disabled in GH #3845 due to flakyness, then thought possibly
+    # This was disabled in GH #3845 due to flakiness, then thought possibly
     # fixed and enabled again in Gh #4178. However the test still occasionally
     # fails. Disable it again pending diagnosis...
     if not run_socket_tests() or platform.system() == 'Windows' or not check_for_command("tls_proxy"):

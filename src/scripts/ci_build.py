@@ -73,6 +73,7 @@ def known_targets():
         'shared',
         'static',
         'strubbing',
+        'typos',
         'valgrind',
         'valgrind-full',
         'valgrind-ct',
@@ -424,7 +425,7 @@ def determine_flags(target, target_os, target_cpu, target_cc, cc_bin, ccache,
                 cc_bin = 'mips64-linux-gnuabi64-g++'
                 test_prefix = ['qemu-mips64', '-L', '/usr/mips64-linux-gnuabi64/']
             elif target in ['cross-arm32-baremetal']:
-                flags += ['--cpu=arm32', '--without-stack-protector', '--ldflags=-specs=nosys.specs', '--disable-modules=simd_4x32']
+                flags += ['--cpu=arm32', '--disable-neon', '--without-stack-protector', '--ldflags=-specs=nosys.specs']
                 cc_bin = 'arm-none-eabi-c++'
                 test_cmd = None
             else:
@@ -709,6 +710,8 @@ def main(args=None):
             options.cc_bin = 'clang++'
         elif options.cc == 'msvc':
             options.cc_bin = 'cl'
+        elif options.cc == 'clangcl':
+            options.cc_bin = 'clang-cl'
         elif options.cc == "emcc":
             options.cc_bin = "em++"
         else:
@@ -780,11 +783,19 @@ def main(args=None):
             'src/editors/vscode/scripts/test.py',
             'src/ct_selftest/ct_selftest.py']
 
-        # This has to run in the repository root to generate the correct
+        # These commands have to run in the repository root to generate the correct
         # relative paths in the output. Otherwise GitHub Actions will not
         # be able to annotate the correct files.
         cmds.append(["indir:%s" % root_dir, py_interp, '-m', 'pylint'] + pylint_flags + py_scripts)
 
+        ruff_flags = []
+        if is_running_in_github_actions():
+            ruff_flags += ["--output-format=github"]
+
+        cmds.append(["indir:%s" % (root_dir), "ruff", "check"] + ruff_flags + ["."])
+
+    elif target == 'typos':
+        cmds.append(['indir:%s' % (root_dir), 'typos', '-c', 'src/configs/typos.toml', '.'])
     elif target == 'format':
         cmds.append([py_interp,
                      os.path.join(root_dir, 'src/scripts/dev_tools/run_clang_format.py'),
@@ -873,7 +884,7 @@ def main(args=None):
                 valgrind_script_options.append('--skip-tests=%s' % (','.join(slow_tests)))
             elif target == 'valgrind-ct-full' and options.cc == 'clang' and '-Os' in options.custom_optimization_flags:
                 # Clang 18 (only) with -Os seems to have a problem with std::optional which flags certain
-                # uses as touching an unitialized stack variable. This affects the x509_rpki tests
+                # uses as touching an uninitialized stack variable. This affects the x509_rpki tests
                 # TODO(26.04) We can remove this once we have a new version of Clang to use
                 valgrind_script_options.append('--skip-tests=x509_rpki')
 

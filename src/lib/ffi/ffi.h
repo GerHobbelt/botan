@@ -33,7 +33,7 @@ API follows a few simple rules:
   uint8_t for binary.
 
 - No ownership of memory transfers across the API boundary. The API will consume
-  data from const pointers with specifed lengths. Outputs are either placed into
+  data from const pointers with specified lengths. Outputs are either placed into
   buffers provided by (and allocated by) the caller, or are returned via a
   callback (what the FFI layer calls "view" functions).
 
@@ -69,7 +69,7 @@ API follows a few simple rules:
 * that declaration is not visible here since this header is intentionally
 * free-standing, depending only on a few C standard library headers.
 */
-#define BOTAN_FFI_API_VERSION 20250506
+#define BOTAN_FFI_API_VERSION 20250829
 
 /**
 * BOTAN_FFI_EXPORT indicates public FFI functions.
@@ -1127,7 +1127,7 @@ BOTAN_FFI_EXPORT(3, 8) int botan_oid_destroy(botan_asn1_oid_t oid);
 
 /**
 * Create an OID from a string, either dot notation (e.g. '1.2.3.4') or a registered name (e.g. 'RSA')
-* @param oid hanlder to the resulting OID
+* @param oid handle to the resulting OID
 * @param oid_str the name of the OID to create
 * @returns negative number on error, or zero on success
 */
@@ -1862,14 +1862,23 @@ int botan_privkey_load_ecdsa(botan_privkey_t* key, botan_mp_t scalar, const char
 BOTAN_FFI_EXPORT(2, 2)
 int botan_pubkey_load_ecdsa(botan_pubkey_t* key, botan_mp_t public_x, botan_mp_t public_y, const char* curve_name);
 
+BOTAN_FFI_EXPORT(3, 10)
+int botan_pubkey_load_ecdsa_sec1(botan_pubkey_t* key, const uint8_t sec1[], size_t sec1_len, const char* curve_name);
+
 BOTAN_FFI_EXPORT(2, 2)
 int botan_pubkey_load_ecdh(botan_pubkey_t* key, botan_mp_t public_x, botan_mp_t public_y, const char* curve_name);
+
+BOTAN_FFI_EXPORT(3, 10)
+int botan_pubkey_load_ecdh_sec1(botan_pubkey_t* key, const uint8_t sec1[], size_t sec1_len, const char* curve_name);
 
 BOTAN_FFI_EXPORT(2, 2)
 int botan_privkey_load_ecdh(botan_privkey_t* key, botan_mp_t scalar, const char* curve_name);
 
 BOTAN_FFI_EXPORT(2, 2)
 int botan_pubkey_load_sm2(botan_pubkey_t* key, botan_mp_t public_x, botan_mp_t public_y, const char* curve_name);
+
+BOTAN_FFI_EXPORT(3, 10)
+int botan_pubkey_load_sm2_sec1(botan_pubkey_t* key, const uint8_t sec1[], size_t sec1_len, const char* curve_name);
 
 BOTAN_FFI_EXPORT(2, 2)
 int botan_privkey_load_sm2(botan_privkey_t* key, botan_mp_t scalar, const char* curve_name);
@@ -2598,7 +2607,7 @@ BOTAN_FFI_EXPORT(3, 6)
 int botan_tpm2_ctx_enable_crypto_backend(botan_tpm2_ctx_t ctx, botan_rng_t rng);
 
 /**
-* Frees all resouces of a TPM2 context
+* Frees all resources of a TPM2 context
 * @param ctx TPM2 context
 * @return 0 on success
 */
@@ -2621,7 +2630,7 @@ int botan_tpm2_enable_crypto_backend(botan_tpm2_crypto_backend_state_t* cbs_out,
                                      botan_rng_t rng);
 
 /**
-* Frees all resouces of a TPM2 Crypto Callback State
+* Frees all resources of a TPM2 Crypto Callback State
 * Note that this does not attempt to de-register the crypto backend,
 * it just frees the resource pointed to by @p cbs. Use the ESAPI function
 * ``Esys_SetCryptoCallbacks(ctx, nullptr)`` to deregister manually.

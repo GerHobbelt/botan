@@ -115,7 +115,7 @@ BOTAN_PUBLIC_API(2, 0) bool operator!=(const X509_DN& dn1, const X509_DN& dn2);
 
 /*
 The ordering here is arbitrary and may change from release to release.
-It is intended for allowing DNs as keys in std::map and similiar containers
+It is intended for allowing DNs as keys in std::map and similar containers
 */
 BOTAN_PUBLIC_API(2, 0) bool operator<(const X509_DN& dn1, const X509_DN& dn2);
 
@@ -252,7 +252,7 @@ class BOTAN_PUBLIC_API(2, 0) Attribute final : public ASN1_Object {
 *
 * Handles parsing GeneralName types in their BER and canonical string
 * encoding. Allows matching GeneralNames against each other using
-* the rules laid out in the RFC 5280, sec. 4.2.1.10 (Name Contraints).
+* the rules laid out in the RFC 5280, sec. 4.2.1.10 (Name Constraints).
 *
 * This entire class is deprecated and will be removed in a future
 * major release
@@ -446,13 +446,14 @@ class BOTAN_PUBLIC_API(2, 0) Certificate_Extension /* NOLINT(*-special-member-fu
       * an appropriate status code shall be added to cert_status.
       *
       * @param subject Subject certificate that contains this extension
-      * @param issuer Issuer certificate
+      * @param issuer Issuer certificate. nullopt for certificates with no
+      *        available issuer (e.g. non self-signed trust anchors).
       * @param cert_path Certificate path which is currently validated
       * @param cert_status Certificate validation status codes for subject certificate
       * @param pos Position of subject certificate in cert_path
       */
       virtual void validate(const X509_Certificate& subject,
-                            const X509_Certificate& issuer,
+                            const std::optional<X509_Certificate>& issuer,
                             const std::vector<X509_Certificate>& cert_path,
                             std::vector<std::set<Certificate_Status_Code>>& cert_status,
                             size_t pos);
@@ -510,7 +511,7 @@ class BOTAN_PUBLIC_API(2, 0) Extensions final : public ASN1_Object {
       bool extension_set(const OID& oid) const;
 
       /**
-      * Return true if an extesion was set and marked critical
+      * Return true if an extension was set and marked critical
       */
       bool critical_extension_set(const OID& oid) const;
 

@@ -107,6 +107,11 @@ std::optional<X509_Certificate> Certificate_Store_In_SQL::find_cert_by_raw_subje
    throw Not_Implemented("Certificate_Store_In_SQL::find_cert_by_raw_subject_dn_sha256");
 }
 
+std::optional<X509_Certificate> Certificate_Store_In_SQL::find_cert_by_issuer_dn_and_serial_number(
+   const X509_DN& /*issuer_dn*/, std::span<const uint8_t> /*serial_number*/) const {
+   throw Not_Implemented("Certificate_Store_In_SQL::find_cert_by_issuer_dn_and_serial_number");
+}
+
 std::optional<X509_CRL> Certificate_Store_In_SQL::find_crl_for(const X509_Certificate& subject) const {
    auto all_crls = generate_crls();
 
@@ -194,11 +199,11 @@ std::shared_ptr<const Private_Key> Certificate_Store_In_SQL::find_key(const X509
 }
 
 std::vector<X509_Certificate> Certificate_Store_In_SQL::find_certs_for_key(const Private_Key& key) const {
-   auto fpr = key.fingerprint_private("SHA-256");
+   auto fprint = key.fingerprint_private("SHA-256");
    auto stmt =
       m_database->new_statement("SELECT certificate FROM " + m_prefix + "certificates WHERE priv_fingerprint == ?1");
 
-   stmt->bind(1, fpr);
+   stmt->bind(1, fprint);
 
    std::vector<X509_Certificate> certs;
    while(stmt->step()) {
@@ -217,19 +222,19 @@ bool Certificate_Store_In_SQL::insert_key(const X509_Certificate& cert, const Pr
    }
 
    auto pkcs8 = PKCS8::BER_encode(key, m_rng, m_password);
-   auto fpr = key.fingerprint_private("SHA-256");
+   auto fprint = key.fingerprint_private("SHA-256");
 
    auto stmt1 =
       m_database->new_statement("INSERT OR REPLACE INTO " + m_prefix + "keys ( fingerprint, key ) VALUES ( ?1, ?2 )");
 
-   stmt1->bind(1, fpr);
+   stmt1->bind(1, fprint);
    stmt1->bind(2, pkcs8.data(), pkcs8.size());
    stmt1->spin();
 
    auto stmt2 = m_database->new_statement("UPDATE " + m_prefix +
                                           "certificates SET priv_fingerprint = ?1 WHERE fingerprint == ?2");
 
-   stmt2->bind(1, fpr);
+   stmt2->bind(1, fprint);
    stmt2->bind(2, cert.fingerprint("SHA-256"));
    stmt2->spin();
 
@@ -237,10 +242,10 @@ bool Certificate_Store_In_SQL::insert_key(const X509_Certificate& cert, const Pr
 }
 
 void Certificate_Store_In_SQL::remove_key(const Private_Key& key) {
-   auto fpr = key.fingerprint_private("SHA-256");
+   auto fprint = key.fingerprint_private("SHA-256");
    auto stmt = m_database->new_statement("DELETE FROM " + m_prefix + "keys WHERE fingerprint == ?1");
 
-   stmt->bind(1, fpr);
+   stmt->bind(1, fprint);
    stmt->spin();
 }
 

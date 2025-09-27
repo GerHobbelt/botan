@@ -25,7 +25,7 @@
    #include <botan/ecdh.h>
 #endif
 
-#include <botan/internal/eme.h>
+#include <botan/internal/enc_padding.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/mem_utils.h>
 #include <botan/internal/tpm2_algo_mappings.h>
@@ -478,14 +478,14 @@ TSS2_RC rsa_pk_encrypt(TPM2B_PUBLIC* pub_tpm_key,
    //
    //       https://github.com/randombit/botan/pull/4318#issuecomment-2297682058
    #if defined(BOTAN_HAS_RSA)
-   auto create_eme = [&](
-                        const TPMT_RSA_SCHEME& scheme,
-                        [[maybe_unused]] TPM2_ALG_ID name_algo,
-                        [[maybe_unused]] TPMU_ASYM_SCHEME scheme_detail) -> std::optional<std::unique_ptr<Botan::EME>> {
+   auto create_eme = [&](const TPMT_RSA_SCHEME& scheme,
+                         [[maybe_unused]] TPM2_ALG_ID name_algo,
+                         [[maybe_unused]] TPMU_ASYM_SCHEME scheme_detail)
+      -> std::optional<std::unique_ptr<Botan::EncryptionPaddingScheme>> {
       // OAEP is more complex by requiring a hash function and an optional
       // label. To avoid marshalling this into Botan's algorithm descriptor
       // we create an OAEP instance manually.
-      auto create_oaep = [&]() -> std::optional<std::unique_ptr<Botan::EME>> {
+      auto create_oaep = [&]() -> std::optional<std::unique_ptr<Botan::EncryptionPaddingScheme>> {
       #if defined(BOTAN_HAS_EME_OAEP)
          // TPM Library, Part 1: Architecture, Annex B.4
          //    The RSA key's scheme hash algorithm (or, if it is TPM_ALG_NULL,
@@ -520,14 +520,14 @@ TSS2_RC rsa_pk_encrypt(TPM2B_PUBLIC* pub_tpm_key,
       #endif
       };
 
-      try {  // EME::create throws if algorithm is not available
+      try {  // EncryptionPaddingScheme::create throws if algorithm is not available
          switch(scheme.scheme) {
             case TPM2_ALG_OAEP:
                return create_oaep();
             case TPM2_ALG_NULL:
-               return Botan::EME::create("Raw");
+               return Botan::EncryptionPaddingScheme::create("Raw");
             case TPM2_ALG_RSAES:
-               return Botan::EME::create("PKCS1v15");
+               return Botan::EncryptionPaddingScheme::create("PKCS1v15");
             default:
                return std::nullopt;  // -> not supported
          }
@@ -535,7 +535,7 @@ TSS2_RC rsa_pk_encrypt(TPM2B_PUBLIC* pub_tpm_key,
          /* ignore */
       }
 
-      return nullptr;  // -> not implemented (EME::create() threw)
+      return nullptr;  // -> not implemented (EncryptionPaddingScheme::create() threw)
    };
 
    return thunk([&] {
@@ -681,7 +681,7 @@ TSS2_RC get_ecdh_point(TPM2B_PUBLIC* key,
  * @param[in] key key used for AES.
  * @param[in] tpm_sym_alg AES type in TSS2 notation (must be TPM2_ALG_AES).
  * @param[in] key_bits Key size in bits.
- * @param[in] tpm_mode Block cipher mode of opertion in TSS2 notation (CFB).
+ * @param[in] tpm_mode Block cipher mode of operation in TSS2 notation (CFB).
  *            For parameter encryption only CFB can be used.
  * @param[in,out] buffer Data to be encrypted. The encrypted date will be stored
  *                in this buffer.
@@ -712,7 +712,7 @@ TSS2_RC aes_encrypt(uint8_t* key,
  * @param[in] key key used for AES.
  * @param[in] tpm_sym_alg AES type in TSS2 notation (must be TPM2_ALG_AES).
  * @param[in] key_bits Key size in bits.
- * @param[in] tpm_mode Block cipher mode of opertion in TSS2 notation (CFB).
+ * @param[in] tpm_mode Block cipher mode of operation in TSS2 notation (CFB).
  *            For parameter encryption only CFB can be used.
  * @param[in,out] buffer Data to be decrypted. The decrypted date will be stored
  *                in this buffer.
@@ -745,7 +745,7 @@ TSS2_RC aes_decrypt(uint8_t* key,
  * @param[in] key key used for SM4.
  * @param[in] tpm_sym_alg SM4 type in TSS2 notation (must be TPM2_ALG_SM4).
  * @param[in] key_bits Key size in bits.
- * @param[in] tpm_mode Block cipher mode of opertion in TSS2 notation (CFB).
+ * @param[in] tpm_mode Block cipher mode of operation in TSS2 notation (CFB).
  *            For parameter encryption only CFB can be used.
  * @param[in,out] buffer Data to be encrypted. The encrypted date will be stored
  *                in this buffer.
@@ -776,7 +776,7 @@ TSS2_RC sm4_encrypt(uint8_t* key,
  * @param[in] key key used for SM4.
  * @param[in] tpm_sym_alg SM4 type in TSS2 notation (must be TPM2_ALG_SM4).
  * @param[in] key_bits Key size in bits.
- * @param[in] tpm_mode Block cipher mode of opertion in TSS2 notation (CFB).
+ * @param[in] tpm_mode Block cipher mode of operation in TSS2 notation (CFB).
  *            For parameter encryption only CFB can be used.
  * @param[in,out] buffer Data to be decrypted. The decrypted date will be stored
  *                in this buffer.

@@ -7,7 +7,6 @@ Runs the tests from https://github.com/C2SP/x509-limbo
 from botan3 import X509Cert
 from dateutil import parser
 import json
-import datetime
 import optparse # pylint: disable=deprecated-module
 import re
 import subprocess
@@ -225,7 +224,7 @@ def main(args = None):
             validation_time = int(parser.parse(test['validation_time']).timestamp())
 
         hostname = None
-        if test['expected_peer_name'] != None:
+        if test['expected_peer_name'] is not None:
             if test['expected_peer_name']['kind'] in ['DNS', 'IP']:
                 hostname = test['expected_peer_name']['value']
             else:
