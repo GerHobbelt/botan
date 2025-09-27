@@ -466,6 +466,8 @@ def process_command_line(args):
 
     add_enable_disable_pair(build_group, 'asm', True, 'disable inline assembly')
 
+    add_enable_disable_pair(build_group, 'stack-scrubbing', False, 'enable compiler-assisted stack scrubbing')
+
     build_group.add_option('--enable-sanitizers', metavar='SAN', default='',
                            help='enable specific sanitizers')
 
@@ -524,10 +526,6 @@ def process_command_line(args):
     build_group.add_option('--link-method', default=None, metavar='METHOD',
                            choices=link_methods,
                            help='choose how links to include headers are created (%s)' % ', '.join(link_methods))
-
-    build_group.add_option('--with-local-config',
-                           dest='local_config', metavar='FILE',
-                           help='include the contents of FILE into build.h')
 
     build_group.add_option('--distribution-info', metavar='STRING',
                            help='distribution specific version', default=None)
@@ -2233,7 +2231,6 @@ def create_template_vars(source_paths, build_paths, options, modules, disabled_m
                                               suffix=options.library_suffix),
 
         'command_line': configure_command_line(),
-        'local_config': read_textfile(options.local_config),
 
         'program_suffix': program_suffix,
 
@@ -2296,6 +2293,7 @@ def create_template_vars(source_paths, build_paths, options, modules, disabled_m
         'make_supports_phony': osinfo.basename != 'windows',
 
         'cxx_supports_gcc_inline_asm': cc.supports_gcc_inline_asm and options.enable_asm,
+        'compiler_assisted_stack_scrubbing': options.enable_stack_scrubbing,
 
         'cxx_ct_value_barrier_type': cc.ct_value_barrier_type(options),
 
@@ -3261,7 +3259,7 @@ def canonicalize_options(options, info_os, info_arch):
 # Checks user options for consistency
 # This method DOES NOT change options on behalf of the user but explains
 # why the given configuration does not work.
-def validate_options(options, info_os, info_cc, available_module_policies):
+def validate_options(options, info_os, info_cc, cc_version, available_module_policies):
     if options.name_amalgamation != 'botan_all':
         if options.name_amalgamation == '':
             raise UserError('Amalgamation basename must be non-empty')
@@ -3340,6 +3338,9 @@ def validate_options(options, info_os, info_cc, available_module_policies):
     if options.ct_value_barrier_type:
         if options.ct_value_barrier_type not in ['asm', 'volatile', 'none']:
             raise UserError('Unknown setting "%s" for --ct-value-barrier-type' % (options.ct_value_barrier_type))
+
+    if options.enable_stack_scrubbing and (options.compiler not in ['gcc'] or float(cc_version) < 14):
+        raise UserError('Your compiler does not support stack scrubbing. Only GCC 14 and newer support this at the moment.')
 
     # Warnings
     if options.os == 'windows' and options.compiler != 'msvc':
@@ -3608,9 +3609,6 @@ botan
     if options.unsafe_terminate_on_asserts:
         logging.warning("Terminating on assertion failures is NOT SAFE FOR PRODUCTION")
 
-    if options.local_config is not None:
-        logging.warning("Use of --with-local-config is deprecated and will be removed in 3.9 (open an issue if this affects you)")
-
 def list_os_features(all_os_features, info_os):
     for feat in all_os_features:
         os_with_feat = [o for o in info_os.keys() if feat in info_os[o].target_features]
@@ -3677,7 +3675,6 @@ def main(argv):
 
     set_defaults_for_unset_options(options, info_arch, info_cc, info_os)
     canonicalize_options(options, info_os, info_arch)
-    validate_options(options, info_os, info_cc, info_module_policies)
 
     cc = info_cc[options.compiler]
     arch = info_arch[options.arch]
@@ -3693,6 +3690,8 @@ def main(argv):
                 logging.error("Configured target is %s but compiler probe indicates %s", options.arch, cc_arch)
     else:
         cc_min_version = options.cc_min_version or "0.0"
+
+    validate_options(options, info_os, info_cc, cc_min_version, info_module_policies)
 
     logging.info('Target is %s:%s-%s-%s',
                  options.compiler, cc_min_version, options.os, options.arch)

@@ -58,6 +58,8 @@ API follows a few simple rules:
 #include <stddef.h>
 #include <stdint.h>
 
+/* NOLINTBEGIN(*-macro-usage) */
+
 /**
 * The compile time API version. This matches the value of
 * botan_ffi_api_version. This can be used for compile-time checking if a
@@ -89,7 +91,7 @@ API follows a few simple rules:
    #endif
 #endif
 
-#if !defined(BOTAN_NO_DEPRECATED_WARNINGS) && !defined(BOTAN_IS_BEING_BUILT)
+#if !defined(BOTAN_NO_DEPRECATED_WARNINGS) && !defined(BOTAN_AMALGAMATION_H_) && !defined(BOTAN_IS_BEING_BUILT)
    #if defined(__has_attribute)
       #if __has_attribute(deprecated)
          #define BOTAN_FFI_DEPRECATED(msg) __attribute__((deprecated(msg)))
@@ -109,7 +111,7 @@ API follows a few simple rules:
 * If you add a new value here be sure to also add it in
 * botan_error_description
 */
-enum BOTAN_FFI_ERROR {
+enum BOTAN_FFI_ERROR /* NOLINT(*-enum-size) */ {
    BOTAN_FFI_SUCCESS = 0,
 
    BOTAN_FFI_INVALID_VERIFIER = 1,
@@ -2147,7 +2149,7 @@ BOTAN_FFI_EXPORT(3, 0)
 int botan_x509_cert_view_as_string(botan_x509_cert_t cert, botan_view_ctx ctx, botan_view_str_fn view);
 
 /* Must match values of Key_Constraints in key_constraints.h */
-enum botan_x509_cert_key_constraints {
+enum botan_x509_cert_key_constraints /* NOLINT(*-enum-size) */ {
    NO_CONSTRAINTS = 0,
    DIGITAL_SIGNATURE = 32768,
    NON_REPUDIATION = 16384,
@@ -2652,6 +2654,8 @@ int botan_tpm2_unauthenticated_session_init(botan_tpm2_session_t* session_out, b
 */
 BOTAN_FFI_EXPORT(3, 6)
 int botan_tpm2_session_destroy(botan_tpm2_session_t session);
+
+/* NOLINTEND(*-macro-usage) */
 
 #ifdef __cplusplus
 }

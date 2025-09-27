@@ -33,10 +33,10 @@ namespace Botan {
 *
 * TODO(Botan4) remove this enum
 */
-enum class EC_Group_Encoding {
-   Explicit,
-   ImplicitCA,
-   NamedCurve,
+enum class EC_Group_Encoding : uint8_t {
+   Explicit = 0,
+   ImplicitCA = 1,
+   NamedCurve = 2,
 
    EC_DOMPAR_ENC_EXPLICIT = Explicit,
    EC_DOMPAR_ENC_IMPLICITCA = ImplicitCA,
@@ -248,6 +248,13 @@ class BOTAN_PUBLIC_API(2, 0) EC_Group final {
       * register an application specific elliptic curve.
       */
       static bool supports_application_specific_group();
+
+      /**
+      * Return true if in this build configuration it is possible to
+      * register an application specific elliptic curve with a cofactor
+      * larger than 1.
+      */
+      static bool supports_application_specific_group_with_cofactor();
 
       /**
       * Return true if in this build configuration EC_Group::from_name(name) will succeed

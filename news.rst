@@ -1,7 +1,30 @@
 Release Notes
 ========================================
 
-Version 3.8.0, Not Yet Released
+Version 3.9.0, Not Yet Released
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Add SHA-1 implementation using AVX2/BMI2 (GH #4852)
+
+* Add Camellia implementation using GFNI/AVX2 (GH #4848)
+
+* Modify `BOTAN_CLEAR_CPUID` so that clearing `ssse3` also disables AVX2/AVX512
+  (GH #4853)
+
+* Work around a GCC 13/14 miscompilation when LTO is used (GH #4863 #4862)
+
+* Add support for TLS 1.2 null ciphers (GH #4776)
+
+Version 3.8.1, 2025-05-07
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Fix a bug that prevented building using the `fips140` or `modern` module
+  policies. (GH #4854 #4856)
+
+* Fix a missing include that caused compilation failures with libc++20
+  (GH #4855 #4857)
+
+Version 3.8.0, 2025-05-06
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Discussion has started regarding plans for Botan4, current ETA 2027. Check the
