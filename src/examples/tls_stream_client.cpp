@@ -12,7 +12,6 @@
    #include <boost/asio.hpp>
    #include <boost/beast.hpp>
    #include <boost/bind.hpp>
-   #include <utility>
 
 namespace http = boost::beast::http;
 namespace ap = boost::asio::placeholders;
@@ -22,14 +21,16 @@ class Credentials_Manager : public Botan::Credentials_Manager {
    public:
       Credentials_Manager() = default;
 
-      std::vector<Botan::Certificate_Store*> trusted_certificate_authorities(const std::string&,
-                                                                             const std::string&) override {
+      std::vector<Botan::Certificate_Store*> trusted_certificate_authorities(const std::string& /*type*/,
+                                                                             const std::string& /*context*/) override {
          return {&m_cert_store};
       }
 
    private:
       Botan::System_Certificate_Store m_cert_store;
 };
+
+// NOLINTBEGIN(*-avoid-bind)
 
 // a simple https client based on TLS::Stream
 class client {
@@ -43,7 +44,7 @@ class client {
                                                         std::make_shared<Botan::AutoSeeded_RNG>(),
                                                         std::make_shared<Botan::TLS::Session_Manager_Noop>(),
                                                         std::make_shared<Botan::TLS::Policy>(),
-                                                        host)),
+                                                        Botan::TLS::Server_Information(host))),
             m_stream(io_context, m_ctx) {
          boost::asio::async_connect(m_stream.lowest_layer(),
                                     endpoints.begin(),
@@ -69,7 +70,7 @@ class client {
             m_stream, m_request, boost::bind(&client::handle_write, this, ap::error, ap::bytes_transferred));
       }
 
-      void handle_write(const boost::system::error_code& error, size_t) {
+      void handle_write(const boost::system::error_code& error, size_t /*unused*/) {
          if(error) {
             std::cout << "Write failed: " << error.message() << '\n';
             return;
@@ -78,7 +79,7 @@ class client {
             m_stream, m_reply, m_response, boost::bind(&client::handle_read, this, ap::error, ap::bytes_transferred));
       }
 
-      void handle_read(const boost::system::error_code& error, size_t) {
+      void handle_read(const boost::system::error_code& error, size_t /*unused*/) {
          if(!error) {
             std::cout << "Reply: ";
             std::cout << m_response.body() << '\n';
@@ -96,6 +97,8 @@ class client {
       Botan::TLS::Stream<boost::asio::ip::tcp::socket> m_stream;
 };
 
+// NOLINTEND(*-avoid-bind)
+
 int main(int argc, char* argv[]) {
    if(argc != 4) {
       std::cerr << "Usage: tls_stream_client <host> <port> <target>\n"
@@ -104,9 +107,9 @@ int main(int argc, char* argv[]) {
       return 1;
    }
 
-   const auto host = argv[1];
-   const auto port = argv[2];
-   const auto target = argv[3];
+   auto* const host = argv[1];
+   auto* const port = argv[2];
+   auto* const target = argv[3];
 
    try {
       boost::asio::io_context io_context;

@@ -167,6 +167,7 @@ void BOTAN_FN_ISA_AVX2_BMI2 SHA_1::avx2_compress_n(digest_type& digest, std::spa
 
       uint32_t PT[4];
 
+      // NOLINTNEXTLINE(*-container-data-pointer)
       SIMD_8x32 XW0 = SIMD_8x32::load_be128(&block[0], &block[64]);
       SIMD_8x32 XW1 = SIMD_8x32::load_be128(&block[16], &block[80]);
       SIMD_8x32 XW2 = SIMD_8x32::load_be128(&block[32], &block[96]);
@@ -176,6 +177,8 @@ void BOTAN_FN_ISA_AVX2_BMI2 SHA_1::avx2_compress_n(digest_type& digest, std::spa
       SIMD_8x32 P1 = XW1 + SIMD_8x32::splat(K1);
       SIMD_8x32 P2 = XW2 + SIMD_8x32::splat(K1);
       SIMD_8x32 P3 = XW3 + SIMD_8x32::splat(K1);
+
+      // NOLINTBEGIN(readability-suspicious-call-argument) XW rotation
 
       P0.store_le128(PT, &W2[0]);
       P0 = sha1_avx2_next_w(XW0, XW1, XW2, XW3) + SIMD_8x32::splat(K1);
@@ -313,6 +316,8 @@ void BOTAN_FN_ISA_AVX2_BMI2 SHA_1::avx2_compress_n(digest_type& digest, std::spa
       F4(C, D, E, A, B, PT[2]);
       F4(B, C, D, E, A, PT[3]);
 
+      // NOLINTEND(readability-suspicious-call-argument)
+
       A = (digest[0] += A);
       B = (digest[1] += B);
       C = (digest[2] += C);
@@ -413,7 +418,7 @@ void BOTAN_FN_ISA_AVX2_BMI2 SHA_1::avx2_compress_n(digest_type& digest, std::spa
 
       const auto block = in.take(block_bytes);
 
-      SIMD_8x32 W0 = SIMD_8x32::load_be(&block[0]);
+      SIMD_8x32 W0 = SIMD_8x32::load_be(&block[0]);  // NOLINT(*-container-data-pointer)
       SIMD_8x32 W2 = SIMD_8x32::load_be(&block[32]);
 
       SIMD_8x32 P0 = W0 + K11;

@@ -207,15 +207,11 @@ std::vector<Test::Result> NIST_Path_Validation_Tests::run() {
 
    const auto validation_time = Botan::calendar_point(2018, 4, 1, 9, 30, 33).to_std_timepoint();
 
-   for(auto i = expected.begin(); i != expected.end(); ++i) {
+   for(const auto& [test_name, expected_result] : expected) {
       Test::Result result("NIST path validation");
       result.start_timer();
 
-      const std::string test_name = i->first;
-
       try {
-         const std::string expected_result = i->second;
-
          const auto all_files = Test::files_in_data_dir("x509/nist/" + test_name);
 
          Botan::Certificate_Store_In_Memory store;
@@ -770,12 +766,12 @@ std::vector<Test::Result> BSI_Path_Validation_Tests::run() {
                static constexpr result_type max() { return std::numeric_limits<size_t>::max(); }
 
                result_type operator()() {
-                  size_t s;
+                  size_t s = 0;
                   m_rng.randomize(reinterpret_cast<uint8_t*>(&s), sizeof(s));
                   return s;
                }
 
-               random_bit_generator(Botan::RandomNumberGenerator& rng) : m_rng(rng) {}
+               explicit random_bit_generator(Botan::RandomNumberGenerator& rng) : m_rng(rng) {}
 
             private:
                Botan::RandomNumberGenerator& m_rng;

@@ -86,8 +86,8 @@ class Roughtime final : public Command {
                  const size_t max_chain_size,
                  const std::string& address,
                  const Botan::Ed25519_PublicKey& public_key) {
-         Botan::Roughtime::Nonce nonce;
-         Botan::Roughtime::Nonce blind;
+         Botan::Roughtime::Nonce nonce{};
+         Botan::Roughtime::Nonce blind{};
          if(chain) {
             blind = Botan::Roughtime::Nonce(rng());
             nonce = chain->next_nonce(blind);
@@ -110,7 +110,7 @@ class Roughtime final : public Command {
             return;
          }
          const auto tolerance = get_arg_sz("check-local-clock");
-         if(tolerance) {
+         if(tolerance > 0) {
             const auto now = std::chrono::system_clock::now();
             const auto diff_abs =
                now >= response.utc_midpoint() ? now - response.utc_midpoint() : response.utc_midpoint() - now;

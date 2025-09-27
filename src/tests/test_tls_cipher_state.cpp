@@ -38,10 +38,12 @@ decltype(auto) make_CHECK_both(Cipher_State* cs_client,
                                Journaling_Secret_Logger* sl_server) {
    using namespace std::placeholders;
    return [=](const std::string& name, auto lambda) -> std::vector<Test::Result> {
+      // NOLINTBEGIN(*-avoid-bind)
       return {CHECK(std::string(name + " (client)").c_str(),
                     std::bind(lambda, cs_client, sl_client, Connection_Side::Client, _1)),
               CHECK(std::string(name + " (server)").c_str(),
                     std::bind(lambda, cs_server, sl_server, Connection_Side::Server, _1))};
+      // NOLINTEND(*-avoid-bind)
    };
 }
 
@@ -475,9 +477,9 @@ std::vector<Test::Result> test_secret_derivation_rfc8448_rtt1() {
 
        CHECK_both("key update",
                   [&](Cipher_State* cs, Journaling_Secret_Logger* sl, Connection_Side side, Test::Result& result) {
-                     const auto read_label =
+                     const auto* const read_label =
                         side == Connection_Side::Client ? "SERVER_TRAFFIC_SECRET_1" : "CLIENT_TRAFFIC_SECRET_1";
-                     const auto write_label =
+                     const auto* const write_label =
                         side == Connection_Side::Client ? "CLIENT_TRAFFIC_SECRET_1" : "SERVER_TRAFFIC_SECRET_1";
 
                      cs->update_read_keys(*sl);

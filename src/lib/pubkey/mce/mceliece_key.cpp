@@ -44,6 +44,7 @@ McEliece_PrivateKey::McEliece_PrivateKey(const polyn_gf2m& goppa_polyn,
       m_codimension(static_cast<size_t>(ceil_log2(inverse_support.size())) * goppa_polyn.get_degree()),
       m_dimension(inverse_support.size() - m_codimension) {}
 
+// NOLINTNEXTLINE(*-member-init)
 McEliece_PrivateKey::McEliece_PrivateKey(RandomNumberGenerator& rng, size_t code_length, size_t t) {
    uint32_t ext_deg = ceil_log2(code_length);
    *this = generate_mceliece_key(rng, ext_deg, code_length, t);
@@ -104,8 +105,8 @@ size_t McEliece_PublicKey::estimated_strength() const {
 
 McEliece_PublicKey::McEliece_PublicKey(std::span<const uint8_t> key_bits) {
    BER_Decoder dec(key_bits);
-   size_t n;
-   size_t t;
+   size_t n = 0;
+   size_t t = 0;
    dec.start_sequence()
       .start_sequence()
       .decode(n)
@@ -127,8 +128,8 @@ secure_vector<uint8_t> McEliece_PrivateKey::private_key_bits() const {
       .encode(m_public_matrix, ASN1_Type::OctetString)
       .encode(m_g[0].encode(), ASN1_Type::OctetString);  // g as octet string
    enc.start_sequence();
-   for(size_t i = 0; i < m_sqrtmod.size(); i++) {
-      enc.encode(m_sqrtmod[i].encode(), ASN1_Type::OctetString);
+   for(const auto& x : m_sqrtmod) {
+      enc.encode(x.encode(), ASN1_Type::OctetString);
    }
    enc.end_cons();
    secure_vector<uint8_t> enc_support;
@@ -169,7 +170,8 @@ bool McEliece_PrivateKey::check_key(RandomNumberGenerator& rng, bool /*unused*/)
 }
 
 McEliece_PrivateKey::McEliece_PrivateKey(std::span<const uint8_t> key_bits) {
-   size_t n, t;
+   size_t n = 0;
+   size_t t = 0;
    secure_vector<uint8_t> enc_g;
    BER_Decoder dec_base(key_bits);
    BER_Decoder dec = dec_base.start_sequence()

@@ -12,6 +12,7 @@
 #include <botan/secmem.h>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -70,6 +71,13 @@ class BOTAN_PUBLIC_API(2, 0) DataSource {
       size_t read_byte(uint8_t& out);
 
       /**
+      * Read one byte.
+      *
+      * Returns nullopt if no further bytes are available
+      */
+      std::optional<uint8_t> read_byte();
+
+      /**
       * Peek at one byte.
       * @param out an output byte
       * @return length in bytes that was actually read and put
@@ -102,8 +110,8 @@ class BOTAN_PUBLIC_API(2, 0) DataSource {
 */
 class BOTAN_PUBLIC_API(2, 0) DataSource_Memory final : public DataSource {
    public:
-      size_t read(uint8_t[], size_t) override;
-      size_t peek(uint8_t[], size_t, size_t) const override;
+      size_t read(uint8_t buf[], size_t length) override;
+      size_t peek(uint8_t buf[], size_t length, size_t offset) const override;
       bool check_available(size_t n) override;
       bool end_of_data() const override;
 
@@ -150,13 +158,13 @@ class BOTAN_PUBLIC_API(2, 0) DataSource_Memory final : public DataSource {
 */
 class BOTAN_PUBLIC_API(2, 0) DataSource_Stream final : public DataSource {
    public:
-      size_t read(uint8_t[], size_t) override;
-      size_t peek(uint8_t[], size_t, size_t) const override;
+      size_t read(uint8_t buf[], size_t length) override;
+      size_t peek(uint8_t buf[], size_t length, size_t offset) const override;
       bool check_available(size_t n) override;
       bool end_of_data() const override;
       std::string id() const override;
 
-      BOTAN_FUTURE_EXPLICIT DataSource_Stream(std::istream&, std::string_view id = "<std::istream>");
+      BOTAN_FUTURE_EXPLICIT DataSource_Stream(std::istream& in, std::string_view id = "<std::istream>");
 
 #if defined(BOTAN_TARGET_OS_HAS_FILESYSTEM)
       /**

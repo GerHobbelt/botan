@@ -98,7 +98,7 @@ std::unique_ptr<PKCS10_Data> decode_pkcs10(const std::vector<uint8_t>& body) {
 
    BER_Decoder cert_req_info(body);
 
-   size_t version;
+   size_t version = 0;
    cert_req_info.decode(version);
    if(version != 0) {
       throw Decoding_Error("Unknown version code in PKCS #10 request: " + std::to_string(version));
@@ -145,7 +145,7 @@ std::unique_ptr<PKCS10_Data> decode_pkcs10(const std::vector<uint8_t>& body) {
 
    cert_req_info.verify_end();
 
-   if(auto ext = data->m_extensions.get_extension_object_as<Cert_Extension::Subject_Alternative_Name>()) {
+   if(const auto* ext = data->m_extensions.get_extension_object_as<Cert_Extension::Subject_Alternative_Name>()) {
       data->m_alt_name = ext->get_alt_name();
    }
 

@@ -182,7 +182,7 @@ Test::Result test_function(const std::string& name,
    }
 
    // test ReturnValue variant
-   ReturnValue rv;
+   ReturnValue rv = ReturnValue::OK;
    success = test_func(&rv);
    result.test_eq(name, success, !expect_failure);
    if(!expect_failure) {
@@ -508,7 +508,7 @@ Test::Result test_c_get_session_info() {
 Test::Result login_logout_helper(const RAII_LowLevel& p11_low_level,
                                  SessionHandle handle,
                                  UserType user_type,
-                                 const std::string& pin) {
+                                 std::string_view pin) {
    secure_vector<uint8_t> pin_as_sec_vec(pin.begin(), pin.end());
 
    auto login_secvec_binder = std::bind(
@@ -629,8 +629,8 @@ Test::Result test_c_set_pin() {
 
 // Simple data object
 const ObjectClass object_class = ObjectClass::Data;
-const std::string label = "A data object";
-const std::string data = "Sample data";
+const std::string_view label = "A data object";
+const std::string_view data = "Sample data";
 const Bbool btrue = True;
 
 const std::array<Attribute, 4> data_template = {
@@ -639,14 +639,14 @@ const std::array<Attribute, 4> data_template = {
      sizeof(object_class)},
     {static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::Token), const_cast<Bbool*>(&btrue), sizeof(btrue)},
     {static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::Label),
-     const_cast<char*>(label.c_str()),
+     const_cast<char*>(label.data()),
      static_cast<CK_ULONG>(label.size())},
     {static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::Value),
-     const_cast<char*>(data.c_str()),
+     const_cast<char*>(data.data()),
      static_cast<CK_ULONG>(data.size())}}};
 
 ObjectHandle create_simple_data_object(const RAII_LowLevel& p11_low_level) {
-   ObjectHandle object_handle;
+   ObjectHandle object_handle = {};
 
    auto dtemplate = data_template;
    p11_low_level.get()->C_CreateObject(

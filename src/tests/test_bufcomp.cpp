@@ -23,7 +23,7 @@ namespace {
 
 class Test_Buf_Comp final : public Botan::Buffered_Computation {
    public:
-      Test_Buf_Comp(Test::Result& res) : m_result(res), m_counter(0) {}
+      explicit Test_Buf_Comp(Test::Result& res) : m_result(res), m_counter(0) {}
 
       size_t output_length() const override { return sizeof(m_counter); }
 
@@ -75,7 +75,7 @@ Test::Result test_buffered_computation_convenience_api() {
 
    Botan::secure_vector<uint8_t> out_sv;
    std::vector<uint8_t> out_vec;
-   std::array<uint8_t, sizeof(std::size_t)> out_arr;
+   std::array<uint8_t, sizeof(std::size_t)> out_arr{};
    TestSecureVector out_strong_type;
 
    // update with basic string-ish types

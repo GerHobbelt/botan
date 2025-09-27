@@ -123,7 +123,7 @@ constexpr void copy_into(T& dest, std::span<const uint8_t> data) {
 /// provided @p data is not larger than the capacity of the buffer type.
 template <tpm2_buffer T>
 constexpr T copy_into(std::span<const uint8_t> data) {
-   T result;
+   T result{};
    copy_into(result, data);
    return result;
 }
@@ -141,7 +141,7 @@ constexpr OutT copy_into(const tpm2_buffer auto& data) {
 /// Create a TPM2 buffer of a given type and @p length.
 template <tpm2_buffer T>
 constexpr T init_with_size(size_t length) {
-   T result;
+   T result{};
    BOTAN_ASSERT_NOMSG(length <= sizeof(result.buffer));
    result.size = static_cast<decltype(result.size)>(length);
    clear_bytes(result.buffer, length);
@@ -182,7 +182,7 @@ struct ObjectHandles {
  */
 class ObjectSetter {
    public:
-      constexpr ObjectSetter(Object& object, bool persistent = false) :
+      constexpr explicit ObjectSetter(Object& object, bool persistent = false) :
             m_object(object), m_persistent(persistent), m_handle(persistent ? 0 : ESYS_TR_NONE) {}
 
       constexpr ~ObjectSetter() noexcept {
@@ -202,6 +202,7 @@ class ObjectSetter {
       ObjectSetter& operator=(const ObjectSetter&) = delete;
       ObjectSetter& operator=(ObjectSetter&&) = delete;
 
+      // NOLINTNEXTLINE(*-explicit-conversions) FIXME
       [[nodiscard]] constexpr operator uint32_t*() && noexcept { return &m_handle; }
 
    private:

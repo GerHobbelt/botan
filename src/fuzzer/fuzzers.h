@@ -16,15 +16,16 @@
 #include <stdlib.h>  // for setenv
 #include <vector>
 
-static const size_t max_fuzzer_input_size = 8192;
+static constexpr size_t max_fuzzer_input_size = 8192;
 
 extern void fuzz(std::span<const uint8_t> in);
 
+// Need to declare these before defining them;
 extern "C" int LLVMFuzzerInitialize(int* argc, char*** argv);
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t in[], size_t len);
 
 // NOLINTNEXTLINE(*-definitions-in-headers)
-extern "C" int LLVMFuzzerInitialize(int*, char***) {
+extern "C" int LLVMFuzzerInitialize(int* /*argc*/, char*** /*argv*/) {
    /*
    * This disables the mlock pool, as overwrites within the pool are
    * opaque to ASan or other instrumentation.
@@ -62,26 +63,29 @@ inline Botan::RandomNumberGenerator& fuzzer_rng() {
    return *fuzzer_rng_as_shared();
 }
 
-// TODO(Botan4) use a constexpr function with std::source_location
+// TODO use a constexpr function with std::source_location
 // NOLINTNEXTLINE(*-macro-usage)
 #define FUZZER_WRITE_AND_CRASH(expr)                                                                          \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                                                     \
    do {                                                                                                       \
       std::cerr << expr << " @ Line " << __LINE__ << " in " << __FILE__ << "\n"; /* NOLINT(*-macro-paren*) */ \
       abort();                                                                                                \
    } while(0)
 
-// TODO(Botan4) use a constexpr function with std::source_location
+// TODO use a constexpr function with std::source_location
 // NOLINTNEXTLINE(*-macro-usage)
 #define FUZZER_ASSERT_EQUAL(x, y)                                                            \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                                    \
    do {                                                                                      \
       if((x) != (y)) {                                                                       \
          FUZZER_WRITE_AND_CRASH(#x << " = " << (x) << " != " << #y << " = " << (y) << "\n"); \
       }                                                                                      \
    } while(0)
 
-// TODO(Botan4) use a constexpr function with std::source_location
+// TODO use a constexpr function with std::source_location
 // NOLINTNEXTLINE(*-macro-usage)
 #define FUZZER_ASSERT_TRUE(e)                                         \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                             \
    do {                                                               \
       if(!(e)) {                                                      \
          FUZZER_WRITE_AND_CRASH("Expression " << #e << " was false"); \
@@ -91,12 +95,12 @@ inline Botan::RandomNumberGenerator& fuzzer_rng() {
 #if defined(BOTAN_FUZZER_IS_TEST)
 
 inline int fuzz_files(char* files[]) {
-   for(size_t i = 0; files[i]; ++i) {
+   for(size_t i = 0; files[i] != nullptr; ++i) {
       std::ifstream in(files[i]);
 
       if(in.good()) {
          std::vector<uint8_t> buf(max_fuzzer_input_size);
-         in.read(reinterpret_cast<char*>(buf.data()), buf.size());
+         in.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
          const size_t got = in.gcount();
          buf.resize(got);
          buf.shrink_to_fit();
@@ -133,7 +137,7 @@ int main(int argc, char* argv[]) {
    #endif
    {
       std::vector<uint8_t> buf(max_fuzzer_input_size);
-      std::cin.read(reinterpret_cast<char*>(buf.data()), buf.size());
+      std::cin.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
       const size_t got = std::cin.gcount();
 
       buf.resize(got);

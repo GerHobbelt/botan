@@ -52,6 +52,8 @@ using native_simd_type = __vector unsigned int;
 using native_simd_type = uint32x4_t;
 #endif
 
+// NOLINTBEGIN(portability-simd-intrinsics)
+
 /**
 * 4x32 bit SIMD register
 *
@@ -70,6 +72,8 @@ class SIMD_4x32 final {
       SIMD_4x32(SIMD_4x32&& other) = default;
 
       ~SIMD_4x32() = default;
+
+      /* NOLINTBEGIN(*-prefer-member-initializer) */
 
       /**
       * Zero initialize SIMD register with 4 32-bit elements
@@ -105,6 +109,8 @@ class SIMD_4x32 final {
          m_simd = __lsx_vld(B, 0);
 #endif
       }
+
+      /* NOLINTEND(*-prefer-member-initializer) */
 
       /**
       * Load SIMD register with one 32-bit element repeated
@@ -144,9 +150,11 @@ class SIMD_4x32 final {
 #if defined(BOTAN_SIMD_USE_SSSE3)
          return SIMD_4x32(_mm_loadu_si128(reinterpret_cast<const __m128i*>(in)));
 #elif defined(BOTAN_SIMD_USE_ALTIVEC)
-         uint32_t R[4];
-         Botan::load_le(R, static_cast<const uint8_t*>(in), 4);
-         __vector unsigned int val = {R[0], R[1], R[2], R[3]};
+         uint32_t R0 = Botan::load_le<uint32_t>(reinterpret_cast<const uint8_t*>(in), 0);
+         uint32_t R1 = Botan::load_le<uint32_t>(reinterpret_cast<const uint8_t*>(in), 1);
+         uint32_t R2 = Botan::load_le<uint32_t>(reinterpret_cast<const uint8_t*>(in), 2);
+         uint32_t R3 = Botan::load_le<uint32_t>(reinterpret_cast<const uint8_t*>(in), 3);
+         __vector unsigned int val = {R0, R1, R2, R3};
          return SIMD_4x32(val);
 #elif defined(BOTAN_SIMD_USE_NEON)
          SIMD_4x32 l(vld1q_u32(static_cast<const uint32_t*>(in)));
@@ -168,9 +176,11 @@ class SIMD_4x32 final {
          return load_le(in).bswap();
 
 #elif defined(BOTAN_SIMD_USE_ALTIVEC)
-         uint32_t R[4];
-         Botan::load_be(R, static_cast<const uint8_t*>(in), 4);
-         __vector unsigned int val = {R[0], R[1], R[2], R[3]};
+         uint32_t R0 = Botan::load_be<uint32_t>(reinterpret_cast<const uint8_t*>(in), 0);
+         uint32_t R1 = Botan::load_be<uint32_t>(reinterpret_cast<const uint8_t*>(in), 1);
+         uint32_t R2 = Botan::load_be<uint32_t>(reinterpret_cast<const uint8_t*>(in), 2);
+         uint32_t R3 = Botan::load_be<uint32_t>(reinterpret_cast<const uint8_t*>(in), 3);
+         __vector unsigned int val = {R0, R1, R2, R3};
          return SIMD_4x32(val);
 
 #elif defined(BOTAN_SIMD_USE_NEON)
@@ -206,9 +216,11 @@ class SIMD_4x32 final {
          union {
                __vector unsigned int V;
                uint32_t R[4];
-         } vec;
+         } vec{};
 
+         // NOLINTNEXTLINE(*-union-access)
          vec.V = raw();
+         // NOLINTNEXTLINE(*-union-access)
          Botan::store_le(out, vec.R[0], vec.R[1], vec.R[2], vec.R[3]);
 
 #elif defined(BOTAN_SIMD_USE_NEON)
@@ -235,9 +247,11 @@ class SIMD_4x32 final {
          union {
                __vector unsigned int V;
                uint32_t R[4];
-         } vec;
+         } vec{};
 
+         // NOLINTNEXTLINE(*-union-access)
          vec.V = m_simd;
+         // NOLINTNEXTLINE(*-union-access)
          Botan::store_be(out, vec.R[0], vec.R[1], vec.R[2], vec.R[3]);
 
 #elif defined(BOTAN_SIMD_USE_NEON)
@@ -758,6 +772,8 @@ class SIMD_4x32 final {
    private:
       native_simd_type m_simd;
 };
+
+// NOLINTEND(portability-simd-intrinsics)
 
 template <size_t R>
 inline SIMD_4x32 BOTAN_FN_ISA_SIMD_4X32 rotl(SIMD_4x32 input) {

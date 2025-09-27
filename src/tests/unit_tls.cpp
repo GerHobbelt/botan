@@ -68,7 +68,8 @@ class Credentials_Manager_Test final : public Botan::Credentials_Manager {
             m_rsa_key(rsa_key),
             m_ecdsa_cert(ecdsa_cert),
             m_ecdsa_ca(ecdsa_ca),
-            m_ecdsa_key(ecdsa_key) {
+            m_ecdsa_key(ecdsa_key),
+            m_provides_client_certs(with_client_certs) {
          auto store = std::make_unique<Botan::Certificate_Store_In_Memory>();
          store->add_certificate(m_rsa_ca);
          store->add_certificate(m_ecdsa_ca);
@@ -76,7 +77,6 @@ class Credentials_Manager_Test final : public Botan::Credentials_Manager {
          store->add_crl(ecdsa_crl);
 
          m_stores.push_back(std::move(store));
-         m_provides_client_certs = with_client_certs;
       }
 
       std::vector<Botan::Certificate_Store*> trusted_certificate_authorities(const std::string& /*type*/,
@@ -360,7 +360,7 @@ class TLS_Handshake_Test final {
             void tls_modify_extensions(Botan::TLS::Extensions& extn,
                                        Botan::TLS::Connection_Side which_side,
                                        Botan::TLS::Handshake_Type /* unused */) override {
-               extn.add(new Test_Extension(which_side));
+               extn.add(new Test_Extension(which_side));  // NOLINT(*-owning-memory)
 
                // Insert an unsupported signature scheme as highest prio, to ensure we are tolerant of this
                if(auto sig_algs = extn.take<Botan::TLS::Signature_Algorithms>()) {
@@ -368,7 +368,7 @@ class TLS_Handshake_Test final {
                   // 0x0301 is RSA PKCS1/SHA-224, which is not supported anymore
                   schemes.insert(schemes.begin(), 0x0301);
                   // This replaces the previous extension value
-                  extn.add(new Botan::TLS::Signature_Algorithms(schemes));
+                  extn.add(new Botan::TLS::Signature_Algorithms(schemes));  // NOLINT(*-owning-memory)
                }
             }
 
@@ -384,7 +384,7 @@ class TLS_Handshake_Test final {
                } else {
                   Botan::TLS::Unknown_Extension* unknown_ext = dynamic_cast<Botan::TLS::Unknown_Extension*>(test_extn);
 
-                  if(unknown_ext) {
+                  if(unknown_ext != nullptr) {
                      const std::vector<uint8_t> val = unknown_ext->value();
 
                      if(m_results.test_eq("Expected size for test extn", val.size(), 7)) {

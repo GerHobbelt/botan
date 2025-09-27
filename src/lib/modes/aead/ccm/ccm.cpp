@@ -50,8 +50,8 @@ std::string CCM_Mode::name() const {
    return fmt("{}/CCM({},{})", m_cipher->name(), tag_size(), L());
 }
 
-bool CCM_Mode::valid_nonce_length(size_t n) const {
-   return (n == (15 - L()));
+bool CCM_Mode::valid_nonce_length(size_t length) const {
+   return (length == (15 - L()));
 }
 
 size_t CCM_Mode::default_nonce_length() const {
@@ -95,7 +95,7 @@ void CCM_Mode::set_associated_data_n(size_t idx, std::span<const uint8_t> ad) {
       m_ad_buf.push_back(get_byte<0>(static_cast<uint16_t>(ad.size())));
       m_ad_buf.push_back(get_byte<1>(static_cast<uint16_t>(ad.size())));
       m_ad_buf.insert(m_ad_buf.end(), ad.begin(), ad.end());
-      while(m_ad_buf.size() % CCM_BS) {
+      while(m_ad_buf.size() % CCM_BS != 0) {
          m_ad_buf.push_back(0);  // pad with zeros to full block size
       }
    }

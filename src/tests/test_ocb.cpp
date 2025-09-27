@@ -44,7 +44,7 @@ class OCB_Wide_Test_Block_Cipher final : public Botan::BlockCipher {
       Botan::Key_Length_Specification key_spec() const override { return Botan::Key_Length_Specification(m_bs); }
 
       void encrypt_n(const uint8_t in[], uint8_t out[], size_t blocks) const override {
-         while(blocks) {
+         while(blocks > 0) {
             Botan::copy_mem(out, in, m_bs);
             Botan::poly_double_n(out, m_bs);
 
@@ -59,14 +59,14 @@ class OCB_Wide_Test_Block_Cipher final : public Botan::BlockCipher {
       }
 
       void decrypt_n(const uint8_t in[], uint8_t out[], size_t blocks) const override {
-         while(blocks) {
+         while(blocks > 0) {
             for(size_t i = 0; i != m_bs; ++i) {
                out[i] = in[i] ^ m_key[i];
             }
 
             uint8_t carry = in[m_bs - 1] & 0x01;
 
-            if(carry) {
+            if(carry != 0) {
                if(m_bs == 16 || m_bs == 24) {
                   out[m_bs - 1] ^= 0x87;
                } else if(m_bs == 32) {
@@ -209,16 +209,16 @@ class OCB_Wide_Long_KAT_Tests final : public Text_Based_Test {
                S[j] = static_cast<uint8_t>(0x50 + j);
             }
 
-            Botan::store_be(static_cast<uint16_t>(3 * i + 1), &N[0]);
+            Botan::store_be(static_cast<uint16_t>(3 * i + 1), N.data());
 
             ocb_encrypt(result, C, enc, N, S, S);
-            Botan::store_be(static_cast<uint16_t>(3 * i + 2), &N[0]);
+            Botan::store_be(static_cast<uint16_t>(3 * i + 2), N.data());
             ocb_encrypt(result, C, enc, N, S, empty);
-            Botan::store_be(static_cast<uint16_t>(3 * i + 3), &N[0]);
+            Botan::store_be(static_cast<uint16_t>(3 * i + 3), N.data());
             ocb_encrypt(result, C, enc, N, empty, S);
          }
 
-         Botan::store_be(static_cast<uint16_t>(385), &N[0]);
+         Botan::store_be(static_cast<uint16_t>(385), N.data());
          std::vector<uint8_t> final_result;
          ocb_encrypt(result, final_result, enc, N, empty, C);
 
@@ -352,7 +352,7 @@ class OCB_Null_Cipher final : public Botan::BlockCipher {
 
       bool has_keying_material() const override { return m_has_key; }
 
-      void key_schedule(std::span<const uint8_t>) override { m_has_key = true; }
+      void key_schedule(std::span<const uint8_t> /*key*/) override { m_has_key = true; }
 
       Botan::Key_Length_Specification key_spec() const override { return Botan::Key_Length_Specification(m_bs); }
 

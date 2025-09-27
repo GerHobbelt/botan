@@ -30,19 +30,18 @@ TLS_CBC_HMAC_AEAD_Mode::TLS_CBC_HMAC_AEAD_Mode(Cipher_Dir dir,
                                                size_t mac_keylen,
                                                Protocol_Version version,
                                                bool use_encrypt_then_mac) :
+      m_mac(std::move(mac)),
       m_cipher_name(cipher->name()),
-      m_mac_name(mac->name()),
+      m_mac_name(m_mac->name()),
       m_cipher_keylen(cipher_keylen),
+      m_block_size(cipher->block_size()),
+      m_iv_size(m_block_size),
       m_mac_keylen(mac_keylen),
-      m_use_encrypt_then_mac(use_encrypt_then_mac) {
-   m_tag_size = mac->output_length();
-   m_block_size = cipher->block_size();
-
-   m_iv_size = m_block_size;
-
-   m_is_datagram = version.is_datagram_protocol();
-
-   m_mac = std::move(mac);
+      m_tag_size(m_mac->output_length()),
+      m_use_encrypt_then_mac(use_encrypt_then_mac),
+      m_is_datagram(version.is_datagram_protocol()) {
+   BOTAN_ASSERT_NOMSG(m_mac->valid_keylength(m_mac_keylen));
+   BOTAN_ASSERT_NOMSG(cipher->valid_keylength(m_cipher_keylen));
 
    auto null_padding = std::make_unique<Null_Padding>();
    if(dir == Cipher_Dir::Encryption) {
@@ -323,15 +322,10 @@ size_t TLS_CBC_HMAC_AEAD_Decryption::output_length(size_t /*input_length*/) cons
 *
 */
 void TLS_CBC_HMAC_AEAD_Decryption::perform_additional_compressions(size_t plen, size_t padlen) {
-   uint16_t block_size;
-   uint16_t max_bytes_in_first_block;
-   if(mac().name() == "HMAC(SHA-384)") {
-      block_size = 128;
-      max_bytes_in_first_block = 111;
-   } else {
-      block_size = 64;
-      max_bytes_in_first_block = 55;
-   }
+   const bool is_sha384 = mac().name() == "HMAC(SHA-384)";
+   const uint16_t block_size = is_sha384 ? 128 : 64;
+   const uint16_t max_bytes_in_first_block = is_sha384 ? 111 : 55;
+
    // number of maximum MACed bytes
    const uint16_t L1 = static_cast<uint16_t>(13 + plen - tag_size());
    // number of current MACed bytes (L1 - padlen)

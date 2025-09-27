@@ -438,7 +438,7 @@ class GenericScalar final {
             W borrow = shift_right<1>(x.m_val);
 
             // Conditional ok: this function is variable time
-            if(borrow) {
+            if(borrow > 0) {
                bigint_add2_nc(x.m_val.data(), N, inv_2.data(), N);
             }
          }
@@ -486,7 +486,7 @@ class GenericScalar final {
             * Compute r = b - a and check if it underflowed
             * If it did not then we are in the b > a path
             */
-            std::array<W, N> r;
+            std::array<W, N> r{};
             word carry = bigint_sub3(r.data(), b.data(), N, a.data(), N);
 
             // Conditional ok: this function is variable time
@@ -716,7 +716,7 @@ class GenericField final {
       friend GenericField operator*(const GenericField& a, const GenericField& b) {
          const auto* curve = check_curve(a, b);
 
-         std::array<W, 2 * N> z;  // NOLINT(*-memberinit)
+         std::array<W, 2 * N> z;  // NOLINT(*-member-init)
          curve->_params().mul(z, a.value(), b.value());
          return GenericField(curve, redc(curve, z));
       }
@@ -724,14 +724,14 @@ class GenericField final {
       GenericField& operator*=(const GenericField& other) {
          const auto* curve = check_curve(*this, other);
 
-         std::array<W, 2 * N> z;  // NOLINT(*-memberinit)
+         std::array<W, 2 * N> z;  // NOLINT(*-member-init)
          curve->_params().mul(z, value(), other.value());
          m_val = redc(curve, z);
          return (*this);
       }
 
       GenericField square() const {
-         std::array<W, 2 * N> z;  // NOLINT(*-memberinit)
+         std::array<W, 2 * N> z;  // NOLINT(*-member-init)
          m_curve->_params().sqr(z, value());
          return GenericField(m_curve, redc(m_curve, z));
       }

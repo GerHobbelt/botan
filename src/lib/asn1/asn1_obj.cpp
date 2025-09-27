@@ -160,7 +160,7 @@ std::string asn1_tag_to_string(ASN1_Type type) {
 /*
 * BER Decoding Exceptions
 */
-BER_Decoding_Error::BER_Decoding_Error(std::string_view str) : Decoding_Error(fmt("BER: {}", str)) {}
+BER_Decoding_Error::BER_Decoding_Error(std::string_view err) : Decoding_Error(fmt("BER: {}", err)) {}
 
 BER_Bad_Tag::BER_Bad_Tag(std::string_view str, uint32_t tagging) : BER_Decoding_Error(fmt("{}: {}", str, tagging)) {}
 
@@ -190,7 +190,7 @@ std::string to_string(const BER_Object& obj) {
 * Do heuristic tests for BER data
 */
 bool maybe_BER(DataSource& source) {
-   uint8_t first_u8;
+   uint8_t first_u8 = 0;
    if(source.peek_byte(first_u8) == 0) {
       BOTAN_ASSERT_EQUAL(source.read_byte(first_u8), 0, "Expected EOF");
       throw Stream_IO_Error("ASN1::maybe_BER: Source was empty");

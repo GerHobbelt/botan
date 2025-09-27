@@ -86,7 +86,7 @@ namespace {
 
 class TimingTestTimer {
    public:
-      TimingTestTimer() { m_start = get_high_resolution_clock(); }
+      TimingTestTimer() : m_start(get_high_resolution_clock()) {}
 
       uint64_t complete() const { return get_high_resolution_clock() - m_start; }
 
@@ -141,8 +141,8 @@ class Bleichenbacker_Timing_Test final : public Timing_Test {
    public:
       explicit Bleichenbacker_Timing_Test(size_t keysize) :
             m_privkey(timing_test_rng(), keysize),
-            m_pubkey(m_privkey),
-            m_enc(m_pubkey, timing_test_rng(), "Raw"),
+            m_pubkey(m_privkey.public_key()),
+            m_enc(*m_pubkey, timing_test_rng(), "Raw"),
             m_dec(m_privkey, timing_test_rng(), "PKCS1v15") {}
 
       std::vector<uint8_t> prepare_input(const std::string& input) override {
@@ -160,7 +160,7 @@ class Bleichenbacker_Timing_Test final : public Timing_Test {
       const size_t m_expected_content_size = 48;
       const size_t m_ctext_length = 256;
       Botan::RSA_PrivateKey m_privkey;
-      Botan::RSA_PublicKey m_pubkey;
+      std::unique_ptr<Botan::Public_Key> m_pubkey;
       Botan::PK_Encryptor_EME m_enc;
       Botan::PK_Decryptor_EME m_dec;
 };
@@ -180,8 +180,8 @@ class Manger_Timing_Test final : public Timing_Test {
    public:
       explicit Manger_Timing_Test(size_t keysize) :
             m_privkey(timing_test_rng(), keysize),
-            m_pubkey(m_privkey),
-            m_enc(m_pubkey, timing_test_rng(), m_encrypt_padding),
+            m_pubkey(m_privkey.public_key()),
+            m_enc(*m_pubkey, timing_test_rng(), m_encrypt_padding),
             m_dec(m_privkey, timing_test_rng(), m_decrypt_padding) {}
 
       std::vector<uint8_t> prepare_input(const std::string& input) override {
@@ -202,7 +202,7 @@ class Manger_Timing_Test final : public Timing_Test {
       const std::string m_decrypt_padding = "EME1(SHA-256)";
       const size_t m_ctext_length = 256;
       Botan::RSA_PrivateKey m_privkey;
-      Botan::RSA_PublicKey m_pubkey;
+      std::unique_ptr<Botan::Public_Key> m_pubkey;
       Botan::PK_Encryptor_EME m_enc;
       Botan::PK_Decryptor_EME m_dec;
 };
@@ -584,7 +584,7 @@ class MARVIN_Test_Command final : public Command {
    #if defined(BOTAN_TARGET_OS_HAS_POSIX1)
          ::setenv("BOTAN_THREAD_POOL_SIZE", "none", /*overwrite?*/ 1);
 
-         struct sigaction sigaction;
+         struct sigaction sigaction {};
 
          sigaction.sa_handler = marvin_sigint_handler;
          sigemptyset(&sigaction.sa_mask);
@@ -663,14 +663,12 @@ class MARVIN_Test_Command final : public Command {
 
             shuffle(indexes, rng);
 
-            for(size_t i = 0; i != indexes.size(); ++i) {
-               const size_t testcase = indexes[i];
-
+            for(const size_t testcase : indexes) {
                // Load the test ciphertext in constant time to avoid cache pollution
                for(size_t j = 0; j != testcases; ++j) {
                   const auto j_eq_testcase = Botan::CT::Mask<size_t>::is_equal(j, testcase).as_choice();
                   const auto* testcase_j = &ciphertext_data[j * modulus_bytes];
-                  Botan::CT::conditional_assign_mem(j_eq_testcase, &ciphertext[0], testcase_j, modulus_bytes);
+                  Botan::CT::conditional_assign_mem(j_eq_testcase, ciphertext.data(), testcase_j, modulus_bytes);
                }
 
                TimingTestTimer timer;

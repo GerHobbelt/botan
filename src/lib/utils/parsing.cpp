@@ -115,14 +115,14 @@ std::vector<std::string> split_on(std::string_view str, char delim) {
    }
 
    std::string substr;
-   for(auto i = str.begin(); i != str.end(); ++i) {
-      if(*i == delim) {
+   for(char c : str) {
+      if(c == delim) {
          if(!substr.empty()) {
             elems.push_back(substr);
          }
          substr.clear();
       } else {
-         substr += *i;
+         substr += c;
       }
    }
 
@@ -240,10 +240,10 @@ std::string ipv4_to_string(uint32_t ip) {
 
 std::string tolower_string(std::string_view in) {
    std::string s(in);
-   for(size_t i = 0; i != s.size(); ++i) {
-      const int cu = static_cast<unsigned char>(s[i]);
+   for(char& c : s) {
+      const int cu = static_cast<unsigned char>(c);
       if(std::isalpha(cu)) {
-         s[i] = static_cast<char>(std::tolower(cu));
+         c = static_cast<char>(std::tolower(cu));
       }
    }
    return s;

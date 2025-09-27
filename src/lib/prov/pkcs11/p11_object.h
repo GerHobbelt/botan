@@ -30,7 +30,7 @@ class BOTAN_PUBLIC_API(2, 0) AttributeContainer {
       AttributeContainer() = default;
 
       /// @param object_class the class type of this container
-      AttributeContainer(ObjectClass object_class);
+      BOTAN_FUTURE_EXPLICIT AttributeContainer(ObjectClass object_class);
 
       virtual ~AttributeContainer() = default;
 
@@ -151,7 +151,7 @@ class BOTAN_PUBLIC_API(2, 0) ObjectFinder final {
 class BOTAN_PUBLIC_API(2, 0) ObjectProperties : public AttributeContainer {
    public:
       /// @param object_class the object class of the object
-      ObjectProperties(ObjectClass object_class);
+      BOTAN_FUTURE_EXPLICIT ObjectProperties(ObjectClass object_class);
 
       /// @return the object class of this object
       inline ObjectClass object_class() const { return m_object_class; }
@@ -164,7 +164,7 @@ class BOTAN_PUBLIC_API(2, 0) ObjectProperties : public AttributeContainer {
 class BOTAN_PUBLIC_API(2, 0) StorageObjectProperties : public ObjectProperties {
    public:
       /// @param object_class the CK_OBJECT_CLASS this storage object belongs to
-      StorageObjectProperties(ObjectClass object_class);
+      BOTAN_FUTURE_EXPLICIT StorageObjectProperties(ObjectClass object_class);
 
       /// @param label description of the object (RFC2279 string)
       inline void set_label(std::string_view label) { add_string(AttributeType::Label, label); }
@@ -209,7 +209,7 @@ class BOTAN_PUBLIC_API(2, 0) DataObjectProperties final : public StorageObjectPr
 class BOTAN_PUBLIC_API(2, 0) CertificateProperties : public StorageObjectProperties {
    public:
       /// @param cert_type type of certificate
-      CertificateProperties(CertificateType cert_type);
+      BOTAN_FUTURE_EXPLICIT CertificateProperties(CertificateType cert_type);
 
       /// @param value the certificate can be trusted for the application that it was created (can only be set to true by SO user)
       inline void set_trusted(bool value) { add_bool(AttributeType::Trusted, value); }
@@ -277,8 +277,9 @@ class BOTAN_PUBLIC_API(2, 0) KeyProperties : public StorageObjectProperties {
       /**
       * Sets a list of mechanisms allowed to be used with this key
       * Not implemented
+      * TODO(Botan4) remove this
       */
-      inline void set_allowed_mechanisms(const std::vector<MechanismType>&) {
+      inline void set_allowed_mechanisms(const std::vector<MechanismType>& /*mechanisms*/) {
          throw Not_Implemented("KeyProperties::set_allowed_mechanisms");
       }
 
@@ -293,7 +294,7 @@ class BOTAN_PUBLIC_API(2, 0) KeyProperties : public StorageObjectProperties {
 class BOTAN_PUBLIC_API(2, 0) PublicKeyProperties : public KeyProperties {
    public:
       /// @param key_type type of key
-      PublicKeyProperties(KeyType key_type);
+      BOTAN_FUTURE_EXPLICIT PublicKeyProperties(KeyType key_type);
 
       /// @param subject DER-encoding of the key subject name
       inline void set_subject(const std::vector<uint8_t>& subject) { add_binary(AttributeType::Subject, subject); }
@@ -321,8 +322,9 @@ class BOTAN_PUBLIC_API(2, 0) PublicKeyProperties : public KeyProperties {
       * The attribute template to match against any keys wrapped using this wrapping key.
       * Keys that do not match cannot be wrapped
       * Not implemented
+      * TODO(Botan4) remove this function
       */
-      inline void set_wrap_template(const AttributeContainer&) {
+      inline void set_wrap_template(const AttributeContainer& /*unused*/) {
          throw Not_Implemented("PublicKeyProperties::set_wrap_template");
       }
 
@@ -336,7 +338,7 @@ class BOTAN_PUBLIC_API(2, 0) PublicKeyProperties : public KeyProperties {
 class BOTAN_PUBLIC_API(2, 0) PrivateKeyProperties : public KeyProperties {
    public:
       /// @param key_type type of key
-      PrivateKeyProperties(KeyType key_type);
+      BOTAN_FUTURE_EXPLICIT PrivateKeyProperties(KeyType key_type);
 
       /// @param subject DER-encoding of the key subject name
       inline void set_subject(const std::vector<uint8_t>& subject) { add_binary(AttributeType::Subject, subject); }
@@ -370,8 +372,9 @@ class BOTAN_PUBLIC_API(2, 0) PrivateKeyProperties : public KeyProperties {
       * The attribute template to apply to any keys unwrapped using this wrapping key.
       * Any user supplied template is applied after this template as if the object has already been created
       * Not implemented
+      * TODO(Botan4) remove this function
       */
-      inline void set_unwrap_template(const AttributeContainer&) {
+      inline void set_unwrap_template(const AttributeContainer& /*unused*/) {
          throw Not_Implemented("PrivateKeyProperties::set_unwrap_template");
       }
 
@@ -385,7 +388,7 @@ class BOTAN_PUBLIC_API(2, 0) PrivateKeyProperties : public KeyProperties {
 class BOTAN_PUBLIC_API(2, 0) SecretKeyProperties final : public KeyProperties {
    public:
       /// @param key_type type of key
-      SecretKeyProperties(KeyType key_type);
+      BOTAN_FUTURE_EXPLICIT SecretKeyProperties(KeyType key_type);
 
       /// @param value true if the key is sensitive
       inline void set_sensitive(bool value) { add_bool(AttributeType::Sensitive, value); }
@@ -433,8 +436,9 @@ class BOTAN_PUBLIC_API(2, 0) SecretKeyProperties final : public KeyProperties {
       * The attribute template to match against any keys wrapped using this wrapping key.
       * Keys that do not match cannot be wrapped
       * Not implemented
+      * TOOD(Botan4) remove this function
       */
-      inline void set_wrap_template(const AttributeContainer&) {
+      inline void set_wrap_template(const AttributeContainer& /*unused*/) {
          throw Not_Implemented("SecretKeyProperties::set_wrap_template");
       }
 
@@ -443,8 +447,9 @@ class BOTAN_PUBLIC_API(2, 0) SecretKeyProperties final : public KeyProperties {
       * The attribute template to apply to any keys unwrapped using this wrapping key
       * Any user supplied template is applied after this template as if the object has already been created
       * Not Implemented
+      * TOOD(Botan4) remove this function
       */
-      inline void set_unwrap_template(const AttributeContainer&) {
+      inline void set_unwrap_template(const AttributeContainer& /*unused*/) {
          throw Not_Implemented("SecretKeyProperties::set_unwrap_template");
       }
 };
@@ -453,7 +458,7 @@ class BOTAN_PUBLIC_API(2, 0) SecretKeyProperties final : public KeyProperties {
 class BOTAN_PUBLIC_API(2, 0) DomainParameterProperties final : public StorageObjectProperties {
    public:
       /// @param key_type type of key the domain parameters can be used to generate
-      DomainParameterProperties(KeyType key_type);
+      BOTAN_FUTURE_EXPLICIT DomainParameterProperties(KeyType key_type);
 
       /// @return the key type
       inline KeyType key_type() const { return m_key_type; }
@@ -534,7 +539,7 @@ class BOTAN_PUBLIC_API(2, 0) Object {
       inline Module& module() const { return m_session.get().module(); }
 
    protected:
-      Object(Session& session) : m_session(session) {}
+      explicit Object(Session& session) : m_session(session) {}
 
       void reset_handle(ObjectHandle handle) {
          if(m_handle != CK_INVALID_HANDLE) {

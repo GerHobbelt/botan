@@ -123,6 +123,7 @@ class Asio_SocketUDP final : public OS::SocketUDP {
             m_udp.close(err);
          }
 
+         // NOLINTNEXTLINE(*-avoid-bind) FIXME - unclear why we can't use a lambda here
          m_timer.async_wait(std::bind(&Asio_SocketUDP::check_timeout, this));
       }
 
@@ -140,7 +141,7 @@ class BSD_SocketUDP final : public OS::SocketUDP {
 
          m_socket = invalid_socket();
 
-         addrinfo* res;
+         addrinfo* res = nullptr;
          addrinfo hints;
          clear_mem(&hints, 1);
          hints.ai_family = AF_UNSPEC;

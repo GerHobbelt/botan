@@ -233,7 +233,7 @@ class BOTAN_PUBLIC_API(2, 0) RandomNumberGenerator {
        */
       template <size_t bytes>
       std::array<uint8_t, bytes> random_array() {
-         std::array<uint8_t, bytes> result;
+         std::array<uint8_t, bytes> result{};
          random_vec(result);
          return result;
       }
@@ -245,7 +245,7 @@ class BOTAN_PUBLIC_API(2, 0) RandomNumberGenerator {
       * @throws Exception if the RNG fails
       */
       uint8_t next_byte() {
-         uint8_t b;
+         uint8_t b = 0;
          this->fill_bytes_with_input(std::span(&b, 1), {});
          return b;
       }

@@ -31,9 +31,12 @@ namespace Botan {
 [[noreturn]] void BOTAN_UNSTABLE_API throw_invalid_argument(const char* message, const char* func, const char* file);
 
 #define BOTAN_ARG_CHECK(expr, msg)                               \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                        \
    do {                                                          \
-      if(!(expr))                                                \
+      if(!(expr)) {                                              \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */     \
          Botan::throw_invalid_argument(msg, __func__, __FILE__); \
+      }                                                          \
    } while(0)
 
 /**
@@ -43,54 +46,72 @@ namespace Botan {
 [[noreturn]] void BOTAN_UNSTABLE_API throw_invalid_state(const char* message, const char* func, const char* file);
 
 #define BOTAN_STATE_CHECK(expr)                                 \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                       \
    do {                                                         \
-      if(!(expr))                                               \
+      if(!(expr)) {                                             \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */    \
          Botan::throw_invalid_state(#expr, __func__, __FILE__); \
+      }                                                         \
    } while(0)
 
 /**
 * Make an assertion
 */
 #define BOTAN_ASSERT(expr, assertion_made)                                              \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                               \
    do {                                                                                 \
-      if(!(expr))                                                                       \
+      if(!(expr)) {                                                                     \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */                            \
          Botan::assertion_failure(#expr, assertion_made, __func__, __FILE__, __LINE__); \
+      }                                                                                 \
    } while(0)
 
 /**
 * Make an assertion
 */
 #define BOTAN_ASSERT_NOMSG(expr)                                            \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                   \
    do {                                                                     \
-      if(!(expr))                                                           \
+      if(!(expr)) {                                                         \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */                \
          Botan::assertion_failure(#expr, "", __func__, __FILE__, __LINE__); \
+      }                                                                     \
    } while(0)
 
 /**
 * Assert that value1 == value2
 */
 #define BOTAN_ASSERT_EQUAL(expr1, expr2, assertion_made)                                               \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                                              \
    do {                                                                                                \
-      if((expr1) != (expr2))                                                                           \
+      if((expr1) != (expr2)) {                                                                         \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */                                           \
          Botan::assertion_failure(#expr1 " == " #expr2, assertion_made, __func__, __FILE__, __LINE__); \
+      }                                                                                                \
    } while(0)
 
 /**
 * Assert that expr1 (if true) implies expr2 is also true
 */
 #define BOTAN_ASSERT_IMPLICATION(expr1, expr2, msg)                                              \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                                        \
    do {                                                                                          \
-      if((expr1) && !(expr2))                                                                    \
+      if((expr1) && !(expr2)) {                                                                  \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */                                     \
          Botan::assertion_failure(#expr1 " implies " #expr2, msg, __func__, __FILE__, __LINE__); \
+      }                                                                                          \
    } while(0)
 
 /**
 * Assert that a pointer is not null
 */
 #define BOTAN_ASSERT_NONNULL(ptr)                                                         \
+   /* NOLINTNEXTLINE(*-avoid-do-while) */                                                 \
    do {                                                                                   \
-      if((ptr) == nullptr)                                                                \
+      if((ptr) == nullptr) {                                                              \
+         /* NOLINTNEXTLINE(bugprone-lambda-function-name) */                              \
          Botan::assertion_failure(#ptr " is not null", "", __func__, __FILE__, __LINE__); \
+      }                                                                                   \
    } while(0)
 
 #if defined(BOTAN_ENABLE_DEBUG_ASSERTS)
@@ -99,8 +120,8 @@ namespace Botan {
 
 #else
 
-   #define BOTAN_DEBUG_ASSERT(expr) \
-      do {                          \
+   #define BOTAN_DEBUG_ASSERT(expr)       \
+      do { /* NOLINT(*-avoid-do-while) */ \
       } while(0)
 
 #endif

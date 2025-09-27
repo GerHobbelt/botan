@@ -35,12 +35,12 @@ consteval size_t decimal_conversion_radix_digits() {
 }  // namespace
 
 std::string BigInt::to_dec_string() const {
+   // Use the largest power of 10 that fits in a word
    constexpr word conversion_radix = decimal_conversion_radix();
    constexpr size_t radix_digits = decimal_conversion_radix_digits();
-   // Use the largest power of 10 that fits in a word
 
    // (over-)estimate of the number of digits needed; log2(10) ~ 3.3219
-   const size_t digit_estimate = static_cast<size_t>(1 + (this->bits() / 3.32));
+   const size_t digit_estimate = static_cast<size_t>(1 + (static_cast<double>(this->bits()) / 3.32));
 
    // (over-)estimate of db such that conversion_radix^db > *this
    const size_t digit_blocks = (digit_estimate + radix_digits - 1) / radix_digits;
@@ -88,6 +88,8 @@ std::string BigInt::to_dec_string() const {
    }
 
    // Reverse and convert to textual digits
+   // TODO(Botan4) use std::ranges::reverse_view here once available (need newer Clang)
+   // NOLINTNEXTLINE(modernize-loop-convert)
    for(auto i = digits.rbegin(); i != digits.rend(); ++i) {
       s.push_back(*i + '0');  // assumes ASCII
    }

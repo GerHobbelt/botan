@@ -53,7 +53,7 @@ class CT_Mask_Tests final : public Test {
 
                   auto written = Botan::CT::copy_output(accept, output, input, offset);
 
-                  if(bad_input) {
+                  if(bad_input > 0) {
                      result.confirm("If bad input, no output", !written.has_value().as_bool());
                   } else {
                      if(offset > input_length) {
@@ -118,7 +118,7 @@ class CT_Option_Tests final : public Test {
             public:
                Val() : m_val() {}
 
-               Val(uint8_t x) : m_val{x, x, x, x} {}
+               explicit Val(uint8_t x) : m_val{x, x, x, x} {}
 
                void conditional_assign(Botan::CT::Choice choice, const Val& other) {
                   Botan::CT::conditional_assign_mem(choice, m_val, other.m_val, 4);

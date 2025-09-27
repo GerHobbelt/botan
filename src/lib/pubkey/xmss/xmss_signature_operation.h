@@ -27,7 +27,7 @@ namespace Botan {
  **/
 class XMSS_Signature_Operation final : public virtual PK_Ops::Signature {
    public:
-      XMSS_Signature_Operation(const XMSS_PrivateKey& private_key);
+      explicit XMSS_Signature_Operation(const XMSS_PrivateKey& private_key);
 
       /**
        * Creates an XMSS signature for the message provided through call to
@@ -35,7 +35,7 @@ class XMSS_Signature_Operation final : public virtual PK_Ops::Signature {
        *
        * @return serialized XMSS signature.
        **/
-      std::vector<uint8_t> sign(RandomNumberGenerator&) override;
+      std::vector<uint8_t> sign(RandomNumberGenerator& rng) override;
 
       void update(std::span<const uint8_t> input) override;
 

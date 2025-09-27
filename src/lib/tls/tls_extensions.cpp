@@ -254,7 +254,7 @@ Server_Name_Indicator::Server_Name_Indicator(TLS_Data_Reader& reader, uint16_t e
       throw Decoding_Error("Bad encoding of SNI extension");
    }
 
-   while(name_bytes) {
+   while(name_bytes > 0) {
       uint8_t name_type = reader.get_byte();
       name_bytes--;
 
@@ -323,7 +323,7 @@ Application_Layer_Protocol_Notification::Application_Layer_Protocol_Notification
       throw Decoding_Error("Bad encoding of ALPN extension, bad length field");
    }
 
-   while(bytes_remaining) {
+   while(bytes_remaining > 0) {
       const std::string p = reader.get_string(1, 0, 255);
 
       if(bytes_remaining < p.size() + 1) {
@@ -637,7 +637,7 @@ std::vector<Signature_Scheme> parse_signature_algorithms(TLS_Data_Reader& reader
 
    std::vector<Signature_Scheme> schemes;
    schemes.reserve(len / 2);
-   while(len) {
+   while(len > 0) {
       schemes.emplace_back(reader.get_uint16_t());
       len -= 2;
    }
@@ -825,7 +825,7 @@ Record_Size_Limit::Record_Size_Limit(TLS_Data_Reader& reader, uint16_t extension
    }
 }
 
-std::vector<uint8_t> Record_Size_Limit::serialize(Connection_Side) const {
+std::vector<uint8_t> Record_Size_Limit::serialize(Connection_Side /*whoami*/) const {
    std::vector<uint8_t> buf;
 
    buf.push_back(get_byte<0>(m_limit));
@@ -873,7 +873,7 @@ std::vector<uint8_t> Cookie::serialize(Connection_Side /*whoami*/) const {
    return buf;
 }
 
-std::vector<uint8_t> PSK_Key_Exchange_Modes::serialize(Connection_Side) const {
+std::vector<uint8_t> PSK_Key_Exchange_Modes::serialize(Connection_Side /*whoami*/) const {
    std::vector<uint8_t> buf;
 
    BOTAN_ASSERT_NOMSG(m_modes.size() < 256);
@@ -899,7 +899,7 @@ PSK_Key_Exchange_Modes::PSK_Key_Exchange_Modes(TLS_Data_Reader& reader, uint16_t
    }
 }
 
-std::vector<uint8_t> Certificate_Authorities::serialize(Connection_Side) const {
+std::vector<uint8_t> Certificate_Authorities::serialize(Connection_Side /*whoami*/) const {
    std::vector<uint8_t> out;
    std::vector<uint8_t> dn_list;
 
@@ -938,7 +938,7 @@ Certificate_Authorities::Certificate_Authorities(TLS_Data_Reader& reader, uint16
 Certificate_Authorities::Certificate_Authorities(std::vector<X509_DN> acceptable_DNs) :
       m_distinguished_names(std::move(acceptable_DNs)) {}
 
-std::vector<uint8_t> EarlyDataIndication::serialize(Connection_Side) const {
+std::vector<uint8_t> EarlyDataIndication::serialize(Connection_Side /*whoami*/) const {
    std::vector<uint8_t> result;
    if(m_max_early_data_size.has_value()) {
       const auto max_data = m_max_early_data_size.value();

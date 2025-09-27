@@ -93,7 +93,7 @@ void Session_Manager_SQL::create_with_latest_schema(std::string_view passphrase,
 
    secure_vector<uint8_t> derived_key(32 + 2);
 
-   const auto pbkdf_name = "PBKDF2(SHA-512)";
+   const std::string pbkdf_name = "PBKDF2(SHA-512)";
    auto pbkdf_fam = PasswordHashFamily::create_or_throw(pbkdf_name);
 
    auto desired_runtime = std::chrono::milliseconds(100);
@@ -221,9 +221,9 @@ std::vector<Session_with_Handle> Session_Manager_SQL::find_some(const Server_Inf
       auto handle = [&]() -> Session_Handle {
          auto ticket_blob = stmt->get_blob(1);
          if(ticket_blob.second > 0) {
-            return Session_Ticket(std::span(ticket_blob.first, ticket_blob.second));
+            return Session_Handle(Session_Ticket(std::span(ticket_blob.first, ticket_blob.second)));
          } else {
-            return Session_ID(Botan::hex_decode(stmt->get_str(0)));
+            return Session_Handle(Session_ID(Botan::hex_decode(stmt->get_str(0))));
          }
       }();
 

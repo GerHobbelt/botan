@@ -74,8 +74,8 @@ std::shared_ptr<Botan::TPM2::Context> get_tpm2_context(std::string_view rng_tag)
 /// RAII helper to manage raw transient resources (ESYS_TR) handles
 class TR {
    private:
-      ESYS_CONTEXT* m_esys_ctx;
-      ESYS_TR m_handle;
+      ESYS_CONTEXT* m_esys_ctx{};
+      ESYS_TR m_handle{};
 
    public:
       TR(ESYS_CONTEXT* esys_ctx, ESYS_TR handle) : m_esys_ctx(esys_ctx), m_handle(handle) {}
@@ -99,6 +99,7 @@ class TR {
          }
       }
 
+      // NOLINTNEXTLINE(*-explicit-conversions) FIXME
       constexpr operator ESYS_TR() const { return m_handle; }
 };
 
@@ -121,8 +122,8 @@ auto get_external_tpm2_context() -> std::unique_ptr<ESYS_CONTEXT, esys_context_l
       return nullptr;
    }
 
-   TSS2_RC rc;
-   TSS2_TCTI_CONTEXT* tcti_ctx;
+   TSS2_RC rc = 0;
+   TSS2_TCTI_CONTEXT* tcti_ctx = nullptr;
    std::unique_ptr<ESYS_CONTEXT, esys_context_liberator> esys_ctx;
 
    rc = Tss2_TctiLdr_Initialize_Ex(tcti_name->c_str(), tcti_conf->c_str(), &tcti_ctx);
@@ -246,13 +247,13 @@ std::vector<Test::Result> test_tpm2_context() {
                   if(backend_used) {
                      result.test_throws<Botan::Invalid_State>(
                         "If the backend is already in use, we cannot enable it once more",
-                        [&] { ctx->use_botan_crypto_backend(Test::new_rng(__func__)); });
+                        [&] { ctx->use_botan_crypto_backend(Test::new_rng("tpm2_backend_test")); });
                   }
 
                   if(!backend_supported) {
                      result.test_throws<Botan::Not_Implemented>(
                         "If the backend is not supported, we cannot enable it",
-                        [&] { ctx->use_botan_crypto_backend(Test::new_rng(__func__)); });
+                        [&] { ctx->use_botan_crypto_backend(Test::new_rng("tpm2_backend_test")); });
                   }
                }),
 
@@ -276,7 +277,7 @@ std::vector<Test::Result> test_external_tpm2_context() {
          .keyBits = {.sym = 256},
          .mode = {.sym = TPM2_ALG_CFB},
       };
-      ESYS_TR session;
+      ESYS_TR session = 0;
 
       auto rc = Esys_StartAuthSession(esys_ctx,
                                       ESYS_TR_NONE,
@@ -350,7 +351,7 @@ std::vector<Test::Result> test_external_tpm2_context() {
                         return;
                      }
 
-                     ctx->use_botan_crypto_backend(Test::new_rng(__func__));
+                     ctx->use_botan_crypto_backend(Test::new_rng("tpm2_backend_context_test"));
                   }
 
                   auto [session, session_rc1] = raw_start_session(esys_ctx.get());
@@ -387,7 +388,7 @@ std::vector<Test::Result> test_external_tpm2_context() {
                return;
             }
 
-            auto cb_state = Botan::TPM2::use_botan_crypto_backend(esys_ctx.get(), Test::new_rng(__func__));
+            auto cb_state = Botan::TPM2::use_botan_crypto_backend(esys_ctx.get(), Test::new_rng("tpm2_crypto_backend"));
 
             auto [raw_session, session_rc2] = raw_start_session(esys_ctx.get());
             Botan::TPM2::check_rc("session creation successful", session_rc2);
@@ -613,7 +614,7 @@ std::vector<Test::Result> test_tpm2_rsa() {
                result.confirm("verification successful", verify(message, signature));
 
                // change the message
-               auto rng = Test::new_rng(__func__);
+               auto rng = Test::new_rng("tpm2_verify_message");
                auto mutated_message = Test::mutate_vec(message, *rng);
                result.confirm("verification failed", !verify(mutated_message, signature));
 
@@ -738,7 +739,7 @@ std::vector<Test::Result> test_tpm2_rsa() {
                const auto plaintext = Botan::hex_decode("feedc0debaadcafe");
 
                // encrypt a message using the TPM's public key
-               auto rng = Test::new_rng(__func__);
+               auto rng = Test::new_rng("tpm2_transient_key_encrypt");
                Botan::PK_Encryptor_EME enc(*pk, *rng, "OAEP(SHA-256)");
                const auto ciphertext = enc.encrypt(plaintext, *rng);
 
@@ -993,7 +994,7 @@ std::vector<Test::Result> test_tpm2_ecc() {
                   result.confirm("verification successful", verify(message, signature));
 
                   // change the message
-                  auto rng = Test::new_rng(__func__);
+                  auto rng = Test::new_rng("tpm2_verify_ecdsa");
                   auto mutated_message = Test::mutate_vec(message, *rng);
                   result.confirm("verification failed", !verify(mutated_message, signature));
 

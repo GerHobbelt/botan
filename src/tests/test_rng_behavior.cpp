@@ -308,7 +308,7 @@ class Stateful_RNG_Tests : public Test {
             }
 
             parent_bytes = rng->random_vec(16);
-            got = ::read(fd[0], &child_bytes[0], child_bytes.size());
+            got = ::read(fd[0], child_bytes.data(), child_bytes.size());
 
             if(got > 0) {
                result.test_eq("expected bytes from child", got, child_bytes.size());
@@ -324,16 +324,16 @@ class Stateful_RNG_Tests : public Test {
          } else {
             // child process, send randomize_count and first output sequence back to parent
             ::close(fd[0]);  // close read end in child
-            rng->randomize(&child_bytes[0], child_bytes.size());
+            rng->randomize(child_bytes.data(), child_bytes.size());
             count = counting_rng.randomize_count();
             ssize_t written = ::write(fd[1], &count, sizeof(count));
             BOTAN_UNUSED(written);
             try {
-               rng->randomize(&child_bytes[0], child_bytes.size());
+               rng->randomize(child_bytes.data(), child_bytes.size());
             } catch(std::exception& e) {
-               static_cast<void>(fprintf(stderr, "%s", e.what()));
+               static_cast<void>(fprintf(stderr, "%s", e.what()));  // NOLINT(*-vararg)
             }
-            written = ::write(fd[1], &child_bytes[0], child_bytes.size());
+            written = ::write(fd[1], child_bytes.data(), child_bytes.size());
             BOTAN_UNUSED(written);
             ::close(fd[1]);  // close write end in child
 
@@ -342,8 +342,8 @@ class Stateful_RNG_Tests : public Test {
             * We can't call _exit because it makes valgrind think we leaked memory.
             * So instead we execute something that will return 0 for us.
             */
-            ::execl("/bin/true", "true", NULL);
-            ::_exit(0);  // just in case /bin/true isn't available (sandbox?)
+            ::execl("/bin/true", "true", NULL);  // NOLINT(*-vararg)
+            ::_exit(0);                          // just in case /bin/true isn't available (sandbox?)
          }
    #endif
          return result;
@@ -413,11 +413,11 @@ class HMAC_DRBG_Unit_Tests final : public Stateful_RNG_Tests {
          std::unique_ptr<Botan::MessageAuthenticationCode> mac =
             Botan::MessageAuthenticationCode::create("HMAC(SHA-256)");
 
-         if(underlying_rng && underlying_es) {
+         if(underlying_rng != nullptr && underlying_es != nullptr) {
             return std::make_unique<Botan::HMAC_DRBG>(std::move(mac), *underlying_rng, *underlying_es, reseed_interval);
-         } else if(underlying_rng) {
+         } else if(underlying_rng != nullptr) {
             return std::make_unique<Botan::HMAC_DRBG>(std::move(mac), *underlying_rng, reseed_interval);
-         } else if(underlying_es) {
+         } else if(underlying_es != nullptr) {
             return std::make_unique<Botan::HMAC_DRBG>(std::move(mac), *underlying_es, reseed_interval);
          } else if(reseed_interval == 0) {
             return std::make_unique<Botan::HMAC_DRBG>(std::move(mac));
@@ -617,11 +617,11 @@ class ChaCha_RNG_Unit_Tests final : public Stateful_RNG_Tests {
       std::unique_ptr<Botan::Stateful_RNG> create_rng(Botan::RandomNumberGenerator* underlying_rng,
                                                       Botan::Entropy_Sources* underlying_es,
                                                       size_t reseed_interval) override {
-         if(underlying_rng && underlying_es) {
+         if(underlying_rng != nullptr && underlying_es != nullptr) {
             return std::make_unique<Botan::ChaCha_RNG>(*underlying_rng, *underlying_es, reseed_interval);
-         } else if(underlying_rng) {
+         } else if(underlying_rng != nullptr) {
             return std::make_unique<Botan::ChaCha_RNG>(*underlying_rng, reseed_interval);
-         } else if(underlying_es) {
+         } else if(underlying_es != nullptr) {
             return std::make_unique<Botan::ChaCha_RNG>(*underlying_es, reseed_interval);
          } else if(reseed_interval == 0) {
             return std::make_unique<Botan::ChaCha_RNG>();

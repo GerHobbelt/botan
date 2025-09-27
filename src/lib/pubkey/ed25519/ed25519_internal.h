@@ -15,11 +15,11 @@
 
 namespace Botan {
 
-inline uint64_t load_3(const uint8_t in[3]) {
-   return static_cast<uint64_t>(in[0]) | (static_cast<uint64_t>(in[1]) << 8) | (static_cast<uint64_t>(in[2]) << 16);
+inline uint32_t load_3(const uint8_t in[3]) {
+   return static_cast<uint32_t>(in[0]) | (static_cast<uint32_t>(in[1]) << 8) | (static_cast<uint32_t>(in[2]) << 16);
 }
 
-inline uint64_t load_4(const uint8_t* in) {
+inline uint32_t load_4(const uint8_t* in) {
    return load_le<uint32_t>(in, 0);
 }
 
@@ -73,8 +73,8 @@ The set of scalars is \Z/l
 where l = 2^252 + 27742317777372353535851937790883648493.
 */
 
-void sc_reduce(uint8_t*);
-void sc_muladd(uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*);
+void sc_reduce(uint8_t* s);
+void sc_muladd(uint8_t* s, const uint8_t* a, const uint8_t* b, const uint8_t* c);
 
 }  // namespace Botan
 

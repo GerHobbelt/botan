@@ -21,14 +21,6 @@ import sys
 import time
 import uuid
 
-quick_checks = [
-    '-clang-analyzer*', # has to be explicitly disabled
-    'modernize-use-nullptr',
-    'readability-braces-around-statements',
-    'performance-unnecessary-value-param',
-    '*-non-private-member-variables-in-classes',
-]
-
 enabled_checks = [
     'bugprone-*',
     'cert-*',
@@ -46,30 +38,20 @@ enabled_checks = [
 # but currently are not
 disabled_needs_work = [
     '*-named-parameter',
-    '*-member-init', # should definitely fix this one
-    'bugprone-lambda-function-name', # should be an easy fix
+    'readability-redundant-member-init',
+    'cppcoreguidelines-use-default-member-init',
     'bugprone-unchecked-optional-access', # clang-tidy seems buggy (many false positives)
     'bugprone-empty-catch',
-    'cert-err58-cpp', # many false positives eg __m128i
     'cppcoreguidelines-avoid-const-or-ref-data-members',
-    'cppcoreguidelines-init-variables',
-    'cppcoreguidelines-owning-memory',
-    'cppcoreguidelines-prefer-member-initializer',
-    'cppcoreguidelines-slicing', # private->public key slicing
-    'hicpp-explicit-conversions',
     'misc-const-correctness', # pretty noisy
     'misc-include-cleaner',
-    'misc-redundant-expression', # BigInt seems to confuse clang-tidy
     'misc-misplaced-const',
-    'misc-confusable-identifiers',
-    'modernize-avoid-bind',
     'modernize-pass-by-value',
     'modernize-use-ranges', # limited by compiler support currently
     'performance-avoid-endl',
     'readability-convert-member-functions-to-static',
     'readability-implicit-bool-conversion',
     'readability-inconsistent-declaration-parameter-name', # should fix this, blocked by https://github.com/llvm/llvm-project/issues/60845
-    'readability-qualified-auto',
     'readability-simplify-boolean-expr', # sometimes ok
     'readability-static-accessed-through-instance',
 ]
@@ -92,19 +74,13 @@ disabled_not_interested = [
     'bugprone-easily-swappable-parameters',
     'bugprone-implicit-widening-of-multiplication-result',
     'bugprone-suspicious-stringview-data-usage', # triggers on every use of string_view::data ??
-    'cppcoreguidelines-avoid-do-while',
-    'cppcoreguidelines-non-private-member-variables-in-classes', # pk split keys
     'cppcoreguidelines-pro-bounds-pointer-arithmetic',
     'cppcoreguidelines-pro-bounds-constant-array-index',
     'cppcoreguidelines-pro-type-const-cast', # see above
     'cppcoreguidelines-pro-type-reinterpret-cast', # not possible thanks though
-    'cppcoreguidelines-pro-type-vararg', # idiocy
     'hicpp-no-assembler',
-    'hicpp-vararg', # idiocy
     'hicpp-signed-bitwise', # impossible to avoid in C/C++, int promotion rules :/
     'misc-no-recursion',
-    'modernize-loop-convert', # sometimes very ugly
-    'modernize-raw-string-literal', # usually less readable
     'modernize-use-trailing-return-type', # fine, but we're not using it everywhere
     'modernize-return-braced-init-list', # thanks I hate it
     'modernize-use-default-member-init',
@@ -112,8 +88,7 @@ disabled_not_interested = [
     'modernize-use-nodiscard',
     'modernize-use-using', # fine not great
     'portability-simd-intrinsics',
-    'readability-avoid-return-with-void-value',
-    'readability-container-data-pointer',
+    'readability-avoid-return-with-void-value', # Jack likes doing this
     'readability-function-cognitive-complexity',
     'readability-identifier-length', # lol, lmao
     'readability-isolate-declaration',
@@ -121,12 +96,10 @@ disabled_not_interested = [
     'readability-non-const-parameter',
     'readability-redundant-inline-specifier', # Jack likes doing this
     'readability-redundant-access-specifiers', # reneme likes doing this
-    'readability-suspicious-call-argument',
-    'readability-use-std-min-max',
     'readability-use-anyofallof', # not more readable
 ]
 
-disabled_checks = disabled_needs_work + disabled_not_interested
+disabled_checks = sorted(disabled_needs_work + disabled_not_interested)
 
 def create_check_option(enabled, disabled):
     return ','.join(enabled) + ',' + ','.join(['-' + d for d in disabled])
@@ -143,8 +116,8 @@ def render_clang_tidy_file(target_dir, enabled, disabled):
             '# then regenerate this configuration file.\n',
             '\n',
             'Checks: >\n'] +
-            [ f'    {check},\n' for check in enabled ] +
-            [ f'    -{check},\n' for check in disabled] +
+            [ f'    {check},\n' for check in sorted(enabled)] +
+            [ f'    -{check},\n' for check in sorted(disabled)] +
             ['---\n'])
 
 def load_compile_commands(build_dir):
@@ -312,7 +285,6 @@ def main(args = None): # pylint: disable=too-many-return-statements
     parser.add_option('--build-dir', default='build')
     parser.add_option('--list-checks', action='store_true', default=False)
     parser.add_option('--regenerate-inline-config-file', action='store_true', default=False)
-    parser.add_option('--fast-checks-only', action='store_true', default=False)
     parser.add_option('--only-changed-files', action='store_true', default=False)
     parser.add_option('--only-matching', metavar='REGEX', default='.*')
     parser.add_option('--take-file-list-from-stdin', action='store_true', default=False)
@@ -365,10 +337,7 @@ def main(args = None): # pylint: disable=too-many-return-statements
 
     (compile_commands_file, compile_commands) = load_compile_commands(options.build_dir)
 
-    if options.fast_checks_only:
-        check_config = ','.join(quick_checks)
-    else:
-        check_config = create_check_option(enabled_checks, disabled_checks)
+    check_config = create_check_option(enabled_checks, disabled_checks)
 
     if options.list_checks:
         print(run_command(['clang-tidy', '-list-checks', '-checks', check_config]), end='')

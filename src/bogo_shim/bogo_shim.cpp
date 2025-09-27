@@ -58,7 +58,7 @@ int shim_output(const std::string& s, int rc = 0) {
 }
 
 void shim_log(const std::string& s) {
-   if(::getenv("BOTAN_BOGO_SHIM_LOG")) {
+   if(::getenv("BOTAN_BOGO_SHIM_LOG") != nullptr) {
       /*
       FIXMEs:
        - Rewrite this to use a std::ostream instead
@@ -66,12 +66,14 @@ void shim_log(const std::string& s) {
        - Avoid rechecking the env variable with each call (!)
       */
 
-      // NOLINTNEXTLINE(*-avoid-non-const-global-variables)
+      // NOLINTNEXTLINE(*-avoid-non-const-global-variables,*-owning-memory)
       static FILE* g_log = std::fopen("/tmp/bogo_shim.log", "w");
 
-      if(g_log) {
-         struct timeval tv;
+      if(g_log != nullptr) {
+         timeval tv{};
+
          ::gettimeofday(&tv, nullptr);
+         // NOLINTNEXTLINE(*-vararg)
          static_cast<void>(std::fprintf(g_log,
                                         "%lld.%lu: %s\n",
                                         static_cast<unsigned long long>(tv.tv_sec),
@@ -347,7 +349,7 @@ std::string map_to_bogo_error(const std::string& e) noexcept {
 
 class Shim_Exception final : public std::exception {
    public:
-      Shim_Exception(std::string_view msg, int rc = 1) : m_msg(msg), m_rc(rc) {}
+      explicit Shim_Exception(std::string_view msg, int rc = 1) : m_msg(msg), m_rc(rc) {}
 
       const char* what() const noexcept override { return m_msg.c_str(); }
 
@@ -373,7 +375,7 @@ class Shim_Socket final {
 
    public:
       Shim_Socket(const std::string& hostname, int port, const bool ipv6) : m_socket(-1) {
-         addrinfo hints;
+         addrinfo hints{};
          std::memset(&hints, 0, sizeof(hints));
          hints.ai_family = AF_UNSPEC;
          hints.ai_socktype = SOCK_STREAM;
@@ -384,7 +386,7 @@ class Shim_Socket final {
          // TODO: C++23 will introduce std::out_ptr() that should replace the
          //       temporary variable for the call to ::getaddrinfo() and
          //       std::unique_ptr<>::reset().
-         unique_addrinfo_t::pointer res_tmp;
+         unique_addrinfo_t::pointer res_tmp = nullptr;
          int rc = ::getaddrinfo(hostname.c_str(), service.c_str(), &hints, &res_tmp);
          unique_addrinfo_t res(res_tmp, &::freeaddrinfo);
 
@@ -866,7 +868,7 @@ std::unique_ptr<Shim_Arguments> parse_options(char* argv[]) {
 
 class Shim_Policy final : public Botan::TLS::Policy {
    public:
-      Shim_Policy(const Shim_Arguments& args) : m_args(args), m_sessions(0) {}
+      explicit Shim_Policy(const Shim_Arguments& args) : m_args(args), m_sessions(0) {}
 
       void incr_session_established() { m_sessions += 1; }
 
@@ -1226,6 +1228,8 @@ std::vector<uint16_t> Shim_Policy::ciphersuite_list(Botan::TLS::Protocol_Version
    } else {
       // Hack: go in reverse order to avoid preferring 3DES
       auto ciphersuites = Botan::TLS::Ciphersuite::all_known_ciphersuites();
+      // TODO(Botan4) use std::ranges::reverse_view here once available (need newer Clang)
+      // NOLINTNEXTLINE(modernize-loop-convert)
       for(auto i = ciphersuites.rbegin(); i != ciphersuites.rend(); ++i) {
          const auto suite = *i;
 
@@ -1244,7 +1248,7 @@ std::vector<uint16_t> Shim_Policy::ciphersuite_list(Botan::TLS::Protocol_Version
 
 class Shim_Credentials final : public Botan::Credentials_Manager {
    public:
-      Shim_Credentials(const Shim_Arguments& args) : m_args(args) {
+      explicit Shim_Credentials(const Shim_Arguments& args) : m_args(args) {
          const auto psk_identity = m_args.get_string_opt_or_else("psk-identity", "");
          const auto psk_str = m_args.get_string_opt_or_else("psk", "");
 
@@ -1430,8 +1434,8 @@ class Shim_Callbacks final : public Botan::TLS::Callbacks {
          }
       }
 
-      std::vector<uint8_t> tls_provide_cert_status(const std::vector<Botan::X509_Certificate>&,
-                                                   const Botan::TLS::Certificate_Status_Request&) override {
+      std::vector<uint8_t> tls_provide_cert_status(const std::vector<Botan::X509_Certificate>& /*certs*/,
+                                                   const Botan::TLS::Certificate_Status_Request& /*status*/) override {
          if(m_args.flag_set("use-ocsp-callback") && m_args.flag_set("fail-ocsp-callback")) {
             throw std::runtime_error("Simulating failure from OCSP response callback");
          }
@@ -1512,7 +1516,7 @@ class Shim_Callbacks final : public Botan::TLS::Callbacks {
          }
 
          if(!cert_chain.empty() && cert_chain.front().is_self_signed()) {
-            for(const auto roots : trusted_roots) {
+            for(auto* const roots : trusted_roots) {
                if(roots->certificate_known(cert_chain.front())) {
                   shim_log("Trusting self-signed certificate");
                   return;
@@ -1623,8 +1627,8 @@ class Shim_Callbacks final : public Botan::TLS::Callbacks {
 
       void tls_session_established(const Botan::TLS::Session_Summary& session) override {
          shim_log("Session established: " + Botan::hex_encode(session.session_id().get()) + " version " +
-                  session.version().to_string() + " cipher " + session.ciphersuite().to_string() + " EMS " +
-                  std::to_string(session.supports_extended_master_secret()));
+                  session.version().to_string() + " cipher " + session.ciphersuite().to_string() + " " +
+                  std::string((session.supports_extended_master_secret() ? "with EMS" : "without EMS")));
          // probably need tests here?
 
          m_policy.incr_session_established();
@@ -1794,7 +1798,7 @@ int main(int /*argc*/, char* argv[]) {
             // *before* any test data is transferred
             // See: https://github.com/google/boringssl/commit/50ee09552cde1c2019bef24520848d041920cfd4
             shim_log("Sending ShimID: " + std::to_string(args->get_int_opt("shim-id")));
-            std::array<uint8_t, 8> shim_id;
+            std::array<uint8_t, 8> shim_id{};
             Botan::store_le(static_cast<uint64_t>(args->get_int_opt("shim-id")), shim_id.data());
             socket.write(shim_id.data(), shim_id.size());
 
@@ -1831,7 +1835,7 @@ int main(int /*argc*/, char* argv[]) {
 
             for(;;) {
                if(is_datagram) {
-                  uint8_t opcode;
+                  uint8_t opcode = 0;
                   size_t got = socket.read(&opcode, 1);
                   if(got == 0) {
                      shim_log("EOF on socket");

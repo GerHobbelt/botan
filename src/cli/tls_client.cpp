@@ -42,14 +42,14 @@ namespace {
 
 class Callbacks : public Botan::TLS::Callbacks {
    public:
-      Callbacks(TLS_Client& client_command) : m_client_command(client_command), m_peer_closed(false) {}
+      explicit Callbacks(TLS_Client& client_command) : m_client_command(client_command), m_peer_closed(false) {}
 
       std::ostream& output();
       bool flag_set(const std::string& flag_name) const;
       std::string get_arg(const std::string& arg_name) const;
       void send(std::span<const uint8_t> buffer);
 
-      int peer_closed() const { return m_peer_closed; }
+      bool peer_closed() const { return m_peer_closed; }
 
       void tls_verify_cert_chain(const std::vector<Botan::X509_Certificate>& cert_chain,
                                  const std::vector<std::optional<Botan::OCSP::Response>>& ocsp,
@@ -387,19 +387,20 @@ class TLS_Client final : public Command {
 
    private:
       static socket_type connect_to_host(const std::string& host, uint16_t port, bool tcp) {
-         addrinfo hints;
+         addrinfo hints{};
          std::memset(&hints, 0, sizeof(hints));
          hints.ai_family = AF_UNSPEC;
          hints.ai_socktype = tcp ? SOCK_STREAM : SOCK_DGRAM;
-         addrinfo *res, *rp = nullptr;
+         addrinfo* res = nullptr;
 
          if(::getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &res) != 0) {
             throw CLI_Error("getaddrinfo failed for " + host);
          }
 
          socket_type fd = 0;
+         bool success = false;
 
-         for(rp = res; rp != nullptr; rp = rp->ai_next) {
+         for(addrinfo* rp = res; rp != nullptr; rp = rp->ai_next) {
             fd = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
 
             if(fd == invalid_socket()) {
@@ -411,14 +412,15 @@ class TLS_Client final : public Command {
                continue;
             }
 
+            success = true;
             break;
          }
 
          ::freeaddrinfo(res);
 
-         if(rp == nullptr)  // no address succeeded
-         {
-            throw CLI_Error("connect failed");
+         if(!success) {
+            // no address succeeded
+            throw CLI_Error("Connecting to host failed");
          }
 
          return fd;

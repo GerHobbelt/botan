@@ -205,7 +205,7 @@ template <ranges::spanable_range OutR, ranges::spanable_range... Rs>
 constexpr OutR concatenate(Rs&&... ranges)
    requires(concepts::reservable_container<OutR> || ranges::statically_spanable_range<OutR>)
 {
-   OutR result;
+   OutR result{};
 
    // Prepare and validate the output range and construct a lambda that does the
    // actual filling of the result buffer.
@@ -296,12 +296,12 @@ constexpr bool holds_any_of(const std::variant<Ts...>& v) noexcept {
 }
 
 template <typename GeneralVariantT, typename SpecialT>
-constexpr bool is_generalizable_to(const SpecialT&) noexcept {
+constexpr bool is_generalizable_to(const SpecialT& /*unnamed*/) noexcept {
    return std::is_constructible_v<GeneralVariantT, SpecialT>;
 }
 
 template <typename GeneralVariantT, typename... SpecialTs>
-constexpr bool is_generalizable_to(const std::variant<SpecialTs...>&) noexcept {
+constexpr bool is_generalizable_to(const std::variant<SpecialTs...>& /*unnamed*/) noexcept {
    return (std::is_constructible_v<GeneralVariantT, SpecialTs> && ...);
 }
 
@@ -429,6 +429,7 @@ template <typename T>
             m_rawptr = nullptr;
          }
 
+         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
          constexpr out_ptr_t(T& outptr) noexcept : m_ptr(outptr), m_rawptr(nullptr) {}
 
          out_ptr_t(const out_ptr_t&) = delete;
@@ -436,6 +437,7 @@ template <typename T>
          out_ptr_t& operator=(const out_ptr_t&) = delete;
          out_ptr_t& operator=(out_ptr_t&&) = delete;
 
+         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
          [[nodiscard]] constexpr operator typename T::element_type **() && noexcept { return &m_rawptr; }
 
       private:
@@ -453,6 +455,7 @@ template <typename T>
       public:
          constexpr ~out_opt_t() noexcept { m_opt = m_raw; }
 
+         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
          constexpr out_opt_t(std::optional<T>& outopt) noexcept : m_opt(outopt) {}
 
          out_opt_t(const out_opt_t&) = delete;
@@ -460,6 +463,7 @@ template <typename T>
          out_opt_t& operator=(const out_opt_t&) = delete;
          out_opt_t& operator=(out_opt_t&&) = delete;
 
+         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
          [[nodiscard]] constexpr operator T*() && noexcept { return &m_raw; }
 
       private:
