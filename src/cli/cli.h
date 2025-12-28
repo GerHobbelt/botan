@@ -8,6 +8,7 @@
 #define BOTAN_CLI_H_
 
 #include <botan/build.h>
+#include <cstdint>
 #include <functional>
 #include <ostream>
 #include <map>
