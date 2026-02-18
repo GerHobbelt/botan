@@ -374,21 +374,6 @@ class scoped_cleanup final {
       std::optional<FunT> m_cleanup;
 };
 
-/**
-* Define BOTAN_ASSERT_IS_SOME
-*/
-template <typename T>
-T assert_is_some(std::optional<T> v, const char* expr, const char* func, const char* file, int line) {
-   if(v) {
-      return *v;
-   } else {
-      Botan::assertion_failure(expr, "optional had value", func, file, line);
-   }
-}
-
-// NOLINTNEXTLINE(*-macro-usage)
-#define BOTAN_ASSERT_IS_SOME(v) assert_is_some(v, #v, __func__, __FILE__, __LINE__)
-
 /*
  * @brief Helper class to pass literal strings to C++ templates
  */
@@ -423,15 +408,14 @@ template <typename T>
             m_rawptr = nullptr;
          }
 
-         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
-         constexpr out_ptr_t(T& outptr) noexcept : m_ptr(outptr), m_rawptr(nullptr) {}
+         constexpr explicit out_ptr_t(T& outptr) noexcept : m_ptr(outptr), m_rawptr(nullptr) {}
 
          out_ptr_t(const out_ptr_t&) = delete;
          out_ptr_t(out_ptr_t&&) = delete;
          out_ptr_t& operator=(const out_ptr_t&) = delete;
          out_ptr_t& operator=(out_ptr_t&&) = delete;
 
-         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
+         // NOLINTNEXTLINE(*-explicit-conversions) - Implicit by design for C API interop
          [[nodiscard]] constexpr operator typename T::element_type **() && noexcept { return &m_rawptr; }
 
       private:
@@ -449,15 +433,14 @@ template <typename T>
       public:
          constexpr ~out_opt_t() noexcept { m_opt = m_raw; }
 
-         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
-         constexpr out_opt_t(std::optional<T>& outopt) noexcept : m_opt(outopt) {}
+         constexpr explicit out_opt_t(std::optional<T>& outopt) noexcept : m_opt(outopt) {}
 
          out_opt_t(const out_opt_t&) = delete;
          out_opt_t(out_opt_t&&) = delete;
          out_opt_t& operator=(const out_opt_t&) = delete;
          out_opt_t& operator=(out_opt_t&&) = delete;
 
-         // NOLINTNEXTLINE(*-explicit-conversions) FIXME
+         // NOLINTNEXTLINE(*-explicit-conversions) - Implicit by design for C API interop
          [[nodiscard]] constexpr operator T*() && noexcept { return &m_raw; }
 
       private:

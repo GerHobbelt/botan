@@ -8,9 +8,9 @@
 #ifndef BOTAN_TLS_PROTOCOL_MAGIC_H_
 #define BOTAN_TLS_PROTOCOL_MAGIC_H_
 
-#include <vector>
-
+#include <botan/strong_type.h>
 #include <botan/types.h>
+#include <vector>
 
 //BOTAN_FUTURE_INTERNAL_HEADER(tls_magic.h)
 
@@ -48,6 +48,17 @@ enum class Connection_Side : uint8_t {
    SERVER BOTAN_DEPRECATED("Use Connection_Side::Server") = Server,
 };
 
+enum class Record_Type : uint8_t {
+   Invalid = 0,  // RFC 8446 (TLS 1.3)
+
+   ChangeCipherSpec = 20,
+   Alert = 21,
+   Handshake = 22,
+   ApplicationData = 23,
+
+   Heartbeat = 24,  // RFC 6520 (TLS 1.3)
+};
+
 enum class Handshake_Type : uint8_t {
    HelloRequest = 0,
    ClientHello = 1,
@@ -79,6 +90,9 @@ enum class Handshake_Type : uint8_t {
 BOTAN_TEST_API const char* handshake_type_to_string(Handshake_Type t);
 
 using Transcript_Hash = std::vector<uint8_t>;
+
+/// @brief Used to derive the ticket's PSK from the resumption_master_secret
+using Ticket_Nonce = Strong<std::vector<uint8_t>, struct Ticket_Nonce_>;
 
 }  // namespace Botan::TLS
 

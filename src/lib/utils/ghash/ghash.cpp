@@ -41,7 +41,7 @@ void GHASH::ghash_multiply(std::span<uint8_t, GCM_BS> x, std::span<const uint8_t
 #if defined(BOTAN_HAS_GHASH_CLMUL_CPU)
    if(CPUID::has(CPUID::Feature::HW_CLMUL)) {
       BOTAN_ASSERT_NOMSG(!m_H_pow.empty());
-      return ghash_multiply_cpu(x.data(), m_H_pow.data(), input.data(), blocks);
+      return ghash_multiply_cpu(x.data(), m_H_pow, input.data(), blocks);
    }
 #endif
 
@@ -99,10 +99,7 @@ void GHASH::key_schedule(std::span<const uint8_t> key) {
 #if defined(BOTAN_HAS_GHASH_CLMUL_CPU)
    if(CPUID::has(CPUID::Feature::HW_CLMUL)) {
       zap(m_HM);
-      if(m_H_pow.size() != 8) {
-         m_H_pow.resize(8);
-      }
-      ghash_precompute_cpu(key.data(), m_H_pow.data());
+      ghash_precompute_cpu(key.data(), m_H_pow);
       // m_HM left empty
       return;
    }
@@ -147,6 +144,14 @@ void GHASH::set_associated_data(std::span<const uint8_t> input) {
    ghash_update(m_H_ad, input);
    ghash_zeropad(m_H_ad);
    m_ad_len = input.size();
+}
+
+void GHASH::reset_associated_data() {
+   // This should only be called in GMAC context
+   BOTAN_STATE_CHECK(m_text_len == 0);
+   assert_key_material_set();
+   m_H_ad = {0};
+   m_ad_len = 0;
 }
 
 void GHASH::update_associated_data(std::span<const uint8_t> ad) {

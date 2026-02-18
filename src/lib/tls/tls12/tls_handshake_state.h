@@ -11,15 +11,14 @@
 
 #include <botan/pk_keys.h>
 #include <botan/pubkey.h>
-#include <botan/tls_callbacks.h>
 #include <botan/tls_ciphersuite.h>
 #include <botan/tls_exceptn.h>
+#include <botan/tls_extensions.h>
 #include <botan/tls_handshake_msg.h>
 #include <botan/internal/tls_handshake_hash.h>
 #include <botan/internal/tls_handshake_io.h>
 #include <botan/internal/tls_handshake_transitions.h>
 #include <botan/internal/tls_session_key.h>
-#include <functional>
 #include <optional>
 
 namespace Botan {

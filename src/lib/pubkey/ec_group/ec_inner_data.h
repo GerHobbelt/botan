@@ -12,7 +12,6 @@
 #include <botan/asn1_obj.h>
 #include <botan/bigint.h>
 #include <botan/internal/monty.h>
-#include <botan/internal/stl_util.h>
 #include <memory>
 #include <span>
 
@@ -148,6 +147,14 @@ class EC_Group_Data final : public std::enable_shared_from_this<EC_Group_Data> {
                         const BigInt& b,
                         const BigInt& g_x,
                         const BigInt& g_y,
+                        const BigInt& order,
+                        const BigInt& cofactor) const;
+
+      // Like the other params_match but accepting the base point in encoded form
+      bool params_match(const BigInt& p,
+                        const BigInt& a,
+                        const BigInt& b,
+                        std::span<const uint8_t> base_pt,
                         const BigInt& order,
                         const BigInt& cofactor) const;
 
