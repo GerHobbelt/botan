@@ -15,6 +15,7 @@
    #include <botan/x509_crl.h>
    #include <botan/x509cert.h>
    #include <botan/x509path.h>
+   #include <botan/internal/ffi_mp.h>
    #include <botan/internal/ffi_oid.h>
 #endif
 
@@ -83,7 +84,7 @@ int botan_x509_cert_load(botan_x509_cert_t* cert_obj, const uint8_t cert_bits[],
 
 int botan_x509_cert_is_ca(botan_x509_cert_t cert) {
 #if defined(BOTAN_HAS_X509_CERTIFICATES)
-   return BOTAN_FFI_VISIT(cert, [=](const auto& c) { return c.is_CA_cert() ? BOTAN_FFI_SUCCESS : 1; });
+   return BOTAN_FFI_VISIT(cert, [=](const auto& c) { return c.is_CA_cert() ? 1 : 0; });
 #else
    BOTAN_UNUSED(cert);
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
@@ -137,11 +138,27 @@ int botan_x509_cert_get_issuer_dn(
          // TODO(Botan4) change the type of out and remove this cast
          return write_str_output(reinterpret_cast<char*>(out), out_len, c.issuer_info(key).at(index));
       } else {
-         return BOTAN_FFI_ERROR_BAD_PARAMETER;
+         return BOTAN_FFI_ERROR_BAD_PARAMETER;  // TODO(Botan4): use BOTAN_FFI_ERROR_OUT_OF_RANGE
       }
    });
 #else
    BOTAN_UNUSED(cert, key, index, out, out_len);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+int botan_x509_cert_get_issuer_dn_count(botan_x509_cert_t cert, const char* key, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   return BOTAN_FFI_VISIT(cert, [=](const auto& c) -> int {
+      if(Botan::any_null_pointers(count)) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+
+      *count = c.issuer_info(key).size();
+      return BOTAN_FFI_SUCCESS;
+   });
+#else
+   BOTAN_UNUSED(cert, key, count);
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
 #endif
 }
@@ -155,11 +172,27 @@ int botan_x509_cert_get_subject_dn(
          // TODO(Botan4) change the type of out and remove this cast
          return write_str_output(reinterpret_cast<char*>(out), out_len, c.subject_info(key).at(index));
       } else {
-         return BOTAN_FFI_ERROR_BAD_PARAMETER;
+         return BOTAN_FFI_ERROR_BAD_PARAMETER;  // TODO(Botan4): use BOTAN_FFI_ERROR_OUT_OF_RANGE
       }
    });
 #else
    BOTAN_UNUSED(cert, key, index, out, out_len);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+int botan_x509_cert_get_subject_dn_count(botan_x509_cert_t cert, const char* key, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   return BOTAN_FFI_VISIT(cert, [=](const auto& c) -> int {
+      if(Botan::any_null_pointers(count)) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+
+      *count = c.subject_info(key).size();
+      return BOTAN_FFI_SUCCESS;
+   });
+#else
+   BOTAN_UNUSED(cert, key, count);
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
 #endif
 }
@@ -269,6 +302,22 @@ int botan_x509_cert_get_serial_number(botan_x509_cert_t cert, uint8_t out[], siz
    return BOTAN_FFI_VISIT(cert, [=](const auto& c) { return write_vec_output(out, out_len, c.serial_number()); });
 #else
    BOTAN_UNUSED(cert, out, out_len);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+int botan_x509_cert_serial_number(botan_x509_cert_t cert, botan_mp_t* serial_number) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   return BOTAN_FFI_VISIT(cert, [=](const Botan::X509_Certificate& c) {
+      if(Botan::any_null_pointers(serial_number)) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+
+      auto serial_bn = Botan::BigInt::from_bytes(c.serial_number());
+      return ffi_new_object(serial_number, std::make_unique<Botan::BigInt>(std::move(serial_bn)));
+   });
+#else
+   BOTAN_UNUSED(cert, serial_number);
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
 #endif
 }
@@ -448,6 +497,19 @@ int botan_x509_cert_permitted_name_constraints(botan_x509_cert_t cert,
 #endif
 }
 
+int botan_x509_cert_permitted_name_constraints_count(botan_x509_cert_t cert, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   if(Botan::any_null_pointers(count)) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+
+   return BOTAN_FFI_VISIT(cert, [=](const auto& c) { *count = c.name_constraints().permitted().size(); });
+#else
+   BOTAN_UNUSED(cert, count);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
 int botan_x509_cert_excluded_name_constraints(botan_x509_cert_t cert,
                                               size_t index,
                                               botan_x509_general_name_t* constraint) {
@@ -469,6 +531,19 @@ int botan_x509_cert_excluded_name_constraints(botan_x509_cert_t cert,
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
 #endif
 }
+
+int botan_x509_cert_excluded_name_constraints_count(botan_x509_cert_t cert, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   if(Botan::any_null_pointers(count)) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+
+   return BOTAN_FFI_VISIT(cert, [=](const auto& c) { *count = c.name_constraints().excluded().size(); });
+#else
+   BOTAN_UNUSED(cert, count);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
 }
 
 namespace {
@@ -478,6 +553,9 @@ namespace {
  * collection of GeneralNames. This allows mapping a single entry of @p altnames
  * to a GeneralName by its @p index. If the index is out of range, std::nullopt
  * is returned.
+ *
+ * NOTE: if the set of alternative name types handled here is extended,
+ *       count_general_names_in() must be updated accordingly!
  */
 std::optional<Botan::GeneralName> extract_general_name_at(const Botan::AlternativeName& altnames, size_t index) {
    if(index < altnames.email().size()) {
@@ -517,6 +595,18 @@ std::optional<Botan::GeneralName> extract_general_name_at(const Botan::Alternati
    return std::nullopt;
 }
 
+/**
+ * Counts the total number of GeneralNames contained in the given
+ * AlternativeName @p alt_names.
+ *
+ * NOTE: if the set of alternative name types handled here is extended,
+ *       extract_general_name_at() must be updated accordingly!
+ */
+size_t count_general_names_in(const Botan::AlternativeName& alt_names) {
+   return alt_names.email().size() + alt_names.dns().size() + alt_names.directory_names().size() +
+          alt_names.uris().size() + alt_names.ipv4_address().size();
+}
+
 }  // namespace
 
 extern "C" {
@@ -546,6 +636,20 @@ int botan_x509_cert_subject_alternative_names(botan_x509_cert_t cert,
 #endif
 }
 
+int botan_x509_cert_subject_alternative_names_count(botan_x509_cert_t cert, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   if(Botan::any_null_pointers(count)) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+
+   return BOTAN_FFI_VISIT(
+      cert, [=](const Botan::X509_Certificate& c) { *count = count_general_names_in(c.subject_alt_name()); });
+#else
+   BOTAN_UNUSED(cert, count);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
 int botan_x509_cert_issuer_alternative_names(botan_x509_cert_t cert,
                                              size_t index,
                                              botan_x509_general_name_t* alt_name) {
@@ -567,6 +671,20 @@ int botan_x509_cert_issuer_alternative_names(botan_x509_cert_t cert,
    });
 #else
    BOTAN_UNUSED(cert, index, alt_name);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+int botan_x509_cert_issuer_alternative_names_count(botan_x509_cert_t cert, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   if(Botan::any_null_pointers(count)) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+
+   return BOTAN_FFI_VISIT(
+      cert, [=](const Botan::X509_Certificate& c) { *count = count_general_names_in(c.issuer_alt_name()); });
+#else
+   BOTAN_UNUSED(cert, count);
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
 #endif
 }
@@ -780,6 +898,19 @@ int botan_x509_crl_entries(botan_x509_crl_t crl, size_t index, botan_x509_crl_en
 #endif
 }
 
+int botan_x509_crl_entries_count(botan_x509_crl_t crl, size_t* count) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   if(Botan::any_null_pointers(count)) {
+      return BOTAN_FFI_ERROR_NULL_POINTER;
+   }
+
+   return BOTAN_FFI_VISIT(crl, [=](const Botan::X509_CRL& c) { *count = c.get_revoked().size(); });
+#else
+   BOTAN_UNUSED(crl, count);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
 int botan_x509_crl_entry_destroy(botan_x509_crl_entry_t entry) {
 #if defined(BOTAN_HAS_X509_CERTIFICATES)
    return BOTAN_FFI_CHECKED_DELETE(entry);
@@ -801,6 +932,22 @@ int botan_x509_crl_entry_reason(botan_x509_crl_entry_t entry, int* reason_code) 
    });
 #else
    BOTAN_UNUSED(entry, reason_code);
+   return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+int botan_x509_crl_entry_serial_number(botan_x509_crl_entry_t entry, botan_mp_t* serial_number) {
+#if defined(BOTAN_HAS_X509_CERTIFICATES)
+   return BOTAN_FFI_VISIT(entry, [=](const Botan::CRL_Entry& e) {
+      if(Botan::any_null_pointers(serial_number)) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+
+      auto serial_bn = Botan::BigInt::from_bytes(e.serial_number());
+      return ffi_new_object(serial_number, std::make_unique<Botan::BigInt>(std::move(serial_bn)));
+   });
+#else
+   BOTAN_UNUSED(entry, serial_number);
    return BOTAN_FFI_ERROR_NOT_IMPLEMENTED;
 #endif
 }

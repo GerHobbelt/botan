@@ -732,6 +732,7 @@ class FFI_CRL_Test final : public FFI_Test {
 
          botan_x509_cert_t cert2;
          std::vector<uint8_t> cert2_serial;
+         botan_mp_t cert2_serial_bn;
          size_t cert2_serial_len = 0;
          REQUIRE_FFI_OK(botan_x509_cert_load_file, (&cert2, Test::data_file("x509/nist/test20/int.crt").c_str()));
          TEST_FFI_RC(0, botan_x509_is_revoked, (crl, cert2));
@@ -741,16 +742,29 @@ class FFI_CRL_Test final : public FFI_Test {
                      (cert2, nullptr, &cert2_serial_len));
          cert2_serial.resize(cert2_serial_len);
          TEST_FFI_OK(botan_x509_cert_get_serial_number, (cert2, cert2_serial.data(), &cert2_serial_len));
+         TEST_FFI_OK(botan_x509_cert_serial_number, (cert2, &cert2_serial_bn));
          TEST_FFI_OK(botan_x509_cert_destroy, (cert2));
+
+         size_t entries;
+         TEST_FFI_OK(botan_x509_crl_entries_count, (crl, &entries));
+         result.test_eq("one revoked cert", entries, 1);
+         TEST_FFI_OK(botan_x509_crl_entries_count, (bytecrl, &entries));
+         result.test_eq("no revoked cert", entries, 0);
+
+         ViewBytesSink serial;
+         TEST_FFI_OK(botan_mp_view_bin, (cert2_serial_bn, serial.delegate(), serial.callback()));
+         result.test_eq("serial == serial_bn", serial.get(), cert2_serial);
+         TEST_FFI_OK(botan_mp_destroy, (cert2_serial_bn));
 
          botan_x509_crl_entry_t entry;
          TEST_FFI_OK(botan_x509_crl_entries, (crl, 0, &entry));
 
-         ViewBytesSink serial;
          uint64_t ts;
          int reason;
+         botan_mp_t entry_serial_bn;
 
          TEST_FFI_OK(botan_x509_crl_entry_view_serial_number, (entry, serial.delegate(), serial.callback()));
+         TEST_FFI_OK(botan_x509_crl_entry_serial_number, (entry, &entry_serial_bn));
          TEST_FFI_OK(botan_x509_crl_entry_revocation_date, (entry, &ts));
          TEST_FFI_OK(botan_x509_crl_entry_reason, (entry, &reason));
          TEST_FFI_OK(botan_x509_crl_entry_destroy, (entry));
@@ -759,6 +773,10 @@ class FFI_CRL_Test final : public FFI_Test {
             "Reason", static_cast<uint8_t>(reason), Botan::to_underlying(Botan::CRL_Code::KeyCompromise));
          result.test_is_eq("Revocation time", ts, Botan::calendar_point(1999, 1, 1, 12, 0, 0).seconds_since_epoch());
          result.test_eq("Revoked cert serial", serial.get(), cert2_serial);
+
+         TEST_FFI_OK(botan_mp_view_bin, (entry_serial_bn, serial.delegate(), serial.callback()));
+         result.test_eq("Revoked cert serial_bn", serial.get(), cert2_serial);
+         TEST_FFI_OK(botan_mp_destroy, (entry_serial_bn));
 
          TEST_FFI_RC(BOTAN_FFI_ERROR_OUT_OF_RANGE, botan_x509_crl_entries, (crl, 1, &entry));
          TEST_FFI_RC(BOTAN_FFI_ERROR_OUT_OF_RANGE, botan_x509_crl_entries, (bytecrl, 0, &entry));
@@ -788,13 +806,13 @@ class FFI_Cert_Validation_Test final : public FFI_Test {
          if(!TEST_FFI_INIT(botan_x509_cert_load_file, (&root, Test::data_file("x509/nist/root.crt").c_str()))) {
             return;
          }
-         TEST_FFI_RC(0, botan_x509_cert_is_ca, (root));
+         TEST_FFI_RC(1, botan_x509_cert_is_ca, (root));
 
          botan_x509_cert_t end2;
          botan_x509_cert_t sub2;
          REQUIRE_FFI_OK(botan_x509_cert_load_file, (&end2, Test::data_file("x509/nist/test02/end.crt").c_str()));
          REQUIRE_FFI_OK(botan_x509_cert_load_file, (&sub2, Test::data_file("x509/nist/test02/int.crt").c_str()));
-         TEST_FFI_RC(1, botan_x509_cert_is_ca, (end2));
+         TEST_FFI_RC(0, botan_x509_cert_is_ca, (end2));
 
          size_t path_limit;
          TEST_FFI_RC(BOTAN_FFI_ERROR_NO_VALUE, botan_x509_cert_get_path_length_constraint, (root, &path_limit));
@@ -962,6 +980,12 @@ class FFI_ECDSA_Certificate_Test final : public FFI_Test {
             }
    #endif
 
+            size_t rdn_count;
+            TEST_FFI_OK(botan_x509_cert_get_issuer_dn_count, (cert, "Name", &rdn_count));
+            result.test_eq("issuer DN 'name' count", rdn_count, 1);
+            TEST_FFI_OK(botan_x509_cert_get_issuer_dn_count, (cert, "Organizational Unit", &rdn_count));
+            result.test_eq("issuer DN 'organizational unit' count", rdn_count, 0);
+
             size_t dn_len = 0;
             TEST_FFI_RC(BOTAN_FFI_ERROR_INSUFFICIENT_BUFFER_SPACE,
                         botan_x509_cert_get_issuer_dn,
@@ -970,6 +994,11 @@ class FFI_ECDSA_Certificate_Test final : public FFI_Test {
             std::vector<uint8_t> dn(dn_len);
             TEST_FFI_OK(botan_x509_cert_get_issuer_dn, (cert, "Name", 0, dn.data(), &dn_len));
             result.test_eq("issuer dn", reinterpret_cast<const char*>(dn.data()), "ISRG Root X2");
+
+            TEST_FFI_OK(botan_x509_cert_get_subject_dn_count, (cert, "Name", &rdn_count));
+            result.test_eq("subject DN 'name' count", rdn_count, 1);
+            TEST_FFI_OK(botan_x509_cert_get_subject_dn_count, (cert, "Organizational Unit", &rdn_count));
+            result.test_eq("subject DN 'organizational unit' count", rdn_count, 0);
 
             dn_len = 0;
             TEST_FFI_RC(BOTAN_FFI_ERROR_INSUFFICIENT_BUFFER_SPACE,
@@ -1069,10 +1098,12 @@ auto read_distinguished_name(std::span<const uint8_t> bytes) {
 class FFI_Cert_AlternativeNames_Test final : public FFI_Test {
    private:
       template <std::invocable<botan_x509_cert_t, size_t, botan_x509_general_name_t*> EnumeratorT,
+                std::invocable<botan_x509_cert_t, size_t*> CountFnT,
                 std::invocable<botan_x509_general_name_t> VisitorT>
       static void visit_general_names(Test::Result& result,
                                       botan_x509_cert_t cert,
                                       EnumeratorT enumerator_fn,
+                                      CountFnT count_fn,
                                       VisitorT visitor_fn) {
          int rc = BOTAN_FFI_SUCCESS;
          for(size_t i = 0; rc == BOTAN_FFI_SUCCESS; ++i) {
@@ -1081,21 +1112,27 @@ class FFI_Cert_AlternativeNames_Test final : public FFI_Test {
             if(rc == BOTAN_FFI_SUCCESS) {
                visitor_fn(gn);
                TEST_FFI_OK(botan_x509_general_name_destroy, (gn));
-            } else if(rc != BOTAN_FFI_ERROR_OUT_OF_RANGE) {
+            } else if(rc == BOTAN_FFI_ERROR_OUT_OF_RANGE) {
+               // Now check we are at the expected index
+               size_t count;
+               TEST_FFI_OK(count_fn, (cert, &count));
+               result.test_eq("enumerator reached end at expected index", i, count);
+            } else {
                result.test_note(
                   Botan::fmt("enumerator produced unexpected return code: {}", botan_error_description(rc)));
             }
          }
       }
 
-      template <typename EnumeratorT>
+      template <typename EnumeratorT, typename CountFnT>
       static auto read_string_alternative_names(Test::Result& result,
                                                 botan_x509_cert_t cert,
-                                                EnumeratorT fn,
+                                                EnumeratorT enumerator_fn,
+                                                CountFnT count_fn,
                                                 botan_x509_general_name_types type) {
          std::vector<std::string> out;
 
-         visit_general_names(result, cert, fn, [&](botan_x509_general_name_t gn) {
+         visit_general_names(result, cert, enumerator_fn, count_fn, [&](botan_x509_general_name_t gn) {
             unsigned int gn_type;
             TEST_FFI_OK(botan_x509_general_name_get_type, (gn, &gn_type));
             if(static_cast<botan_x509_general_name_types>(gn_type) == type) {
@@ -1108,14 +1145,15 @@ class FFI_Cert_AlternativeNames_Test final : public FFI_Test {
          return out;
       }
 
-      template <typename EnumeratorT>
+      template <typename EnumeratorT, typename CountFnT>
       static auto read_binary_alternative_names(Test::Result& result,
                                                 botan_x509_cert_t cert,
-                                                EnumeratorT fn,
+                                                EnumeratorT enumerator_fn,
+                                                CountFnT count_fn,
                                                 botan_x509_general_name_types type) {
          std::vector<std::vector<uint8_t>> out;
 
-         visit_general_names(result, cert, fn, [&](botan_x509_general_name_t gn) {
+         visit_general_names(result, cert, enumerator_fn, count_fn, [&](botan_x509_general_name_t gn) {
             unsigned int gn_type;
             TEST_FFI_OK(botan_x509_general_name_get_type, (gn, &gn_type));
             if(static_cast<botan_x509_general_name_types>(gn_type) == type) {
@@ -1159,31 +1197,35 @@ class FFI_Cert_AlternativeNames_Test final : public FFI_Test {
          }
 
          const auto get_san = botan_x509_cert_subject_alternative_names;
+         const auto count_san = botan_x509_cert_subject_alternative_names_count;
 
-         const auto san_email = read_string_alternative_names(result, cert, get_san, BOTAN_X509_EMAIL_ADDRESS);
+         const auto san_email =
+            read_string_alternative_names(result, cert, get_san, count_san, BOTAN_X509_EMAIL_ADDRESS);
          result.test_eq("expected number of emails in SAN", san_email.size(), 2);
          result.confirm("testing@x509-labs.com", Botan::value_exists(san_email, "testing@x509-labs.com"));
          result.confirm("info@x509-labs.com", Botan::value_exists(san_email, "info@x509-labs.com"));
 
-         const auto san_dns = read_string_alternative_names(result, cert, get_san, BOTAN_X509_DNS_NAME);
+         const auto san_dns = read_string_alternative_names(result, cert, get_san, count_san, BOTAN_X509_DNS_NAME);
          result.test_eq("expected number of hostnames in SAN", san_dns.size(), 3);
          result.confirm("test.x509-labs.com", Botan::value_exists(san_dns, "test.x509-labs.com"));
          result.confirm("versuch.x509-labs.com", Botan::value_exists(san_dns, "versuch.x509-labs.com"));
          result.confirm("trail.x509-labs.com", Botan::value_exists(san_dns, "trail.x509-labs.com"));
 
-         const auto san_uri = read_string_alternative_names(result, cert, get_san, BOTAN_X509_URI);
+         const auto san_uri = read_string_alternative_names(result, cert, get_san, count_san, BOTAN_X509_URI);
          result.test_eq("expected number of URIs in SAN", san_uri.size(), 2);
          result.confirm("https://x509-labs.com", Botan::value_exists(san_uri, "https://x509-labs.com"));
          result.confirm("http://x509-labs.com", Botan::value_exists(san_uri, "http://x509-labs.com"));
 
-         const auto san_ip4 = read_string_alternative_names(result, cert, get_san, BOTAN_X509_IP_ADDRESS);
+         const auto san_ip4 = read_string_alternative_names(result, cert, get_san, count_san, BOTAN_X509_IP_ADDRESS);
          result.test_eq("expected number of IPv4 addresses", san_ip4.size(), 1);
          result.confirm("127.0.0.1", Botan::value_exists(san_ip4, "127.0.0.1"));
-         const auto san_ip4_bin = read_binary_alternative_names(result, cert, get_san, BOTAN_X509_IP_ADDRESS);
+         const auto san_ip4_bin =
+            read_binary_alternative_names(result, cert, get_san, count_san, BOTAN_X509_IP_ADDRESS);
          result.test_eq("expected number of IPv4 addresses (bin)", san_ip4_bin.size(), 1);
          result.test_eq("127.0.0.1 (bin)", san_ip4_bin.front(), Botan::store_be(uint32_t(0x7F000001)));
 
-         const auto san_dn_bytes = read_binary_alternative_names(result, cert, get_san, BOTAN_X509_DIRECTORY_NAME);
+         const auto san_dn_bytes =
+            read_binary_alternative_names(result, cert, get_san, count_san, BOTAN_X509_DIRECTORY_NAME);
          result.test_eq("expected number of DNs in SAN", san_dn_bytes.size(), 3);
          const auto san_dn_cns = read_common_names(san_dn_bytes);
          result.confirm("First Name", Botan::value_exists(san_dn_cns, "First Name"));
@@ -1191,29 +1233,33 @@ class FFI_Cert_AlternativeNames_Test final : public FFI_Test {
          result.confirm("Last Name", Botan::value_exists(san_dn_cns, "Last Name"));
 
          auto get_ian = botan_x509_cert_issuer_alternative_names;
+         auto count_ian = botan_x509_cert_issuer_alternative_names_count;
 
-         const auto ian_email = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_EMAIL_ADDRESS);
+         const auto ian_email =
+            read_string_alternative_names(result, cert, get_ian, count_ian, BOTAN_X509_EMAIL_ADDRESS);
          result.test_eq("expected number of emails in IAN", ian_email.size(), 0);
 
-         const auto ian_dns = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_DNS_NAME);
+         const auto ian_dns = read_string_alternative_names(result, cert, get_ian, count_ian, BOTAN_X509_DNS_NAME);
          result.test_eq("expected number of hostnames in IAN", ian_dns.size(), 3);
          result.confirm("test.x509-labs-ca.com", Botan::value_exists(ian_dns, "test.x509-labs-ca.com"));
          result.confirm("versuch.x509-labs-ca.com", Botan::value_exists(ian_dns, "versuch.x509-labs-ca.com"));
          result.confirm("trail.x509-labs-ca.com", Botan::value_exists(ian_dns, "trail.x509-labs-ca.com"));
 
-         const auto ian_uri = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_URI);
+         const auto ian_uri = read_string_alternative_names(result, cert, get_ian, count_ian, BOTAN_X509_URI);
          result.test_eq("expected number of URIs in IAN", ian_uri.size(), 2);
          result.confirm("https://x509-labs-ca.com", Botan::value_exists(ian_uri, "https://x509-labs-ca.com"));
          result.confirm("http://x509-labs-ca.com", Botan::value_exists(ian_uri, "http://x509-labs-ca.com"));
 
-         const auto ian_ip4 = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_IP_ADDRESS);
+         const auto ian_ip4 = read_string_alternative_names(result, cert, get_ian, count_ian, BOTAN_X509_IP_ADDRESS);
          result.test_eq("expected number of IPv4 addresses", ian_ip4.size(), 1);
          result.confirm("192.168.1.1", Botan::value_exists(ian_ip4, "192.168.1.1"));
-         const auto ian_ip4_bin = read_binary_alternative_names(result, cert, get_ian, BOTAN_X509_IP_ADDRESS);
+         const auto ian_ip4_bin =
+            read_binary_alternative_names(result, cert, get_ian, count_ian, BOTAN_X509_IP_ADDRESS);
          result.test_eq("expected number of IPv4 addresses (bin)", ian_ip4_bin.size(), 1);
          result.test_eq("192.168.1.1 (bin)", ian_ip4_bin.front(), Botan::store_be(uint32_t(0xC0A80101)));
 
-         const auto ian_dn_bytes = read_binary_alternative_names(result, cert, get_ian, BOTAN_X509_DIRECTORY_NAME);
+         const auto ian_dn_bytes =
+            read_binary_alternative_names(result, cert, get_ian, count_ian, BOTAN_X509_DIRECTORY_NAME);
          result.test_eq("expected number of DNs in IAN", ian_dn_bytes.size(), 3);
          const auto ian_dn_cns = read_common_names(ian_dn_bytes);
          result.confirm("First CA", Botan::value_exists(ian_dn_cns, "First CA"));
@@ -1271,7 +1317,16 @@ class FFI_Cert_NameConstraints_Test final : public FFI_Test {
                }
 
                TEST_FFI_OK(botan_x509_general_name_destroy, (constraint));
-            } else if(rc != BOTAN_FFI_ERROR_OUT_OF_RANGE) {
+            } else if(rc == BOTAN_FFI_ERROR_OUT_OF_RANGE) {
+               // Now check that we are at the expected index
+               size_t count;
+               if(permitted) {
+                  TEST_FFI_OK(botan_x509_cert_permitted_name_constraints_count, (cert, &count));
+               } else {
+                  TEST_FFI_OK(botan_x509_cert_excluded_name_constraints_count, (cert, &count));
+               }
+               result.test_eq("expected length of name constraint list", i, count);
+            } else {
                result.test_failure(Botan::fmt("unexpected error code: {}", botan_error_description(rc)));
             }
          }
@@ -2166,6 +2221,73 @@ class FFI_StreamCipher_Test final : public FFI_Test {
 
             TEST_FFI_OK(botan_cipher_destroy, (ctr));
          }
+      }
+};
+
+class FFI_XOF_Test final : public FFI_Test {
+      std::string name() const override { return "FFI XOF"; }
+
+      void ffi_test(Test::Result& result, botan_rng_t /*unused*/) override {
+         const char* input1 = "XOF input";
+         const char* input2 = "more XOF input";
+         const char* input3 = "additional XOF input";
+         const char* xof_name = "SHAKE-128";
+
+         botan_xof_t xof1;
+         TEST_FFI_FAIL("unknown XOF", botan_xof_init, (&xof1, "SCHUETTEL-128", 0));
+         TEST_FFI_FAIL("invalid flags", botan_xof_init, (&xof1, "SHAKE-128", 42));
+
+         if(!TEST_FFI_INIT(botan_xof_init, (&xof1, xof_name, 0))) {
+            return;
+         }
+
+         std::array<char, 10> out_name{};
+         size_t out_name_len = 5;
+         TEST_FFI_RC(BOTAN_FFI_ERROR_INSUFFICIENT_BUFFER_SPACE, botan_xof_name, (xof1, nullptr, &out_name_len));
+         result.test_eq("valid XOF name length", out_name_len, out_name.size());
+         TEST_FFI_OK(botan_xof_name, (xof1, out_name.data(), &out_name_len));
+
+         size_t out_block_size;
+         TEST_FFI_OK(botan_xof_block_size, (xof1, &out_block_size));
+         result.test_eq("valid XOF block size", out_block_size, 168);
+
+         result.test_is_eq("ready for input", botan_xof_accepts_input(xof1), 1);
+         TEST_FFI_OK(botan_xof_update, (xof1, reinterpret_cast<const uint8_t*>(input1), strlen(input1)));
+         result.test_is_eq("still ready for input", botan_xof_accepts_input(xof1), 1);
+         TEST_FFI_OK(botan_xof_update, (xof1, reinterpret_cast<const uint8_t*>(input2), strlen(input2)));
+
+         botan_xof_t xof2;
+         TEST_FFI_OK(botan_xof_copy_state, (&xof2, xof1));
+         result.test_is_eq("copy still ready for input", botan_xof_accepts_input(xof2), 1);
+
+         std::array<uint8_t, 16> out_bytes{};
+         TEST_FFI_OK(botan_xof_output, (xof1, nullptr, 0));
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NULL_POINTER, botan_xof_output, (xof1, nullptr, 1));
+         TEST_FFI_OK(botan_xof_output, (xof1, out_bytes.data(), out_bytes.size()));
+
+         result.test_eq("expected first output", out_bytes, "2E870A5FE35999A7B15F9F0BB5AC1689");
+         result.test_ne("no more input", botan_xof_accepts_input(xof1), 1);
+         TEST_FFI_RC(BOTAN_FFI_ERROR_INVALID_OBJECT_STATE,
+                     botan_xof_update,
+                     (xof1, reinterpret_cast<const uint8_t*>(input1), strlen(input1)));
+
+         TEST_FFI_OK(botan_xof_output, (xof1, out_bytes.data(), out_bytes.size()));
+         result.test_eq("expected second output", out_bytes, "E266E213DA0F2763AE29601AB8F9DEDC");
+
+         TEST_FFI_OK(botan_xof_update, (xof2, reinterpret_cast<const uint8_t*>(input3), strlen(input3)));
+         TEST_FFI_OK(botan_xof_output, (xof2, out_bytes.data(), out_bytes.size()));
+         result.test_eq("expected first output after additional input", out_bytes, "D9D5416188659DDC5C26FCF52E49A157");
+
+         TEST_FFI_OK(botan_xof_clear, (xof1));
+         result.test_is_eq("again ready for input", botan_xof_accepts_input(xof1), 1);
+         TEST_FFI_OK(botan_xof_update, (xof1, reinterpret_cast<const uint8_t*>(input1), strlen(input1)));
+         TEST_FFI_OK(botan_xof_update, (xof1, reinterpret_cast<const uint8_t*>(input2), strlen(input2)));
+         TEST_FFI_OK(botan_xof_update, (xof1, reinterpret_cast<const uint8_t*>(input3), strlen(input3)));
+         TEST_FFI_OK(botan_xof_output, (xof1, out_bytes.data(), out_bytes.size()));
+         result.test_eq("expected first output with full input", out_bytes, "D9D5416188659DDC5C26FCF52E49A157");
+
+         TEST_FFI_OK(botan_xof_destroy, (xof1));
+         TEST_FFI_OK(botan_xof_destroy, (xof2));
       }
 };
 
@@ -5191,6 +5313,7 @@ BOTAN_REGISTER_TEST("ffi", "ffi_chacha", FFI_ChaCha20Poly1305_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_eax", FFI_EAX_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_aead", FFI_AEAD_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_streamcipher", FFI_StreamCipher_Test);
+BOTAN_REGISTER_TEST("ffi", "ffi_xof", FFI_XOF_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_hashfunction", FFI_HashFunction_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_mac", FFI_MAC_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_scrypt", FFI_Scrypt_Test);

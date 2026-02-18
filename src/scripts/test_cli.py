@@ -262,6 +262,8 @@ def test_cli(cmd, cmd_options,
 
     if "\r\n" in stdout:
         stdout = stdout.replace("\r\n", "\n")
+    if "\r\n" in stderr:
+        stderr = stderr.replace("\r\n", "\n")
 
     if stderr:
         if expected_stderr is None:
@@ -276,7 +278,8 @@ def test_cli(cmd, cmd_options,
     if expected_output is not None:
         if stdout != expected_output:
             logging.error("Got unexpected output running cmd %s %s", cmd, cmd_options, stack_info=True)
-            logging.info("Output lengths %d vs expected %d", len(stdout), len(expected_output))
+            if len(stdout) != len(expected_output):
+                logging.info("Output lengths %d vs expected %d", len(stdout), len(expected_output))
             logging.info("Got %s", stdout)
             logging.info("Exp %s", expected_output)
 
@@ -565,6 +568,11 @@ mlLtJ5JvZ0/p6zP3x+Y9yPIrAR8L/acG5ItSrAKXzzuqQQZMv4aN
              "Certificate did not validate - Certificate issuer not found")
 
 def cli_xmss_sign_tests(tmp_dir):
+    if os.linesep != '\n':
+        # This test is hashing the PEM encoding of the XMSS private key which
+        # will have a different value due to line endings
+        return
+
     priv_key = os.path.join(tmp_dir, 'priv.pem')
     pub_key = os.path.join(tmp_dir, 'pub.pem')
     pub_key2 = os.path.join(tmp_dir, 'pub2.pem')
@@ -578,41 +586,41 @@ def cli_xmss_sign_tests(tmp_dir):
     test_cli("rng", ['--output=%s' % (msg)], "")
     test_cli("hash", ["--no-fsname", msg], "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")
 
-    test_cli("keygen", ["--algo=XMSS", "--output=%s" % (priv_key)], "")
-    test_cli("hash", ["--no-fsname", priv_key], "1F040283F0D7D2156B06B7BE03FA5861035FF3BCC059671DB288162C04A94CED")
+    test_cli("keygen", ["--algo=XMSS", "--params=XMSS-SHA2_10_256", "--output=%s" % (priv_key)], "")
+    test_cli("hash", ["--no-fsname", priv_key], "737368AB8BFC6B0CDA0DF7FB6BD1DE48C2ABA81236F65E4E227920CECCC5F259")
 
     test_cli("pkcs8", "--pub-out --output=%s %s" % (pub_key, priv_key), "")
     test_cli("fingerprint", ['--no-fsname', pub_key],
-             "6F:C4:08:CB:C3:61:CC:49:8A:25:90:3B:2F:D4:4D:B8:7F:2F:27:06:8C:8F:01:E0:01:DB:42:1F:B4:09:09:D9")
+             "7B:9F:20:23:A8:FC:A7:BD:BA:F4:DE:58:3C:D8:68:52:D1:8E:16:C8:B4:33:B0:34:FE:42:37:16:AE:95:7B:83")
 
     # verify the key is updated after each signature:
     test_cli("sign", [priv_key, msg, "--output=%s" % (sig1)], "")
     test_cli("verify", [pub_key, msg, sig1], "Signature is valid")
-    test_cli("hash", ["--no-fsname", sig1], "9DEBA79CE9FDC4966D7BA7B05ABEC54E3C11BB1C2C2732F7658820F2CAE47646")
-    test_cli("hash", ["--no-fsname", priv_key], "A71507087530C85E9CF971CF3A305890B07B51519C405A2B3D0037C64D5802B1")
+    test_cli("hash", ["--no-fsname", sig1], "A37241040C0C7044DD502D92B69E8B931FF43FBC91CF4E3C869B23206EBFABF6")
+    test_cli("hash", ["--no-fsname", priv_key], "748E63766E8805A4CED94B7BC52F0A5EB2D6F8CECFD2CFC27C61DFA2C7DC1328")
 
     test_cli("sign", [priv_key, msg, "--output=%s" % (sig2)], "")
     test_cli("verify", [pub_key, msg, sig2], "Signature is valid")
-    test_cli("hash", ["--no-fsname", sig2], "803EC5D6BECDFB9DC676EE2EDFEFE3D71EE924343A2ED9D2D7BFF0A9D97D704E")
-    test_cli("hash", ["--no-fsname", priv_key], "D581F5BFDA65669A825165C7A9CF17D6D5C5DF349004BCB7416DCD1A5C0349A0")
+    test_cli("hash", ["--no-fsname", sig2], "D593C1D0ADED11422248AE16CA77828CD2161CA3FCE3D0118A78D188C637D883")
+    test_cli("hash", ["--no-fsname", priv_key], "745903AC3BB7F55A6003BB59B13FC3BB48F4ACCAC7FE5888DD38031C55785B70")
 
     # private key updates, public key is unchanged:
     test_cli("pkcs8", "--pub-out --output=%s %s" % (pub_key2, priv_key), "")
     test_cli("fingerprint", ['--no-fsname', pub_key2],
-             "6F:C4:08:CB:C3:61:CC:49:8A:25:90:3B:2F:D4:4D:B8:7F:2F:27:06:8C:8F:01:E0:01:DB:42:1F:B4:09:09:D9")
+             "7B:9F:20:23:A8:FC:A7:BD:BA:F4:DE:58:3C:D8:68:52:D1:8E:16:C8:B4:33:B0:34:FE:42:37:16:AE:95:7B:83")
 
     # verify that key is updated when creating a self-signed certificate
     test_cli("gen_self_signed",
              [priv_key, "Root", "--ca", "--path-limit=2", "--output="+root_crt], "")
-    test_cli("hash", ["--no-fsname", priv_key], "ACFD94CDF5D0674EE5489039CF70850A1FFF95480A94E8C6C6FD2BF006909D07")
+    test_cli("hash", ["--no-fsname", priv_key], "364744707707A05F9348848EF473CCCE600D337E9715EB5D899EE392E1B49FD7")
 
     # verify that key is updated after signing a certificate request
     test_cli("gen_pkcs10", "%s Intermediate --ca --output=%s" % (priv_key, int_csr))
-    test_cli("hash", ["--no-fsname", priv_key], "BE6F8F868DB495D95F73B50A370A218225253048E2F1C7C3E286568FDE203700")
+    test_cli("hash", ["--no-fsname", priv_key], "C460DC6B4BAC18360C61F93F8E33762AECEDBC864E0D9EA7A2561A8B8CC04A89")
 
     # verify that key is updated after issuing a certificate
     test_cli("sign_cert", "%s %s %s --output=%s" % (root_crt, priv_key, int_csr, int_crt))
-    test_cli("hash", ["--no-fsname", priv_key], "8D3B736D8A708C342F9263163E0E3BAFE4132F74AE53A8EDF78074422CF80496")
+    test_cli("hash", ["--no-fsname", priv_key], "DDFC14EADFC7EDCC569D038F6BCBBC359D035B1CBB7BB0814E134AA5BB8FB8C8")
 
     test_cli("cert_verify", "%s %s" % (int_crt, root_crt), "Certificate passes validation checks")
 
@@ -1617,12 +1625,25 @@ def cli_tls_client_hello_tests(_tmp_dir):
         output = test_cli("tls_client_hello", ["--hex", "-"], None, chello)
         test_cli("hash", ["--no-fsname", "--algo=SHA-256", "-"], output_hash, output)
 
-def cli_speed_pk_tests(_tmp_dir):
+def cli_speed_pk_fast_tests(_tmp_dir):
     msec = 1
 
     pk_algos = ["ECDSA", "ECDH", "SM2", "ECKCDSA", "ECGDSA", "GOST-34.10",
-                "DH", "DSA", "ElGamal", "Ed25519", "Ed448", "X25519", "X448",
-                "RSA", "RSA_keygen", "XMSS", "Kyber", "Dilithium", "SLH-DSA"]
+                "ML-KEM", "ML-DSA", "Ed25519", "Ed448", "X25519", "X448",
+                "DH", "DSA", "ElGamal"]
+
+    output = test_cli("speed", ["--msec=%d" % (msec)] + pk_algos, None).split('\n')
+
+    # ECDSA-secp256r1 106 keygen/sec; 9.35 ms/op 37489733 cycles/op (1 op in 9 ms)
+    format_re = re.compile(r'^.* [0-9]+ ([A-Za-z0-9 ]+)/sec; [0-9]+\.[0-9]+ ms/op .*\([0-9]+ (op|ops) in [0-9\.]+ ms\)')
+    for line in output:
+        if format_re.match(line) is None:
+            logging.error("Unexpected line %s", line)
+
+def cli_speed_pk_slow_tests(_tmp_dir):
+    msec = 1
+
+    pk_algos = ["RSA", "RSA_keygen", "XMSS", "SLH-DSA"]
 
     output = test_cli("speed", ["--msec=%d" % (msec)] + pk_algos, None).split('\n')
 
@@ -1653,6 +1674,12 @@ def cli_speed_table_tests(_tmp_dir):
     tbl_val_re = re.compile(r'^.* +(encrypt|decrypt) +[0-9]+(\.[0-9]{2})$')
 
     output = test_cli("speed", ["--format=table", "--msec=%d" % (msec), "AES-128"], None).split('\n')
+
+    # Mac is somewhat unusual in that there is (at least for now) a parallel provider
+    # that is distinct from but does not replace the usual algorithm implementations.
+    # Just zap out lines referencing this provider from the output so that the remainder
+    # has the same format as other platforms
+    output = [line for line in output if "commoncrypto" not in line]
 
     if len(output) != 11:
         logging.error('Unexpected number of lines from table output')
@@ -1836,12 +1863,9 @@ def main(args=None):
             return 1
 
     slow_test_fns = [
-        cli_speed_tests,
-        cli_speed_pk_tests,
+        cli_speed_pk_slow_tests,
         cli_speed_math_tests,
         cli_speed_pbkdf_tests,
-        cli_speed_table_tests,
-        cli_speed_invalid_option_tests,
         cli_xmss_sign_tests,
     ]
 
@@ -1880,6 +1904,10 @@ def main(args=None):
         cli_rng_tests,
         cli_roughtime_check_tests,
         cli_roughtime_tests,
+        cli_speed_tests,
+        cli_speed_pk_fast_tests,
+        cli_speed_invalid_option_tests,
+        cli_speed_table_tests,
         cli_timing_test_tests,
         cli_tls_ciphersuite_tests,
         cli_tls_client_hello_tests,
@@ -1896,9 +1924,9 @@ def main(args=None):
     test_fns = []
 
     if options.run_slow_tests:
-        test_fns = slow_test_fns + fast_test_fns
-    else:
-        test_fns = fast_test_fns
+        test_fns += slow_test_fns
+
+    test_fns += fast_test_fns
 
     if not options.skip_tls_proxy_test:
         test_fns.append(cli_tls_proxy_tests)

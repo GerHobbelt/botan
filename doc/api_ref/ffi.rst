@@ -1701,7 +1701,11 @@ X.509 Certificates
 
 .. cpp:function:: int botan_x509_cert_get_serial_number(botan_x509_cert_t cert, uint8_t out[], size_t* out_len)
 
-   Return the serial number of the certificate.
+   Return the serial number of the certificate as big-endian encoded bytes.
+
+.. cpp:function:: int botan_x509_cert_serial_number(botan_x509_cert_t cert, botan_mp_t* serial_number)
+
+   Return the serial number of the certificate as a multi-precision integer.
 
 .. cpp:function:: int botan_x509_cert_is_ca(botan_x509_cert_t cert)
 
@@ -1737,13 +1741,27 @@ X.509 Certificates
                                             const char* key, size_t index, \
                                             uint8_t out[], size_t* out_len)
 
-   Get a value from the issuer DN field.
+   Get a value from the issuer DN field. If the index is out of range,
+   :cpp:enumerator:`BOTAN_FFI_ERROR_BAD_PARAMETER` is returned for historical
+   reasons.
+
+.. cpp:function:: int botan_x509_cert_get_issuer_dn_count(botan_x509_cert_t cert, \
+                                                          const char* key, size_t* count)
+
+   Get the number of values for a given key in the issuer DN field.
 
 .. cpp:function:: int botan_x509_cert_get_subject_dn(botan_x509_cert_t cert, \
                                              const char* key, size_t index, \
                                              uint8_t out[], size_t* out_len)
 
-   Get a value from the subject DN field.
+   Get a value from the subject DN field. If the index is out of range,
+   :cpp:enumerator:`BOTAN_FFI_ERROR_BAD_PARAMETER` is returned for historical
+   reasons.
+
+.. cpp:function:: int botan_x509_cert_get_subject_dn_count(botan_x509_cert_t cert, \
+                                                           const char* key, size_t* count)
+
+   Get the number of values for a given key in the subject DN field.
 
 .. cpp:function:: int botan_x509_cert_to_string(botan_x509_cert_t cert, char out[], size_t* out_len)
 
@@ -1825,6 +1843,11 @@ X.509 Certificates
    objects. If the given index is not available,
    :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
 
+.. cpp:function:: int botan_x509_cert_permitted_name_constraints_count(botan_x509_cert_t cert, \
+                                                                       size_t* count)
+
+   Get the number of permitted name constraints in the certificate.
+
 .. cpp:function:: int botan_x509_cert_excluded_name_constraints(botan_x509_cert_t cert, \
                                                                 size_t index, \
                                                                 botan_x509_general_name_t* constraint)
@@ -1832,6 +1855,11 @@ X.509 Certificates
    Enumerate the excluded name constraints in the certificate as GeneralName
    objects. If the given index is not available,
    :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
+
+.. cpp:function:: int botan_x509_cert_excluded_name_constraints_count(botan_x509_cert_t cert, \
+                                                                       size_t* count)
+
+   Get the number of excluded name constraints in the certificate.
 
 .. cpp:function:: int botan_x509_cert_subject_alternative_names(botan_x509_cert_t cert, \
                                                                 size_t index, \
@@ -1841,6 +1869,11 @@ X.509 Certificates
    objects. If the given index is not available,
    :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
 
+.. cpp:function:: int botan_x509_cert_subject_alternative_names_count(botan_x509_cert_t cert, \
+                                                                      size_t* count)
+
+   Get the number of subject alternative names in the certificate.
+
 .. cpp:function:: int botan_x509_cert_issuer_alternative_names(botan_x509_cert_t cert, \
                                                                size_t index, \
                                                                botan_x509_general_name_t* alt_name)
@@ -1848,6 +1881,11 @@ X.509 Certificates
    Enumerate the issuer alternative names in the certificate as GeneralName
    objects. If the given index is not available,
    :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
+
+.. cpp:function:: int botan_x509_cert_issuer_alternative_names_count(botan_x509_cert_t cert, \
+                                                                      size_t* count)
+
+   Get the number of issuer alternative names in the certificate.
 
 .. cpp:function:: int botan_x509_cert_verify(int* validation_result, \
                   botan_x509_cert_t cert, \
@@ -1952,6 +1990,10 @@ X.509 Certificate Revocation Lists
    enumerate all entries in the CRL. If the list of entries is exhausted, this
    will return :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE`.
 
+.. cpp:function:: int botan_x509_crl_entries_count(botan_x509_crl_t crl, size_t* count)
+
+   Get the number of entries in the CRL.
+
 .. cpp:function:: int botan_x509_crl_entry_reason(botan_x509_crl_entry_t entry, int* reason_code)
 
    Get the revocation reason code for the given CRL entry. The reason code is
@@ -1961,9 +2003,13 @@ X.509 Certificate Revocation Lists
 
    Get the revocation date for the given CRL entry, as seconds since epoch.
 
+.. cpp:function:: int botan_x509_crl_entry_serial_number(botan_x509_crl_entry_t entry, botan_mp_t* serial_number)
+
+   Get the serial number for the given CRL entry as a multi-precision integer.
+
 .. cpp:function:: int botan_x509_crl_entry_view_serial_number(botan_x509_crl_entry_t entry, botan_view_ctx ctx, botan_view_bin_fn view)
 
-   View the serial number for the given CRL entry.
+   View the serial number for the given CRL entry, as big-endian encoded bytes.
 
 .. cpp:function:: int botan_x509_crl_entry_destroy(botan_x509_crl_entry_t entry)
 
