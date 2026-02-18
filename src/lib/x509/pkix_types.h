@@ -48,12 +48,22 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
          }
       }
 
+      /**
+      * Since DN matching for Name Constraints requires preserving order and
+      * multimaps have sorted keys, this constructor is deprecated.
+      */
+      BOTAN_DEPRECATED("Deprecated use initializer list constructor")
       explicit X509_DN(const std::multimap<OID, std::string>& args) {
          for(const auto& i : args) {
             add_attribute(i.first, i.second);
          }
       }
 
+      /**
+      * Since DN matching for Name Constraints requires preserving order and
+      * multimaps have sorted keys, this constructor is deprecated.
+      */
+      BOTAN_DEPRECATED("Deprecated use initializer list constructor")
       explicit X509_DN(const std::multimap<std::string, std::string>& args) {
          for(const auto& i : args) {
             add_attribute(i.first, i.second);
@@ -79,6 +89,10 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
 
       std::string to_string() const;
 
+      /**
+      * Return the DN components as a vector. Note that the order of the components is
+      * preserved only when using the initializer list constructor.
+      */
       const std::vector<std::pair<OID, ASN1_String>>& dn_info() const { return m_rdn; }
 
       std::multimap<OID, std::string> get_attributes() const;
@@ -279,6 +293,13 @@ class BOTAN_PUBLIC_API(2, 0) GeneralName final : public ASN1_Object {
 
       BOTAN_DEPRECATED("Deprecated use NameConstraints") GeneralName() = default;
 
+      static GeneralName email(std::string_view email);
+      static GeneralName dns(std::string_view dns);
+      static GeneralName uri(std::string_view uri);
+      static GeneralName directory_name(Botan::X509_DN dn);
+      static GeneralName ipv4_address(uint32_t ipv4);
+      static GeneralName ipv4_address(uint32_t ipv4, uint32_t mask);
+
       // Encoding is not implemented
       void encode_into(DER_Encoder& to) const override;
 
@@ -300,6 +321,11 @@ class BOTAN_PUBLIC_API(2, 0) GeneralName final : public ASN1_Object {
       BOTAN_DEPRECATED("Deprecated no replacement") std::string name() const;
 
       /**
+      * @return The name as binary string. Format depends on type.
+      */
+      BOTAN_DEPRECATED("Deprecated no replacement") std::vector<uint8_t> binary_name() const;
+
+      /**
       * Checks whether a given certificate (partially) matches this name.
       * @param cert certificate to be matched
       * @return the match result
@@ -317,11 +343,26 @@ class BOTAN_PUBLIC_API(2, 0) GeneralName final : public ASN1_Object {
       static constexpr size_t DN_IDX = 3;
       static constexpr size_t IPV4_IDX = 4;
 
+      using NameVariant = std::variant<std::string, std::string, std::string, X509_DN, std::pair<uint32_t, uint32_t>>;
+
+      GeneralName(NameType type, NameVariant name) : m_type(type), m_name(std::move(name)) {}
+
+      template <size_t idx, typename T>
+         requires(idx < 5)
+      static GeneralName make(T&& value) {
+         return {NameType(idx + 1 /* implicit enum relationship! */),
+                 NameVariant(std::in_place_index_t<idx>(), std::forward<T>(value))};
+      }
+
       NameType m_type = NameType::Unknown;
-      std::variant<std::string, std::string, std::string, X509_DN, std::pair<uint32_t, uint32_t>> m_name;
+      NameVariant m_name;
 
       static bool matches_dns(std::string_view name, std::string_view constraint);
 
+      /**
+      * Partial DN matching according to RFC 5280, Section 7.1, i.e.,
+      * whether the constraint is a prefix of the name.
+      */
       static bool matches_dn(const X509_DN& name, const X509_DN& constraint);
 };
 

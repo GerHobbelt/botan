@@ -69,7 +69,7 @@ API follows a few simple rules:
 * that declaration is not visible here since this header is intentionally
 * free-standing, depending only on a few C standard library headers.
 */
-#define BOTAN_FFI_API_VERSION 20250829
+#define BOTAN_FFI_API_VERSION 20260203
 
 /**
 * BOTAN_FFI_EXPORT indicates public FFI functions.
@@ -134,6 +134,7 @@ enum BOTAN_FFI_ERROR /* NOLINT(*-enum-size,*-use-enum-class) */ {
    BOTAN_FFI_ERROR_KEY_NOT_SET = -33,
    BOTAN_FFI_ERROR_INVALID_KEY_LENGTH = -34,
    BOTAN_FFI_ERROR_INVALID_OBJECT_STATE = -35,
+   BOTAN_FFI_ERROR_OUT_OF_RANGE = -36,
 
    BOTAN_FFI_ERROR_NOT_IMPLEMENTED = -40,
    BOTAN_FFI_ERROR_INVALID_OBJECT = -50,
@@ -1649,6 +1650,8 @@ int botan_privkey_rsa_get_privkey(botan_privkey_t rsa_key, uint8_t out[], size_t
 
 BOTAN_FFI_EXPORT(2, 0) int botan_pubkey_load_rsa(botan_pubkey_t* key, botan_mp_t n, botan_mp_t e);
 
+BOTAN_FFI_EXPORT(3, 11) int botan_pubkey_load_rsa_pkcs1(botan_pubkey_t* key, const uint8_t bits[], size_t len);
+
 BOTAN_FFI_DEPRECATED("Use botan_pubkey_get_field")
 BOTAN_FFI_EXPORT(2, 0) int botan_pubkey_rsa_get_e(botan_mp_t e, botan_pubkey_t rsa_key);
 BOTAN_FFI_DEPRECATED("Use botan_pubkey_get_field")
@@ -2168,6 +2171,17 @@ int botan_x509_cert_view_public_key_bits(botan_x509_cert_t cert, botan_view_ctx 
 
 BOTAN_FFI_EXPORT(2, 0) int botan_x509_cert_get_public_key(botan_x509_cert_t cert, botan_pubkey_t* key);
 
+/**
+ * Returns 0 iff the cert is a CA certificate
+ */
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_cert_is_ca(botan_x509_cert_t cert);
+
+/**
+ * Retrieves the path length constraint from the certificate.
+ * If no such constraint is present, BOTAN_FFI_ERROR_NO_VALUE is returned.
+ */
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_cert_get_path_length_constraint(botan_x509_cert_t cert, size_t* path_limit);
+
 /* TODO(Botan4) this should use char for the out param */
 BOTAN_FFI_EXPORT(2, 0)
 int botan_x509_cert_get_issuer_dn(
@@ -2183,7 +2197,7 @@ BOTAN_FFI_EXPORT(2, 0) int botan_x509_cert_to_string(botan_x509_cert_t cert, cha
 BOTAN_FFI_EXPORT(3, 0)
 int botan_x509_cert_view_as_string(botan_x509_cert_t cert, botan_view_ctx ctx, botan_view_str_fn view);
 
-/* Must match values of Key_Constraints in key_constraints.h */
+/* Must match values of Key_Constraints in pkix_enums.h */
 enum botan_x509_cert_key_constraints /* NOLINT(*-enum-size,*-use-enum-class) */ {
    NO_CONSTRAINTS = 0,
    DIGITAL_SIGNATURE = 32768,
@@ -2198,6 +2212,123 @@ enum botan_x509_cert_key_constraints /* NOLINT(*-enum-size,*-use-enum-class) */ 
 };
 
 BOTAN_FFI_EXPORT(2, 0) int botan_x509_cert_allowed_usage(botan_x509_cert_t cert, unsigned int key_usage);
+
+/**
+* Check if the certificate allows the specified extended usage OID. See RFC 5280
+* Section 4.2.1.12 for OIDs to query for this. If no extended key usage
+* extension is found in the certificate, this always returns "not success".
+*
+* Typical OIDs to check for:
+*   * "PKIX.ServerAuth"
+*   * "PKIX.ClientAuth"
+*   * "PKIX.CodeSigning"
+*   * "PKIX.OCSPSigning"
+*
+* The @p oid parameter can be either a canonical OID string or identifiers as
+* indicated in the examples above.
+*/
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_cert_allowed_extended_usage_str(botan_x509_cert_t cert, const char* oid);
+
+/**
+* Check if the certificate allows the specified extended usage OID. See RFC 5280
+* Section 4.2.1.12 for OIDs to query for this. If no extended key usage
+* extension is found in the certificate, this always returns "not success".
+*
+* This is similar to botan_x509_cert_allowed_extended_usage_str but takes an OID
+* object instead of a string describing the OID.
+*/
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_cert_allowed_extended_usage_oid(botan_x509_cert_t cert, botan_asn1_oid_t oid);
+
+typedef struct botan_x509_general_name_struct* botan_x509_general_name_t;
+
+/**
+* GeneralName type identifiers as defined in RFC 5280 A.2 (GeneralName ::= CHOICE)
+* Type identifiers that are omitted here are (currently) not supported. Also,
+* there is currently no way to access OTHER_NAME values via the FFI.
+*/
+enum botan_x509_general_name_types /* NOLINT(*-enum-size,*-use-enum-class) */ {
+   BOTAN_X509_OTHER_NAME = 0,
+   BOTAN_X509_EMAIL_ADDRESS = 1,
+   BOTAN_X509_DNS_NAME = 2,
+   BOTAN_X509_DIRECTORY_NAME = 4,
+   BOTAN_X509_URI = 6,
+   BOTAN_X509_IP_ADDRESS = 7,
+};
+
+/**
+* Provides the contained type of the @p name and returns BOTAN_FFI_SUCCESS if
+* that type is supported and may be retrieved via the view functions below.
+* Otherwise BOTAN_FFI_ERROR_INVALID_OBJECT_STATE is returned.
+*/
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_general_name_get_type(botan_x509_general_name_t name, unsigned int* type);
+
+/**
+* Views the name as a string or returns BOTAN_FFI_ERROR_INVALID_OBJECT_STATE
+* if the contained GeneralName value cannot be represented as a string.
+*
+* The types BOTAN_X509_EMAIL_ADDRESS, BOTAN_X509_DNS_NAME, BOTAN_X509_URI,
+* BOTAN_X509_IP_ADDRESS may be viewed as "string".
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_general_name_view_string_value(botan_x509_general_name_t name,
+                                              botan_view_ctx ctx,
+                                              botan_view_str_fn view);
+
+/**
+* Views the name as a bit string or returns BOTAN_FFI_ERROR_INVALID_OBJECT_STATE
+* if the contained GeneralName value cannot be represented as a binary string.
+*
+* The types BOTAN_X509_DIRECTORY_NAME, BOTAN_X509_IP_ADDRESS may be viewed as
+* "binary".
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_general_name_view_binary_value(botan_x509_general_name_t name,
+                                              botan_view_ctx ctx,
+                                              botan_view_bin_fn view);
+
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_general_name_destroy(botan_x509_general_name_t alt_names);
+
+/**
+* Extracts "permitted" name constraints from a given @p cert one-by-one.
+* Returns BOTAN_FFI_ERROR_OUT_OF_RANGE if the given @p index is larger than the
+* available number of "permitted" name constraints.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_cert_permitted_name_constraints(botan_x509_cert_t cert,
+                                               size_t index,
+                                               botan_x509_general_name_t* constraint);
+
+/**
+* Extracts "excluded" name constraints from a given @p cert one-by-one.
+* Returns BOTAN_FFI_ERROR_OUT_OF_RANGE if the given @p index is larger than the
+* available number of "excluded" name constraints.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_cert_excluded_name_constraints(botan_x509_cert_t cert,
+                                              size_t index,
+                                              botan_x509_general_name_t* constraint);
+
+/**
+* Provides access to all "subject alternative names", where each entry is
+* returned as a botan_x509_general_name_t. If the given @p index is not
+* within range of the available entries, BOTAN_FFI_ERROR_OUT_OF_RANGE is
+* returned. If @p cert does not contain a SubjectAlternativeNames extension,
+* BOTAN_FFI_ERROR_NO_VALUE is returned.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_cert_subject_alternative_names(botan_x509_cert_t cert,
+                                              size_t index,
+                                              botan_x509_general_name_t* alt_name);
+
+/**
+* Provides access to all "issuer alternative names", where each entry is
+* returned as a botan_x509_general_name_t. If the given @p index is not
+* within range of the available entries, BOTAN_FFI_ERROR_OUT_OF_RANGE is
+* returned. If @p cert does not contain an IssuerAlternativeNames extension,
+* BOTAN_FFI_ERROR_NO_VALUE is returned.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_cert_issuer_alternative_names(botan_x509_cert_t cert, size_t index, botan_x509_general_name_t* alt_name);
 
 /**
 * Check if the certificate matches the specified hostname via alternative name or CN match.
@@ -2236,10 +2367,14 @@ BOTAN_FFI_EXPORT(2, 8) const char* botan_x509_cert_validation_status(int code);
 **************************/
 
 typedef struct botan_x509_crl_struct* botan_x509_crl_t;
+typedef struct botan_x509_crl_entry_struct* botan_x509_crl_entry_t;
 
 BOTAN_FFI_EXPORT(2, 13) int botan_x509_crl_load_file(botan_x509_crl_t* crl_obj, const char* crl_path);
 BOTAN_FFI_EXPORT(2, 13)
 int botan_x509_crl_load(botan_x509_crl_t* crl_obj, const uint8_t crl_bits[], size_t crl_bits_len);
+
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_crl_this_update(botan_x509_crl_t crl, uint64_t* time_since_epoch);
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_crl_next_update(botan_x509_crl_t crl, uint64_t* time_since_epoch);
 
 BOTAN_FFI_EXPORT(2, 13) int botan_x509_crl_destroy(botan_x509_crl_t crl);
 
@@ -2248,6 +2383,40 @@ BOTAN_FFI_EXPORT(2, 13) int botan_x509_crl_destroy(botan_x509_crl_t crl);
  * check if the certificate is revoked on that particular CRL
  */
 BOTAN_FFI_EXPORT(2, 13) int botan_x509_is_revoked(botan_x509_crl_t crl, botan_x509_cert_t cert);
+
+/**
+* Allows iterating all entries of the CRL.
+*
+* @param crl     the CRL whose entries should be listed
+* @param index   the index of the CRL entry to return
+* @param entry   an object handle containing the CRL entry data
+*
+* @returns BOTAN_FFI_ERROR_OUT_OF_RANGE if the given @p index is out of range of
+*          the CRL entry list.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_crl_entries(botan_x509_crl_t crl, size_t index, botan_x509_crl_entry_t* entry);
+
+/**
+* Return the revocation reason code for the given CRL @p entry.
+* See RFC 5280 - 5.3.1 for possible reason codes.
+*/
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_crl_entry_reason(botan_x509_crl_entry_t entry, int* reason_code);
+
+/**
+* Return the revocation date for the given CRL @p entry as time since epoch
+* in seconds.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_crl_entry_revocation_date(botan_x509_crl_entry_t entry, uint64_t* time_since_epoch);
+
+/**
+* View the serial number associated with the given CRL @p entry.
+*/
+BOTAN_FFI_EXPORT(3, 11)
+int botan_x509_crl_entry_view_serial_number(botan_x509_crl_entry_t entry, botan_view_ctx ctx, botan_view_bin_fn view);
+
+BOTAN_FFI_EXPORT(3, 11) int botan_x509_crl_entry_destroy(botan_x509_crl_entry_t entry);
 
 /**
  * Different flavor of `botan_x509_cert_verify`, supports revocation lists.

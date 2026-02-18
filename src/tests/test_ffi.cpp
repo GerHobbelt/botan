@@ -13,11 +13,16 @@
 #include <botan/version.h>
 
 #if defined(BOTAN_HAS_FFI)
+   #include <botan/ber_dec.h>
    #include <botan/ec_group.h>
    #include <botan/ffi.h>
    #include <botan/hex.h>
    #include <botan/mem_ops.h>
+   #include <botan/pkix_enums.h>
+   #include <botan/pkix_types.h>
+   #include <botan/internal/calendar.h>
    #include <botan/internal/fmt.h>
+   #include <botan/internal/loadstor.h>
    #include <botan/internal/stl_util.h>
    #include <botan/internal/target_info.h>
    #include <set>
@@ -696,6 +701,27 @@ class FFI_CRL_Test final : public FFI_Test {
             return;
          }
 
+         botan_x509_crl_t crl_without_next_update;
+         if(!TEST_FFI_INIT(botan_x509_crl_load_file,
+                           (&crl_without_next_update,
+                            Test::data_file("x509/misc/crl_without_nextupdate/valid_forever.crl").c_str()))) {
+            return;
+         }
+
+         uint64_t this_update;
+         uint64_t next_update;
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NO_VALUE, botan_x509_crl_next_update, (crl_without_next_update, &next_update));
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NO_VALUE, botan_x509_crl_next_update, (crl_without_next_update, nullptr));
+         TEST_FFI_OK(botan_x509_crl_this_update, (bytecrl, &this_update));
+         TEST_FFI_OK(botan_x509_crl_next_update, (bytecrl, &next_update));
+         result.test_is_eq(
+            "this update", this_update, Botan::calendar_point(2050, 2, 25, 15, 21, 42).seconds_since_epoch());
+         result.test_is_eq(
+            "next update", next_update, Botan::calendar_point(2050, 2, 25, 15, 24, 41).seconds_since_epoch());
+
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NULL_POINTER, botan_x509_crl_this_update, (bytecrl, nullptr));
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NULL_POINTER, botan_x509_crl_next_update, (bytecrl, nullptr));
+
          botan_x509_crl_t crl;
          REQUIRE_FFI_OK(botan_x509_crl_load_file, (&crl, Test::data_file("x509/nist/root.crl").c_str()));
 
@@ -705,13 +731,41 @@ class FFI_CRL_Test final : public FFI_Test {
          TEST_FFI_OK(botan_x509_cert_destroy, (cert1));
 
          botan_x509_cert_t cert2;
+         std::vector<uint8_t> cert2_serial;
+         size_t cert2_serial_len = 0;
          REQUIRE_FFI_OK(botan_x509_cert_load_file, (&cert2, Test::data_file("x509/nist/test20/int.crt").c_str()));
          TEST_FFI_RC(0, botan_x509_is_revoked, (crl, cert2));
          TEST_FFI_RC(-1, botan_x509_is_revoked, (bytecrl, cert2));
+         TEST_FFI_RC(BOTAN_FFI_ERROR_INSUFFICIENT_BUFFER_SPACE,
+                     botan_x509_cert_get_serial_number,
+                     (cert2, nullptr, &cert2_serial_len));
+         cert2_serial.resize(cert2_serial_len);
+         TEST_FFI_OK(botan_x509_cert_get_serial_number, (cert2, cert2_serial.data(), &cert2_serial_len));
          TEST_FFI_OK(botan_x509_cert_destroy, (cert2));
+
+         botan_x509_crl_entry_t entry;
+         TEST_FFI_OK(botan_x509_crl_entries, (crl, 0, &entry));
+
+         ViewBytesSink serial;
+         uint64_t ts;
+         int reason;
+
+         TEST_FFI_OK(botan_x509_crl_entry_view_serial_number, (entry, serial.delegate(), serial.callback()));
+         TEST_FFI_OK(botan_x509_crl_entry_revocation_date, (entry, &ts));
+         TEST_FFI_OK(botan_x509_crl_entry_reason, (entry, &reason));
+         TEST_FFI_OK(botan_x509_crl_entry_destroy, (entry));
+
+         result.test_is_eq(
+            "Reason", static_cast<uint8_t>(reason), Botan::to_underlying(Botan::CRL_Code::KeyCompromise));
+         result.test_is_eq("Revocation time", ts, Botan::calendar_point(1999, 1, 1, 12, 0, 0).seconds_since_epoch());
+         result.test_eq("Revoked cert serial", serial.get(), cert2_serial);
+
+         TEST_FFI_RC(BOTAN_FFI_ERROR_OUT_OF_RANGE, botan_x509_crl_entries, (crl, 1, &entry));
+         TEST_FFI_RC(BOTAN_FFI_ERROR_OUT_OF_RANGE, botan_x509_crl_entries, (bytecrl, 0, &entry));
 
          TEST_FFI_OK(botan_x509_crl_destroy, (crl));
          TEST_FFI_OK(botan_x509_crl_destroy, (bytecrl));
+         TEST_FFI_OK(botan_x509_crl_destroy, (crl_without_next_update));
       }
 };
 
@@ -734,11 +788,22 @@ class FFI_Cert_Validation_Test final : public FFI_Test {
          if(!TEST_FFI_INIT(botan_x509_cert_load_file, (&root, Test::data_file("x509/nist/root.crt").c_str()))) {
             return;
          }
+         TEST_FFI_RC(0, botan_x509_cert_is_ca, (root));
 
          botan_x509_cert_t end2;
          botan_x509_cert_t sub2;
          REQUIRE_FFI_OK(botan_x509_cert_load_file, (&end2, Test::data_file("x509/nist/test02/end.crt").c_str()));
          REQUIRE_FFI_OK(botan_x509_cert_load_file, (&sub2, Test::data_file("x509/nist/test02/int.crt").c_str()));
+         TEST_FFI_RC(1, botan_x509_cert_is_ca, (end2));
+
+         size_t path_limit;
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NO_VALUE, botan_x509_cert_get_path_length_constraint, (root, &path_limit));
+
+         botan_x509_cert_t root_with_pathlen;
+         REQUIRE_FFI_OK(botan_x509_cert_load_file,
+                        (&root_with_pathlen, Test::data_file("x509/extended/02/root.crt").c_str()));
+         TEST_FFI_OK(botan_x509_cert_get_path_length_constraint, (root_with_pathlen, &path_limit));
+         result.test_eq("Path length constraint", path_limit, 1);
 
          TEST_FFI_RC(1, botan_x509_cert_verify, (&rc, end2, &sub2, 1, &root, 1, nullptr, 0, nullptr, 0));
          result.confirm("Validation test02 failed", rc == 5002);
@@ -793,6 +858,7 @@ class FFI_Cert_Validation_Test final : public FFI_Test {
          result.test_eq(
             "Validation test20 status string", botan_x509_cert_validation_status(rc), "Certificate is revoked");
 
+         TEST_FFI_OK(botan_x509_cert_destroy, (root_with_pathlen));
          TEST_FFI_OK(botan_x509_cert_destroy, (end2));
          TEST_FFI_OK(botan_x509_cert_destroy, (sub2));
          TEST_FFI_OK(botan_x509_cert_destroy, (end7));
@@ -927,6 +993,371 @@ class FFI_ECDSA_Certificate_Test final : public FFI_Test {
 
             TEST_FFI_OK(botan_x509_cert_destroy, (cert));
          }
+      }
+};
+
+class FFI_Cert_ExtKeyUsages_Test final : public FFI_Test {
+   public:
+      std::string name() const override { return "FFI X509 Extended Key Usage"; }
+
+      void ffi_test(Test::Result& result, botan_rng_t /*unused*/) override {
+         botan_x509_cert_t cert_with_eku;
+         if(!TEST_FFI_INIT(botan_x509_cert_load_file,
+                           (&cert_with_eku, Test::data_file("x509/pss_certs/03/end.crt").c_str()))) {
+            return;
+         }
+
+         // Prepare some OID objects for OID-based EKU queries
+         botan_asn1_oid_t oid_srv_auth1;
+         botan_asn1_oid_t oid_srv_auth2;
+         botan_asn1_oid_t oid_ocsp_signing;
+         TEST_FFI_OK(botan_oid_from_string, (&oid_srv_auth1, "1.3.6.1.5.5.7.3.1"));
+         TEST_FFI_OK(botan_oid_from_string, (&oid_srv_auth2, "PKIX.ServerAuth"));
+         TEST_FFI_OK(botan_oid_from_string, (&oid_ocsp_signing, "PKIX.OCSPSigning"));
+
+         // Make sure the OID object is checked for nullptr
+         TEST_FFI_RC(
+            BOTAN_FFI_ERROR_NULL_POINTER, botan_x509_cert_allowed_extended_usage_oid, (cert_with_eku, nullptr));
+
+         // Should have serverAuth (TLS Web Server Authentication)
+         TEST_FFI_RC(0, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "1.3.6.1.5.5.7.3.1"));
+         TEST_FFI_RC(0, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "PKIX.ServerAuth"));
+         TEST_FFI_RC(0, botan_x509_cert_allowed_extended_usage_oid, (cert_with_eku, oid_srv_auth1));
+         TEST_FFI_RC(0, botan_x509_cert_allowed_extended_usage_oid, (cert_with_eku, oid_srv_auth2));
+
+         // Should have clientAuth (TLS Web Client Authentication)
+         TEST_FFI_RC(0, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "1.3.6.1.5.5.7.3.2"));
+         TEST_FFI_RC(0, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "PKIX.ClientAuth"));
+
+         // Should NOT have OCSPSigning
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "1.3.6.1.5.5.7.3.9"));
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "PKIX.OCSPSigning"));
+
+         // Should NOT have codeSigning
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "1.3.6.1.5.5.7.3.3"));
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_with_eku, "PKIX.CodeSigning"));
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_oid, (cert_with_eku, oid_ocsp_signing));
+
+         TEST_FFI_OK(botan_x509_cert_destroy, (cert_with_eku));
+
+         botan_x509_cert_t cert_without_eku;
+         if(!TEST_FFI_INIT(botan_x509_cert_load_file,
+                           (&cert_without_eku, Test::data_file("x509/nist/root.crt").c_str()))) {
+            return;
+         }
+
+         // Should return non-zero for any EKU query (no EKU extension present)
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_without_eku, "1.3.6.1.5.5.7.3.1"));
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_without_eku, "1.3.6.1.5.5.7.3.2"));
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_without_eku, "PKIX.OCSPSigning"));
+         TEST_FFI_RC(1, botan_x509_cert_allowed_extended_usage_str, (cert_without_eku, "PKIX.CodeSigning"));
+
+         TEST_FFI_OK(botan_oid_destroy, (oid_srv_auth1));
+         TEST_FFI_OK(botan_oid_destroy, (oid_srv_auth2));
+         TEST_FFI_OK(botan_oid_destroy, (oid_ocsp_signing));
+         TEST_FFI_OK(botan_x509_cert_destroy, (cert_without_eku));
+      }
+};
+
+auto read_distinguished_name(std::span<const uint8_t> bytes) {
+   auto dec = Botan::BER_Decoder(bytes);
+   Botan::X509_DN dn;
+   dn.decode_from(dec);
+   return dn;
+}
+
+class FFI_Cert_AlternativeNames_Test final : public FFI_Test {
+   private:
+      template <std::invocable<botan_x509_cert_t, size_t, botan_x509_general_name_t*> EnumeratorT,
+                std::invocable<botan_x509_general_name_t> VisitorT>
+      static void visit_general_names(Test::Result& result,
+                                      botan_x509_cert_t cert,
+                                      EnumeratorT enumerator_fn,
+                                      VisitorT visitor_fn) {
+         int rc = BOTAN_FFI_SUCCESS;
+         for(size_t i = 0; rc == BOTAN_FFI_SUCCESS; ++i) {
+            botan_x509_general_name_t gn;
+            rc = enumerator_fn(cert, i, &gn);
+            if(rc == BOTAN_FFI_SUCCESS) {
+               visitor_fn(gn);
+               TEST_FFI_OK(botan_x509_general_name_destroy, (gn));
+            } else if(rc != BOTAN_FFI_ERROR_OUT_OF_RANGE) {
+               result.test_note(
+                  Botan::fmt("enumerator produced unexpected return code: {}", botan_error_description(rc)));
+            }
+         }
+      }
+
+      template <typename EnumeratorT>
+      static auto read_string_alternative_names(Test::Result& result,
+                                                botan_x509_cert_t cert,
+                                                EnumeratorT fn,
+                                                botan_x509_general_name_types type) {
+         std::vector<std::string> out;
+
+         visit_general_names(result, cert, fn, [&](botan_x509_general_name_t gn) {
+            unsigned int gn_type;
+            TEST_FFI_OK(botan_x509_general_name_get_type, (gn, &gn_type));
+            if(static_cast<botan_x509_general_name_types>(gn_type) == type) {
+               ViewStringSink str;
+               TEST_FFI_OK(botan_x509_general_name_view_string_value, (gn, str.delegate(), str.callback()));
+               out.push_back(str.get());
+            }
+         });
+
+         return out;
+      }
+
+      template <typename EnumeratorT>
+      static auto read_binary_alternative_names(Test::Result& result,
+                                                botan_x509_cert_t cert,
+                                                EnumeratorT fn,
+                                                botan_x509_general_name_types type) {
+         std::vector<std::vector<uint8_t>> out;
+
+         visit_general_names(result, cert, fn, [&](botan_x509_general_name_t gn) {
+            unsigned int gn_type;
+            TEST_FFI_OK(botan_x509_general_name_get_type, (gn, &gn_type));
+            if(static_cast<botan_x509_general_name_types>(gn_type) == type) {
+               ViewBytesSink data;
+               TEST_FFI_OK(botan_x509_general_name_view_binary_value, (gn, data.delegate(), data.callback()));
+               out.emplace_back(data.get().begin(), data.get().end());
+            }
+         });
+
+         return out;
+      }
+
+      static auto read_common_names(std::span<const std::vector<uint8_t>> bytes) {
+         std::vector<std::string> result;
+         for(const auto& dn_bytes : bytes) {
+            const auto dn = read_distinguished_name(dn_bytes);
+            result.push_back(dn.get_first_attribute("X520.CommonName"));
+         }
+         return result;
+      }
+
+   public:
+      std::string name() const override { return "FFI X509 Alternative Names"; }
+
+      void ffi_test(Test::Result& result, botan_rng_t /*unused*/) override {
+         botan_x509_cert_t cert_none;
+         if(!TEST_FFI_INIT(botan_x509_cert_load_file,
+                           (&cert_none, Test::data_file("x509/misc/no_alternative_names.pem").c_str()))) {
+            return;
+         }
+
+         botan_x509_general_name_t nil = nullptr;
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NO_VALUE, botan_x509_cert_subject_alternative_names, (cert_none, 0, &nil));
+         TEST_FFI_RC(BOTAN_FFI_ERROR_NO_VALUE, botan_x509_cert_issuer_alternative_names, (cert_none, 0, &nil));
+         result.confirm("no general name created", nil == nullptr);
+
+         botan_x509_cert_t cert;
+         if(!TEST_FFI_INIT(botan_x509_cert_load_file,
+                           (&cert, Test::data_file("x509/misc/multiple_alternative_names.pem").c_str()))) {
+            return;
+         }
+
+         const auto get_san = botan_x509_cert_subject_alternative_names;
+
+         const auto san_email = read_string_alternative_names(result, cert, get_san, BOTAN_X509_EMAIL_ADDRESS);
+         result.test_eq("expected number of emails in SAN", san_email.size(), 2);
+         result.confirm("testing@x509-labs.com", Botan::value_exists(san_email, "testing@x509-labs.com"));
+         result.confirm("info@x509-labs.com", Botan::value_exists(san_email, "info@x509-labs.com"));
+
+         const auto san_dns = read_string_alternative_names(result, cert, get_san, BOTAN_X509_DNS_NAME);
+         result.test_eq("expected number of hostnames in SAN", san_dns.size(), 3);
+         result.confirm("test.x509-labs.com", Botan::value_exists(san_dns, "test.x509-labs.com"));
+         result.confirm("versuch.x509-labs.com", Botan::value_exists(san_dns, "versuch.x509-labs.com"));
+         result.confirm("trail.x509-labs.com", Botan::value_exists(san_dns, "trail.x509-labs.com"));
+
+         const auto san_uri = read_string_alternative_names(result, cert, get_san, BOTAN_X509_URI);
+         result.test_eq("expected number of URIs in SAN", san_uri.size(), 2);
+         result.confirm("https://x509-labs.com", Botan::value_exists(san_uri, "https://x509-labs.com"));
+         result.confirm("http://x509-labs.com", Botan::value_exists(san_uri, "http://x509-labs.com"));
+
+         const auto san_ip4 = read_string_alternative_names(result, cert, get_san, BOTAN_X509_IP_ADDRESS);
+         result.test_eq("expected number of IPv4 addresses", san_ip4.size(), 1);
+         result.confirm("127.0.0.1", Botan::value_exists(san_ip4, "127.0.0.1"));
+         const auto san_ip4_bin = read_binary_alternative_names(result, cert, get_san, BOTAN_X509_IP_ADDRESS);
+         result.test_eq("expected number of IPv4 addresses (bin)", san_ip4_bin.size(), 1);
+         result.test_eq("127.0.0.1 (bin)", san_ip4_bin.front(), Botan::store_be(uint32_t(0x7F000001)));
+
+         const auto san_dn_bytes = read_binary_alternative_names(result, cert, get_san, BOTAN_X509_DIRECTORY_NAME);
+         result.test_eq("expected number of DNs in SAN", san_dn_bytes.size(), 3);
+         const auto san_dn_cns = read_common_names(san_dn_bytes);
+         result.confirm("First Name", Botan::value_exists(san_dn_cns, "First Name"));
+         result.confirm("Middle Name", Botan::value_exists(san_dn_cns, "Middle Name"));
+         result.confirm("Last Name", Botan::value_exists(san_dn_cns, "Last Name"));
+
+         auto get_ian = botan_x509_cert_issuer_alternative_names;
+
+         const auto ian_email = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_EMAIL_ADDRESS);
+         result.test_eq("expected number of emails in IAN", ian_email.size(), 0);
+
+         const auto ian_dns = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_DNS_NAME);
+         result.test_eq("expected number of hostnames in IAN", ian_dns.size(), 3);
+         result.confirm("test.x509-labs-ca.com", Botan::value_exists(ian_dns, "test.x509-labs-ca.com"));
+         result.confirm("versuch.x509-labs-ca.com", Botan::value_exists(ian_dns, "versuch.x509-labs-ca.com"));
+         result.confirm("trail.x509-labs-ca.com", Botan::value_exists(ian_dns, "trail.x509-labs-ca.com"));
+
+         const auto ian_uri = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_URI);
+         result.test_eq("expected number of URIs in IAN", ian_uri.size(), 2);
+         result.confirm("https://x509-labs-ca.com", Botan::value_exists(ian_uri, "https://x509-labs-ca.com"));
+         result.confirm("http://x509-labs-ca.com", Botan::value_exists(ian_uri, "http://x509-labs-ca.com"));
+
+         const auto ian_ip4 = read_string_alternative_names(result, cert, get_ian, BOTAN_X509_IP_ADDRESS);
+         result.test_eq("expected number of IPv4 addresses", ian_ip4.size(), 1);
+         result.confirm("192.168.1.1", Botan::value_exists(ian_ip4, "192.168.1.1"));
+         const auto ian_ip4_bin = read_binary_alternative_names(result, cert, get_ian, BOTAN_X509_IP_ADDRESS);
+         result.test_eq("expected number of IPv4 addresses (bin)", ian_ip4_bin.size(), 1);
+         result.test_eq("192.168.1.1 (bin)", ian_ip4_bin.front(), Botan::store_be(uint32_t(0xC0A80101)));
+
+         const auto ian_dn_bytes = read_binary_alternative_names(result, cert, get_ian, BOTAN_X509_DIRECTORY_NAME);
+         result.test_eq("expected number of DNs in IAN", ian_dn_bytes.size(), 3);
+         const auto ian_dn_cns = read_common_names(ian_dn_bytes);
+         result.confirm("First CA", Botan::value_exists(ian_dn_cns, "First CA"));
+         result.confirm("Middle CA", Botan::value_exists(ian_dn_cns, "Middle CA"));
+         result.confirm("Last CA", Botan::value_exists(ian_dn_cns, "Last CA"));
+
+         TEST_FFI_OK(botan_x509_cert_destroy, (cert));
+         TEST_FFI_OK(botan_x509_cert_destroy, (cert_none));
+      }
+};
+
+class FFI_Cert_NameConstraints_Test final : public FFI_Test {
+   private:
+      static auto read_constraints(Test::Result& result, botan_x509_cert_t cert, bool permitted) {
+         std::vector<std::pair<botan_x509_general_name_types, std::string>> out;
+
+         int rc = BOTAN_FFI_SUCCESS;
+         for(size_t i = 0; rc == BOTAN_FFI_SUCCESS; ++i) {
+            botan_x509_general_name_t constraint;
+            if(permitted) {
+               rc = botan_x509_cert_permitted_name_constraints(cert, i, &constraint);
+            } else {
+               rc = botan_x509_cert_excluded_name_constraints(cert, i, &constraint);
+            }
+
+            if(rc == BOTAN_FFI_SUCCESS) {
+               ViewBytesSink bytes;
+               ViewStringSink string;
+
+               unsigned int type;
+               const auto rc2 = botan_x509_general_name_get_type(constraint, &type);
+               if(rc2 == BOTAN_FFI_SUCCESS) {
+                  const auto gn_type = static_cast<botan_x509_general_name_types>(type);
+                  switch(gn_type) {
+                     case BOTAN_X509_EMAIL_ADDRESS:
+                     case BOTAN_X509_DNS_NAME:
+                     case BOTAN_X509_URI:
+                     case BOTAN_X509_IP_ADDRESS:
+                        TEST_FFI_OK(botan_x509_general_name_view_string_value,
+                                    (constraint, string.delegate(), string.callback()));
+                        out.emplace_back(gn_type, string.get());
+                        break;
+                     case BOTAN_X509_DIRECTORY_NAME:
+                        TEST_FFI_OK(botan_x509_general_name_view_binary_value,
+                                    (constraint, bytes.delegate(), bytes.callback()));
+                        out.emplace_back(gn_type, read_distinguished_name(bytes.get()).to_string());
+                        break;
+                     case BOTAN_X509_OTHER_NAME:
+                        out.emplace_back(gn_type, "<not supported>");
+                        break;
+                  }
+               } else {
+                  result.test_note(
+                     Botan::fmt("botan_x509_general_name_get_type returned {}", botan_error_description(rc2)));
+               }
+
+               TEST_FFI_OK(botan_x509_general_name_destroy, (constraint));
+            } else if(rc != BOTAN_FFI_ERROR_OUT_OF_RANGE) {
+               result.test_failure(Botan::fmt("unexpected error code: {}", botan_error_description(rc)));
+            }
+         }
+
+         return out;
+      }
+
+   public:
+      std::string name() const override { return "FFI X509 Name Constraints"; }
+
+      void ffi_test(Test::Result& result, botan_rng_t /*unused*/) override {
+         botan_x509_cert_t cert;
+         if(!TEST_FFI_INIT(botan_x509_cert_load_file,
+                           (&cert, Test::data_file("x509/misc/name_constraint_ci/int.pem").c_str()))) {
+            return;
+         }
+
+         const auto permitted = read_constraints(result, cert, true);
+         const auto excluded = read_constraints(result, cert, false);
+
+         result.test_eq_sz("permissions", permitted.size(), 72);
+         result.test_eq_sz("exclusions", excluded.size(), 1);
+
+         using V = decltype(permitted)::value_type;
+         result.confirm("email", Botan::value_exists(permitted, V{BOTAN_X509_EMAIL_ADDRESS, "pec.aruba.it"}));
+         result.confirm("DNS", Botan::value_exists(permitted, V{BOTAN_X509_DNS_NAME, "gov.it"}));
+         result.confirm("DN",
+                        Botan::value_exists(permitted,
+                                            V{BOTAN_X509_DIRECTORY_NAME,
+                                              R"(C="IT",X520.State="Roma",X520.Locality="Roma",O="Sogei S.p.A.")"}));
+         result.confirm("IP", Botan::value_exists(excluded, V{BOTAN_X509_IP_ADDRESS, "0.0.0.0/0.0.0.0"}));
+
+         // below are more generic general_name_t tests
+
+         botan_x509_general_name_t email;
+         botan_x509_general_name_t dns;
+         botan_x509_general_name_t dn;
+         botan_x509_general_name_t ip;
+         TEST_FFI_OK(botan_x509_cert_permitted_name_constraints, (cert, 0, &email));
+         TEST_FFI_OK(botan_x509_cert_permitted_name_constraints, (cert, 33, &dns));
+         TEST_FFI_OK(botan_x509_cert_permitted_name_constraints, (cert, 47, &dn));
+         TEST_FFI_OK(botan_x509_cert_excluded_name_constraints, (cert, 0, &ip));
+
+         unsigned int type;
+         TEST_FFI_OK(botan_x509_general_name_get_type, (email, &type));
+         result.test_is_eq("email", static_cast<botan_x509_general_name_types>(type), BOTAN_X509_EMAIL_ADDRESS);
+         TEST_FFI_OK(botan_x509_general_name_get_type, (dns, &type));
+         result.test_is_eq("dns", static_cast<botan_x509_general_name_types>(type), BOTAN_X509_DNS_NAME);
+         TEST_FFI_OK(botan_x509_general_name_get_type, (dn, &type));
+         result.test_is_eq("dn", static_cast<botan_x509_general_name_types>(type), BOTAN_X509_DIRECTORY_NAME);
+         TEST_FFI_OK(botan_x509_general_name_get_type, (ip, &type));
+         result.test_is_eq("ip", static_cast<botan_x509_general_name_types>(type), BOTAN_X509_IP_ADDRESS);
+
+         ViewBytesSink bin;
+         ViewStringSink str;
+
+         TEST_FFI_OK(botan_x509_general_name_view_string_value, (email, str.delegate(), str.callback()));
+         result.test_eq("email as expected", str.get(), "agid.gov.it");
+         TEST_FFI_RC(BOTAN_FFI_ERROR_INVALID_OBJECT_STATE,
+                     botan_x509_general_name_view_binary_value,
+                     (email, bin.delegate(), bin.callback()));
+
+         TEST_FFI_OK(botan_x509_general_name_view_string_value, (dns, str.delegate(), str.callback()));
+         result.test_eq("dns as expected", str.get(), "agendadigitale.it");
+         TEST_FFI_RC(BOTAN_FFI_ERROR_INVALID_OBJECT_STATE,
+                     botan_x509_general_name_view_binary_value,
+                     (dns, bin.delegate(), bin.callback()));
+
+         TEST_FFI_OK(botan_x509_general_name_view_binary_value, (dn, bin.delegate(), bin.callback()));
+         const auto organization = read_distinguished_name(bin.get()).get_first_attribute("O");
+         result.test_eq("dn as expected", organization, "ACI Informatica S.p.A.");
+         TEST_FFI_RC(BOTAN_FFI_ERROR_INVALID_OBJECT_STATE,
+                     botan_x509_general_name_view_string_value,
+                     (dn, str.delegate(), str.callback()));
+
+         TEST_FFI_OK(botan_x509_general_name_view_binary_value, (ip, bin.delegate(), bin.callback()));
+         result.test_eq_sz("ip has correct length", bin.get().size(), 8);
+         TEST_FFI_OK(botan_x509_general_name_view_string_value, (ip, str.delegate(), str.callback()));
+         result.test_eq("ip has correct length", str.get(), "0.0.0.0/0.0.0.0");
+
+         TEST_FFI_OK(botan_x509_general_name_destroy, (email));
+         TEST_FFI_OK(botan_x509_general_name_destroy, (dns));
+         TEST_FFI_OK(botan_x509_general_name_destroy, (dn));
+         TEST_FFI_OK(botan_x509_general_name_destroy, (ip));
+
+         TEST_FFI_OK(botan_x509_cert_destroy, (cert));
       }
 };
 
@@ -4750,6 +5181,9 @@ BOTAN_REGISTER_TEST("ffi", "ffi_zfec", FFI_ZFEC_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_crl", FFI_CRL_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_cert_validation", FFI_Cert_Validation_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_ecdsa_certificate", FFI_ECDSA_Certificate_Test);
+BOTAN_REGISTER_TEST("ffi", "ffi_cert_ext_keyusage", FFI_Cert_ExtKeyUsages_Test);
+BOTAN_REGISTER_TEST("ffi", "ffi_cert_alt_names", FFI_Cert_AlternativeNames_Test);
+BOTAN_REGISTER_TEST("ffi", "ffi_cert_name_constraints", FFI_Cert_NameConstraints_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_pkcs_hashid", FFI_PKCS_Hashid_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_cbc_cipher", FFI_CBC_Cipher_Test);
 BOTAN_REGISTER_TEST("ffi", "ffi_gcm", FFI_GCM_Test);

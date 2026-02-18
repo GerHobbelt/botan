@@ -165,6 +165,11 @@ The following enum values are defined in the FFI header:
    An operation was invoked that makes sense for the object, but it is in the
    wrong state to perform it.
 
+.. cpp:enumerator:: BOTAN_FFI_ERROR_OUT_OF_RANGE = -36
+
+   Querying an enumerable value resulted in an "out of range" error. This error
+   code may be used as the marker for the end of a value enumeration.
+
 .. cpp:enumerator:: BOTAN_FFI_ERROR_NOT_IMPLEMENTED = -40
 
    This is returned if the functionality is not available for some reason.  For
@@ -249,6 +254,7 @@ supported it.
 ============== ===================
 FFI Version    Supported Starting
 ============== ===================
+20260203       3.11.0
 20250829       3.10.0
 20250506       3.8.0
 20240408       3.4.0
@@ -1643,6 +1649,11 @@ X.509 Certificates
 
    An opaque data type for an X.509 certificate. Don't mess with it.
 
+.. cpp:type:: opaque* botan_x509_general_name_t
+
+   An opaque data type for an X.509 GeneralName used to query subject/issuer
+   alternative names and name constraints. Don't mess with it.
+
 .. cpp:function:: int botan_x509_cert_load(botan_x509_cert_t* cert_obj, \
                                         const uint8_t cert[], size_t cert_len)
 
@@ -1691,6 +1702,14 @@ X.509 Certificates
 .. cpp:function:: int botan_x509_cert_get_serial_number(botan_x509_cert_t cert, uint8_t out[], size_t* out_len)
 
    Return the serial number of the certificate.
+
+.. cpp:function:: int botan_x509_cert_is_ca(botan_x509_cert_t cert)
+
+   Check whether the certificate is marked as a CA certificate.
+
+.. cpp:function:: int botan_x509_cert_get_path_length_constraint(botan_x509_cert_t cert, size_t* path_len)
+
+   Get the path length constraint for a CA certificate.
 
 .. cpp:function:: int botan_x509_cert_get_authority_key_id(botan_x509_cert_t cert, uint8_t out[], size_t* out_len)
 
@@ -1743,6 +1762,92 @@ X.509 Certificates
    `CRL_SIGN`, `ENCIPHER_ONLY`, `DECIPHER_ONLY`.
 
 .. cpp:function:: int botan_x509_cert_allowed_usage(botan_x509_cert_t cert, unsigned int key_usage)
+
+.. cpp:function:: int botan_x509_cert_allowed_extended_usage_str(botan_x509_cert_t cert, const char* oid)
+
+   Check whether the certificate has the specified extended key usage OID from
+   `RFC 5280 - 4.2.1.12 <https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.12>`_.
+   If the certificate has no extended key usage extension, this will always
+   behave as if the requested OID is *not present*.
+
+.. cpp:function:: int botan_x509_cert_allowed_extended_usage_oid(botan_x509_cert_t cert, botan_asn1_oid_t oid)
+
+   Check whether the certificate has the specified extended key usage OID from
+   `RFC 5280 - 4.2.1.12 <https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.12>`_.
+   If the certificate has no extended key usage extension, this will always
+   behave as if the requested OID is *not present*.
+
+.. cpp:enum:: botan_x509_general_name_types
+
+   GeneralName data types. Allowed values:
+   `BOTAN_X509_OTHER_NAME`, `BOTAN_X509_EMAIL_ADDRESS`, `BOTAN_X509_DNS_NAME`,
+   `BOTAN_X509_DIRECTORY_NAME`, `BOTAN_X509_URI`, `BOTAN_X509_IP_ADDRESS`.
+
+.. cpp:function:: int botan_x509_general_name_get_type(botan_x509_general_name_t name, unsigned int* type)
+
+   Get the data type of the GeneralName object as a member of
+   :cpp:enum:`botan_x509_general_name_types`. Depending on this type, one of the
+   view functions below can be used to extract the value.
+
+   `BOTAN_X509_DIRECTORY_NAME` is a binary DER encoding of a distinguished name.
+   `BOTAN_X509_IP_ADDRESS` is a big endian binary encoding of the IP address
+   optionally concatenated with the subnet mask.
+   `BOTAN_X509_EMAIL_ADDRESS`, `BOTAN_X509_DNS_NAME`, and `BOTAN_X509_URI` are
+   characters arrays.
+   Support for `BOTAN_X509_OTHER_NAME` is deprecated and cannot be viewed using
+   these functions.
+
+.. cpp:function:: int botan_x509_general_name_view_string_value(botan_x509_general_name_t name, \
+                                                                botan_view_ctx ctx, \
+                                                                botan_view_str_fn view)
+
+   Allows querying the value of GeneralName objects of type
+   `BOTAN_X509_EMAIL_ADDRESS`, `BOTAN_X509_DNS_NAME`, `BOTAN_X509_URI`, and
+   `BOTAN_X509_IP_ADDRESS`.
+
+.. cpp:function:: int botan_x509_general_name_view_binary_value(botan_x509_general_name_t name, \
+                                                                botan_view_ctx ctx, \
+                                                                botan_view_bin_fn view)
+
+   Allows querying the value of GeneralName objects of type
+   `BOTAN_X509_DIRECTORY_NAME` (as DER encoded distinguished name) and
+   `BOTAN_X509_IP_ADDRESS` (as big-endian encoded IP address + subnet mask).
+
+.. cpp:function:: int botan_x509_general_name_destroy(botan_x509_general_name_t alt_names)
+
+   Destroy the GeneralName object.
+
+.. cpp:function:: int botan_x509_cert_permitted_name_constraints(botan_x509_cert_t cert, \
+                                                                 size_t index, \
+                                                                 botan_x509_general_name_t* constraint)
+
+   Enumerate the permitted name constraints in the certificate as GeneralName
+   objects. If the given index is not available,
+   :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
+
+.. cpp:function:: int botan_x509_cert_excluded_name_constraints(botan_x509_cert_t cert, \
+                                                                size_t index, \
+                                                                botan_x509_general_name_t* constraint)
+
+   Enumerate the excluded name constraints in the certificate as GeneralName
+   objects. If the given index is not available,
+   :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
+
+.. cpp:function:: int botan_x509_cert_subject_alternative_names(botan_x509_cert_t cert, \
+                                                                size_t index, \
+                                                                botan_x509_general_name_t* alt_name)
+
+   Enumerate the subject alternative names in the certificate as GeneralName
+   objects. If the given index is not available,
+   :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
+
+.. cpp:function:: int botan_x509_cert_issuer_alternative_names(botan_x509_cert_t cert, \
+                                                               size_t index, \
+                                                               botan_x509_general_name_t* alt_name)
+
+   Enumerate the issuer alternative names in the certificate as GeneralName
+   objects. If the given index is not available,
+   :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE` is returned.
 
 .. cpp:function:: int botan_x509_cert_verify(int* validation_result, \
                   botan_x509_cert_t cert, \
@@ -1807,6 +1912,10 @@ X.509 Certificate Revocation Lists
 
    An opaque data type for an X.509 CRL.
 
+.. cpp:type:: opaque* botan_x509_crl_entry_t
+
+   An opaque data type for an X.509 CRL entry.
+
 .. cpp:function:: int botan_x509_crl_load(botan_x509_crl_t* crl_obj, \
                                         const uint8_t crl[], size_t crl_len)
 
@@ -1820,10 +1929,45 @@ X.509 Certificate Revocation Lists
 
    Destroy the CRL object.
 
+.. cpp:function:: int botan_x509_crl_this_update(botan_x509_crl_t crl, uint64_t* time_since_epoch)
+
+   Return the time the CRL becomes valid, as seconds since epoch.
+
+.. cpp:function:: int botan_x509_crl_next_update(botan_x509_crl_t crl, uint64_t* time_since_epoch)
+
+   Return the time the CRL expires, as seconds since epoch. Note that this field
+   is technically optional in CRLs, if the CRL does not specify a "next update"
+   timestamp, :cpp:enumerator:`BOTAN_FFI_ERROR_NO_VALUE` is returned.
+
 .. cpp:function:: int botan_x509_is_revoked(botan_x509_crl_t crl, botan_x509_cert_t cert)
 
    Check whether a given ``crl`` contains a given ``cert``.
    Return ``0`` when the certificate is revoked, ``-1`` otherwise.
+
+.. cpp:function:: int botan_x509_crl_entries(botan_x509_crl_t crl, \
+                                             size_t index, \
+                                             botan_x509_crl_entry_t *entry)
+
+   List the entries in the CRL. Using the `index` parameter applications can
+   enumerate all entries in the CRL. If the list of entries is exhausted, this
+   will return :cpp:enumerator:`BOTAN_FFI_ERROR_OUT_OF_RANGE`.
+
+.. cpp:function:: int botan_x509_crl_entry_reason(botan_x509_crl_entry_t entry, int* reason_code)
+
+   Get the revocation reason code for the given CRL entry. The reason code is
+   according to `RFC 5280 - 5.3.1 <https://www.rfc-editor.org/rfc/rfc5280#section-5.3.1>`_.
+
+.. cpp:function:: int botan_x509_crl_entry_revocation_date(botan_x509_crl_entry_t entry, uint64_t* time_since_epoch)
+
+   Get the revocation date for the given CRL entry, as seconds since epoch.
+
+.. cpp:function:: int botan_x509_crl_entry_view_serial_number(botan_x509_crl_entry_t entry, botan_view_ctx ctx, botan_view_bin_fn view)
+
+   View the serial number for the given CRL entry.
+
+.. cpp:function:: int botan_x509_crl_entry_destroy(botan_x509_crl_entry_t entry)
+
+   Destroy the CRL entry object.
 
 ZFEC (Forward Error Correction)
 ----------------------------------------
