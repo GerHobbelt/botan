@@ -61,14 +61,15 @@ class ZFEC_KAT final : public Text_Based_Test {
                result.test_failure("Encoding returned the same share twice");
             }
 
-            result.test_lt("ZFEC enc share in range", share, N);
+            result.test_sz_lt("ZFEC enc share in range", share, N);
 
-            result.test_eq(zfec_impl.c_str(), "share " + std::to_string(share), block, len, shares[share], share_size);
+            result.test_bin_eq(
+               zfec_impl + " share " + std::to_string(share), {block, len}, {shares[share], share_size});
          };
 
          zfec.encode(input.data(), input.size(), zfec_enc_fn);
 
-         result.test_eq("Correct number of shares encoded", shares_encoded.size(), N);
+         result.test_sz_eq("Correct number of shares encoded", shares_encoded.size(), N);
 
          // First test full decoding:
          std::set<size_t> shares_decoded;
@@ -78,15 +79,15 @@ class ZFEC_KAT final : public Text_Based_Test {
                result.test_failure("Decoding returned the same share twice");
             }
 
-            result.test_lt("ZFEC dec share in range", share, K);
+            result.test_sz_lt("ZFEC dec share in range", share, K);
 
-            result.test_eq(
-               zfec_impl.c_str(), "share " + std::to_string(share), block, len, &input[share * share_size], share_size);
+            result.test_bin_eq(
+               zfec_impl + " share " + std::to_string(share), {block, len}, {&input[share * share_size], share_size});
          };
 
          zfec.decode_shares(shares, share_size, zfec_dec_fn);
 
-         result.test_eq("Correct number of shares decoded", shares_decoded.size(), K);
+         result.test_sz_eq("Correct number of shares decoded", shares_decoded.size(), K);
 
          // Now remove N-K shares:
          shares_decoded.clear();
@@ -98,7 +99,7 @@ class ZFEC_KAT final : public Text_Based_Test {
 
          zfec.decode_shares(shares, share_size, zfec_dec_fn);
 
-         result.test_eq("Correct number of shares decoded", shares_decoded.size(), K);
+         result.test_sz_eq("Correct number of shares decoded", shares_decoded.size(), K);
 
          return result;
       }

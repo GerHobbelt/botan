@@ -160,7 +160,7 @@ Test::Result test_function(const std::string& name,
 
    // test throw variant
    if(expect_failure) {
-      result.test_throws(name + " fails as expected", [test_func]() { test_func(ThrowException); });
+      result.test_throws(name + " fails as expected", [&test_func]() { test_func(ThrowException); });
    } else {
       test_func(ThrowException);
       result.test_success(name + " did not throw and completed successfully");
@@ -173,26 +173,26 @@ Test::Result test_function(const std::string& name,
 
    // test bool return variant
    bool success = test_func(nullptr);
-   result.test_eq(name, success, !expect_failure);
+   result.test_bool_eq(name, success, !expect_failure);
    if(success && !revert_fn_name.empty()) {
       success = revert_func(nullptr);
-      result.test_eq(revert_fn_name, success, !expect_failure);
+      result.test_bool_eq(revert_fn_name, success, !expect_failure);
    }
 
    // test ReturnValue variant
    ReturnValue rv = ReturnValue::OK;
    success = test_func(&rv);
-   result.test_eq(name, success, !expect_failure);
+   result.test_bool_eq(name, success, !expect_failure);
    if(!expect_failure) {
-      result.test_is_eq<uint32_t>(name, static_cast<uint32_t>(rv), 0);
+      result.test_u32_eq(name, static_cast<uint32_t>(rv), 0);
    } else {
-      result.test_is_eq<uint32_t>(name, static_cast<uint32_t>(rv), static_cast<uint32_t>(expected_return_value));
+      result.test_u32_eq(name, static_cast<uint32_t>(rv), static_cast<uint32_t>(expected_return_value));
    }
 
    if(success && !revert_fn_name.empty()) {
       success = revert_func(&rv);
-      result.test_eq(revert_fn_name, success, !expect_failure);
-      result.test_is_eq<uint32_t>(revert_fn_name, static_cast<uint32_t>(rv), 0);
+      result.test_bool_eq(revert_fn_name, success, !expect_failure);
+      result.test_u32_eq(revert_fn_name, static_cast<uint32_t>(rv), 0);
    }
 
    return result;
@@ -263,7 +263,7 @@ Test::Result test_c_get_info() {
    Info info = {};
    Test::Result result =
       test_function("C_GetInfo", std::bind(&LowLevel::C_GetInfo, p11_low_level.get(), &info, std::placeholders::_1));
-   result.test_ne("C_GetInfo crypto major version", info.cryptokiVersion.major, 0);
+   result.test_sz_ne("C_GetInfo crypto major version", info.cryptokiVersion.major, 0);
 
    return result;
 }
@@ -283,7 +283,7 @@ Test::Result test_c_get_slot_list() {
       std::placeholders::_1);
 
    Test::Result result = test_function("C_GetSlotList", slots_no_card);
-   result.test_ne("C_GetSlotList number of slots without attached token > 0", slot_vec.size(), 0);
+   result.test_sz_ne("C_GetSlotList number of slots without attached token > 0", slot_vec.size(), 0);
 
    // assumes smartcard reader is attached with a card
 
@@ -296,7 +296,7 @@ Test::Result test_c_get_slot_list() {
 
    slot_vec.clear();
    result.merge(test_function("C_GetSlotList", slots_with_card));
-   result.test_ne("C_GetSlotList number of slots with attached token > 0", slot_vec.size(), 0);
+   result.test_sz_ne("C_GetSlotList number of slots with attached token > 0", slot_vec.size(), 0);
 
    return result;
 }
@@ -311,7 +311,7 @@ Test::Result test_c_get_slot_info() {
       std::bind(&LowLevel::C_GetSlotInfo, p11_low_level.get(), slot_vec.at(0), &slot_info, std::placeholders::_1));
 
    const std::string slot_desc(reinterpret_cast<char*>(slot_info.slotDescription));
-   result.test_ne("C_GetSlotInfo returns non empty description", slot_desc.size(), 0);
+   result.test_sz_ne("C_GetSlotInfo returns non empty description", slot_desc.size(), 0);
 
    return result;
 }
@@ -326,7 +326,7 @@ Test::Result test_c_get_token_info() {
       std::bind(&LowLevel::C_GetTokenInfo, p11_low_level.get(), slot_vec.at(0), &token_info, std::placeholders::_1));
 
    const std::string serial(reinterpret_cast<char*>(token_info.serialNumber));
-   result.test_ne("C_GetTokenInfo returns non empty serial number", serial.size(), 0);
+   result.test_sz_ne("C_GetTokenInfo returns non empty serial number", serial.size(), 0);
 
    return result;
 }
@@ -358,7 +358,7 @@ Test::Result test_c_get_mechanism_list() {
                            std::placeholders::_1);
 
    Test::Result result = test_function("C_GetMechanismList", binder);
-   result.confirm("C_GetMechanismList returns non empty mechanisms list", !mechanisms.empty());
+   result.test_is_true("C_GetMechanismList returns non empty mechanisms list", !mechanisms.empty());
 
    return result;
 }
@@ -466,15 +466,15 @@ Test::Result test_c_close_all_sessions() {
    open_two_sessions();
 
    bool success = p11_low_level.get()->C_CloseAllSessions(slot_vec.at(0), nullptr);
-   result.test_eq("C_CloseAllSessions", success, true);
+   result.test_is_true("C_CloseAllSessions", success);
 
    // test ReturnValue variant
    open_two_sessions();
 
    ReturnValue rv = ReturnValue::OK;
    success = p11_low_level.get()->C_CloseAllSessions(slot_vec.at(0), &rv);
-   result.test_eq("C_CloseAllSessions", success, true);
-   result.test_is_eq<uint32_t>("C_CloseAllSessions", static_cast<uint32_t>(rv), 0);
+   result.test_is_true("C_CloseAllSessions", success);
+   result.test_u32_eq("C_CloseAllSessions", static_cast<uint32_t>(rv), 0);
 
    return result;
 }
@@ -493,11 +493,12 @@ Test::Result test_c_get_session_info() {
       std::bind(
          &LowLevel::C_GetSessionInfo, p11_low_level.get(), session_handle, &session_info, std::placeholders::_1));
 
-   result.confirm("C_GetSessionInfo returns same slot id as during call to C_OpenSession",
-                  session_info.slotID == slot_vec.at(0));
-   result.confirm("C_GetSessionInfo returns same flags as during call to C_OpenSession", session_info.flags == flags);
-   result.confirm("C_GetSessionInfo returns public read only session state",
-                  session_info.state == static_cast<CK_FLAGS>(SessionState::RoPublicSession));
+   result.test_is_true("C_GetSessionInfo returns same slot id as during call to C_OpenSession",
+                       session_info.slotID == slot_vec.at(0));
+   result.test_is_true("C_GetSessionInfo returns same flags as during call to C_OpenSession",
+                       session_info.flags == flags);
+   result.test_is_true("C_GetSessionInfo returns public read only session state",
+                       session_info.state == static_cast<CK_FLAGS>(SessionState::RoPublicSession));
 
    return result;
 }
@@ -692,7 +693,7 @@ Test::Result test_c_get_object_size() {
                          std::placeholders::_1);
 
    Test::Result result = test_function("C_GetObjectSize", bind);
-   result.test_ne("Object size", object_size, 0);
+   result.test_sz_ne("Object size", object_size, 0);
 
    // cleanup
    p11_low_level.get()->C_DestroyObject(session_handle, object_handle);
@@ -723,8 +724,8 @@ Test::Result test_c_get_attribute_value() {
 
    const std::string _label(getter[AttributeType::Label].begin(), getter[AttributeType::Label].end());
    const std::string value(getter[AttributeType::Value].begin(), getter[AttributeType::Value].end());
-   result.test_eq("label", _label, "A data object");
-   result.test_eq("value", value, "Sample data");
+   result.test_str_eq("label", _label, "A data object");
+   result.test_str_eq("value", value, "Sample data");
 
    // cleanup
    p11_low_level.get()->C_DestroyObject(session_handle, object_handle);
@@ -781,7 +782,7 @@ Test::Result test_c_set_attribute_value() {
    const std::string retrieved_label(received_attributes[AttributeType::Label].begin(),
                                      received_attributes[AttributeType::Label].end());
 
-   result.test_eq("label", new_label, retrieved_label);
+   result.test_str_eq("label", new_label, retrieved_label);
 
    // cleanup
    p11_low_level.get()->C_DestroyObject(session_handle, object_handle);
@@ -820,7 +821,7 @@ Test::Result test_c_copy_object() {
    const std::string retrieved_label(received_attributes[AttributeType::Label].begin(),
                                      received_attributes[AttributeType::Label].end());
 
-   result.test_eq("label", copied_label, retrieved_label);
+   result.test_str_eq("label", copied_label, retrieved_label);
 
    // cleanup
    p11_low_level.get()->C_DestroyObject(session_handle, object_handle);

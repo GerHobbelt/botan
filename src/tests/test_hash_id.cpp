@@ -54,7 +54,7 @@ class PKCS_HashID_Test final : public Test {
                Botan::DER_Encoder der(bits);
                der.start_sequence().encode(alg).encode(dummy_hash, Botan::ASN1_Type::OctetString).end_cons();
 
-               result.test_eq("Dummy hash is expected size", bits.size() - pkcs_id.size(), dummy_hash.size());
+               result.test_sz_eq("Dummy hash is expected size", bits.size() - pkcs_id.size(), dummy_hash.size());
 
                for(size_t i = pkcs_id.size(); i != bits.size(); ++i) {
                   if(bits[i] != 0) {
@@ -65,7 +65,7 @@ class PKCS_HashID_Test final : public Test {
 
                std::vector<uint8_t> encoded_id(bits.begin(), bits.begin() + pkcs_id.size());
 
-               result.test_eq("Encoded ID matches hardcoded", encoded_id, pkcs_id);
+               result.test_bin_eq("Encoded ID matches hardcoded", encoded_id, pkcs_id);
 
             } catch(Botan::Exception& e) {
                result.test_failure(e.what());

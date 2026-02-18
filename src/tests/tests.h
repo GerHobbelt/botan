@@ -1,5 +1,5 @@
 /*
-* (C) 2014,2015 Jack Lloyd
+* (C) 2014,2015,2026 Jack Lloyd
 * (C) 2015 Simon Warta (Kullo GmbH)
 *
 * Botan is released under the Simplified BSD License (see license.txt)
@@ -16,11 +16,9 @@ Each include is parsed for every test file which can get quite expensive
 
 #include <botan/types.h>
 #include <functional>
-#include <iosfwd>
 #include <memory>
 #include <optional>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -32,10 +30,6 @@ class RandomNumberGenerator;
 
 #if defined(BOTAN_HAS_BIGINT)
 class BigInt;
-#endif
-
-#if defined(BOTAN_HAS_LEGACY_EC_POINT)
-class EC_Point;
 #endif
 
 }  // namespace Botan
@@ -174,31 +168,6 @@ class Test_Options {
       bool m_no_stdout = false;
 };
 
-namespace detail {
-
-template <typename, typename = void>
-constexpr bool has_std_to_string = false;
-template <typename T>
-constexpr bool has_std_to_string<T, std::void_t<decltype(std::to_string(std::declval<T>()))>> = true;
-
-template <typename, typename = void>
-constexpr bool has_ostream_operator = false;
-template <typename T>
-constexpr bool
-   has_ostream_operator<T, std::void_t<decltype(operator<<(std::declval<std::ostringstream&>(), std::declval<T>()))>> =
-      true;
-
-template <typename T>
-struct is_optional : std::false_type {};
-
-template <typename T>
-struct is_optional<std::optional<T>> : std::true_type {};
-
-template <typename T>
-constexpr bool is_optional_v = is_optional<T>::value;
-
-}  // namespace detail
-
 /**
  * A code location consisting of the source file path and a line
  */
@@ -270,6 +239,8 @@ class Test {
 
             void merge(const Result& other, bool ignore_test_name = false);
 
+            /* Test reporting functions */
+
             void test_note(std::string_view note, const char* extra = nullptr);
 
             void test_note(std::string_view note, std::span<const uint8_t> context);
@@ -278,7 +249,11 @@ class Test {
 
             bool test_success(std::string_view note = "");
 
+            bool test_failure(std::string err);
+
             bool test_failure(std::string_view err);
+
+            bool test_failure(const char* err);
 
             bool test_failure(std::string_view what, std::string_view error);
 
@@ -286,34 +261,20 @@ class Test {
 
             void test_failure(std::string_view what, std::span<const uint8_t> context);
 
-            bool confirm(std::string_view what, bool expr, bool expected = true) {
-               return test_eq(what, expr, expected);
-            }
-
             /**
              * Require a condition, throw Test_Aborted otherwise
              * Note: works best when combined with CHECK scopes!
              */
             void require(std::string_view what, bool expr, bool expected = true);
 
-            template <typename T>
-            bool test_is_eq(const T& produced, const T& expected) {
-               return test_is_eq("comparison", produced, expected);
-            }
+            /* Generic arbitrary equality check */
 
-            template <typename T>
-            bool test_is_eq(std::string_view what, const T& produced, const T& expected) {
-               std::ostringstream out;
-               out << m_who << " " << what;
-
-               if(produced == expected) {
-                  out << " produced expected result";
-                  return test_success(out.str());
-               } else {
-                  out << " produced unexpected result '" << to_string(produced) << "' expected '" << to_string(expected)
-                      << "'";
-                  return test_failure(out.str());
-               }
+            template <typename E>
+               requires std::is_enum_v<E>
+            bool test_enum_eq(std::string_view what, const E& produced, const E& expected) {
+               auto produced_v = static_cast<std::underlying_type_t<E>>(produced);
+               auto expected_v = static_cast<std::underlying_type_t<E>>(expected);
+               return test_u64_eq(what, produced_v, expected_v);
             }
 
             template <typename T>
@@ -325,8 +286,52 @@ class Test {
                }
             }
 
+            /* String comparison predicates */
+            bool test_str_not_empty(std::string_view what, std::string_view produced);
+
+            bool test_str_eq(std::string_view what, std::string_view produced, std::string_view expected);
+
+            bool test_str_ne(std::string_view what, std::string_view produced, std::string_view expected);
+
+            /* Test predicates on bool */
+            bool test_bool_eq(std::string_view what, bool produced, bool expected);
+
+            bool test_is_false(std::string_view what, bool produced);
+
+            bool test_is_true(std::string_view what, bool produced);
+
+            /* Test predicates on size_t */
+            bool test_sz_eq(std::string_view what, size_t produced, size_t expected);
+            bool test_sz_ne(std::string_view what, size_t produced, size_t expected);
+            bool test_sz_lt(std::string_view what, size_t produced, size_t expected);
+            bool test_sz_lte(std::string_view what, size_t produced, size_t expected);
+            bool test_sz_gt(std::string_view what, size_t produced, size_t expected);
+            bool test_sz_gte(std::string_view what, size_t produced, size_t expected);
+
+            /* Type-hinted unsigned integer equality predicates */
+            bool test_u8_eq(std::string_view what, uint8_t produced, uint8_t expected);
+            bool test_u16_eq(std::string_view what, uint16_t produced, uint16_t expected);
+            bool test_u32_eq(std::string_view what, uint32_t produced, uint32_t expected);
+            bool test_u64_eq(std::string_view what, uint64_t produced, uint64_t expected);
+            bool test_i16_eq(std::string_view what, int16_t produced, int16_t expected);
+            bool test_i32_eq(std::string_view what, int32_t produced, int32_t expected);
+
+            /* Prefer the versions that take a descriptor string above */
+            bool test_u8_eq(uint8_t produced, uint8_t expected);
+            bool test_u16_eq(uint16_t produced, uint16_t expected);
+            bool test_u32_eq(uint32_t produced, uint32_t expected);
+            bool test_u64_eq(uint64_t produced, uint64_t expected);
+
+            /* Test predicates on integer return codes */
+            bool test_rc_ok(std::string_view func, int rc);
+            bool test_rc_fail(std::string_view func, std::string_view why, int rc);
+            bool test_rc(std::string_view func, int rc, int expected);
+            bool test_rc_init(std::string_view func, int rc);
+
+            /* Test predicates on optional values */
+
             template <typename T>
-            bool test_not_nullopt(std::string_view what, const std::optional<T>& val) {
+            bool test_opt_not_null(std::string_view what, const std::optional<T>& val) {
                if(val == std::nullopt) {
                   return test_failure(what, "was nullopt");
                } else {
@@ -334,105 +339,39 @@ class Test {
                }
             }
 
-            bool test_eq(std::string_view what, const char* produced, const char* expected);
-
-            bool test_is_nonempty(std::string_view what_is_it, std::string_view to_examine);
-
-            bool test_eq(std::string_view what, std::string_view produced, std::string_view expected);
-
-            bool test_eq(std::string_view what, bool produced, bool expected);
-
-            bool test_eq(std::string_view what, size_t produced, size_t expected);
-            bool test_eq_sz(std::string_view what, size_t produced, size_t expected);
-
-            template <typename I1, typename I2>
-            bool test_int_eq(I1 x, I2 y, const char* what) {
-               return test_eq(what, static_cast<size_t>(x), static_cast<size_t>(y));
-            }
-
-            template <typename I1, typename I2>
-            bool test_int_eq(std::string_view what, I1 x, I2 y) {
-               return test_eq(what, static_cast<size_t>(x), static_cast<size_t>(y));
-            }
-
             template <typename T>
-            bool test_eq(std::string_view what, const std::optional<T>& a, const std::optional<T>& b) {
-               if(a.has_value() != b.has_value()) {
-                  std::ostringstream err;
-                  err << m_who << " " << what << " only one of a/b was nullopt";
-                  return test_failure(err.str());
-               } else if(a.has_value() && b.has_value()) {
-                  return test_is_eq(what, a.value(), b.value());
+            bool test_opt_is_null(std::string_view what, const std::optional<T>& val) {
+               if(val == std::nullopt) {
+                  return test_success("was nullopt");
                } else {
-                  // both nullopt
-                  return test_success();
+                  return test_failure(what, "not nullopt");
                }
             }
 
-            bool test_lt(std::string_view what, size_t produced, size_t expected);
-            bool test_lte(std::string_view what, size_t produced, size_t expected);
-            bool test_gt(std::string_view what, size_t produced, size_t expected);
-            bool test_gte(std::string_view what, size_t produced, size_t expected);
-
-            /* Test predicates on integer return codes */
-            bool test_rc_ok(std::string_view func, int rc);
-            bool test_rc_fail(std::string_view func, std::string_view why, int rc);
-            bool test_rc(std::string_view func, int expected, int rc);
-            bool test_rc_init(std::string_view func, int rc);
-
-            bool test_ne(std::string_view what, size_t produced, size_t expected);
-
-            bool test_ne(std::string_view what, std::string_view str1, std::string_view str2);
+            bool test_opt_u8_eq(std::string_view what, std::optional<uint8_t> a, std::optional<uint8_t> b);
 
 #if defined(BOTAN_HAS_BIGINT)
-            bool test_eq(std::string_view what, const BigInt& produced, const BigInt& expected);
-            bool test_ne(std::string_view what, const BigInt& produced, const BigInt& expected);
+            /* Test predicates for BigInt */
+            bool test_bn_eq(std::string_view what, const BigInt& produced, const BigInt& expected);
+            bool test_bn_ne(std::string_view what, const BigInt& produced, const BigInt& expected);
 #endif
 
-#if defined(BOTAN_HAS_LEGACY_EC_POINT)
-            bool test_eq(std::string_view what, const Botan::EC_Point& a, const Botan::EC_Point& b);
-#endif
+            /* Test predicates for binary strings */
+            bool test_bin_ne(std::string_view what,
+                             std::span<const uint8_t> produced,
+                             std::span<const uint8_t> expected);
 
-            bool test_eq(const char* producer,
-                         std::string_view what,
-                         const uint8_t produced[],
-                         size_t produced_size,
-                         const uint8_t expected[],
-                         size_t expected_size);
+            bool test_bin_eq(std::string_view what,
+                             std::span<const uint8_t> produced,
+                             std::span<const uint8_t> expected);
 
-            bool test_ne(std::string_view what,
-                         const uint8_t produced[],
-                         size_t produced_len,
-                         const uint8_t expected[],
-                         size_t expected_len);
-
-            bool test_eq(std::string_view what, std::span<const uint8_t> produced, std::span<const uint8_t> expected) {
-               return test_eq(nullptr, what, produced.data(), produced.size(), expected.data(), expected.size());
-            }
-
-            bool test_eq(std::string_view producer,
-                         std::string_view what,
-                         std::span<const uint8_t> produced,
-                         std::span<const uint8_t> expected) {
-               return test_eq(std::string(producer).c_str(),
-                              what,
-                              produced.data(),
-                              produced.size(),
-                              expected.data(),
-                              expected.size());
-            }
-
-            bool test_eq(std::string_view what, std::span<const uint8_t> produced, const char* expected_hex);
+            bool test_bin_eq(std::string_view what, std::span<const uint8_t> produced, std::string_view expected_hex);
 
             template <std::size_t N>
-            bool test_eq(std::string_view what,
-                         const std::array<uint8_t, N>& produced,
-                         const std::array<uint8_t, N>& expected) {
-               return test_eq(nullptr, what, produced.data(), produced.size(), expected.data(), expected.size());
-            }
-
-            bool test_ne(std::string_view what, std::span<const uint8_t> produced, std::span<const uint8_t> expected) {
-               return test_ne(what, produced.data(), produced.size(), expected.data(), expected.size());
+            bool test_bin_eq(std::string_view what,
+                             const std::array<uint8_t, N>& produced,
+                             const std::array<uint8_t, N>& expected) {
+               return test_bin_eq(what, std::span{produced}, std::span{expected});
             }
 
          private:
@@ -509,24 +448,6 @@ class Test {
             void set_code_location(CodeLocation where) { m_where = where; }
 
             const std::optional<CodeLocation>& code_location() const { return m_where; }
-
-         private:
-            template <typename T>
-            std::string to_string(const T& v) {
-               if constexpr(detail::is_optional_v<T>) {
-                  return (v.has_value()) ? to_string(v.value()) : std::string("std::nullopt");
-               } else if constexpr(detail::has_ostream_operator<T>) {
-                  std::ostringstream oss;
-                  oss << v;
-                  return oss.str();
-               } else if constexpr(detail::has_std_to_string<T>) {
-                  //static_assert(false, "no std::to_string for you");
-                  return std::to_string(v);
-               } else {
-                  //static_assert(false, "unknown type");
-                  return "<?>";
-               }
-            }
 
          private:
             std::string m_who;
@@ -862,7 +783,7 @@ class Text_Based_Test : public Test {
  *       {
  *       CHECK("some unit test name", [](Test::Result& r)
  *          {
- *          r.confirm("some observation", 1+1 == 2);
+ *          r.test_is_true("some observation", 1+1 == 2);
  *          }),
  *       CHECK("some other unit test name", [](Test::Result& r)
  *          {

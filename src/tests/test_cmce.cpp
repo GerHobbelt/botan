@@ -11,11 +11,13 @@
 
 #if defined(BOTAN_HAS_CLASSICMCELIECE)
 
+   #include "test_arb_eq.h"
    #include "test_pubkey.h"
    #include "test_pubkey_pqc.h"
    #include "test_rng.h"
    #include <botan/cmce.h>
    #include <botan/hash.h>
+   #include <botan/hex.h>
    #include <botan/pk_algs.h>
    #include <botan/pubkey.h>
    #include <botan/internal/cmce_gf.h>
@@ -107,7 +109,7 @@ class CMCE_Utility_Tests final : public Test {
          auto rand = params.prg(seed)->output_stdvec(byte_length);
          rand.erase(rand.begin() + 8, rand.end() - 8);
 
-         result.test_is_eq("Seed expansion", rand, exp_first_and_last_bytes);
+         result.test_bin_eq("Seed expansion", rand, exp_first_and_last_bytes);
 
          return result;
       }
@@ -130,8 +132,8 @@ class CMCE_Utility_Tests final : public Test {
             params.poly_f());
 
          auto g = params.poly_ring().compute_minimal_polynomial(random_bits);
-         result.confirm("Minimize polynomial successful", g.has_value());
-         result.test_is_eq("Minimize polynomial", g.value().coef(), exp_g.coef());
+         result.test_is_true("Minimize polynomial successful", g.has_value());
+         result.test_is_true("Minimize polynomial", g.value().coef() == exp_g.coef());
 
          return result;
       }
@@ -144,7 +146,7 @@ class CMCE_Utility_Tests final : public Test {
 
          auto v = params.gf(Botan::CmceGfElem(42));
          auto v_inv = v.inv();
-         result.test_is_eq("Control bits creation", (v * v_inv).elem(), Botan::CmceGfElem(1));
+         test_arb_eq(result, "Control bits creation", (v * v_inv).elem(), Botan::CmceGfElem(1));
 
          return result;
       }
@@ -176,7 +178,7 @@ class CMCE_Utility_Tests final : public Test {
             field);
 
          auto mul = field.multiply(val1, val2);  // val1 * val2;
-         result.test_is_eq("GF multiplication", mul.coef(), exp_mul.coef());
+         result.test_is_true("GF multiplication", mul.coef() == exp_mul.coef());
 
          return result;
       }
@@ -231,9 +233,9 @@ class CMCE_Invalid_Test : public Text_Based_Test {
 
          auto params = Botan::Classic_McEliece_Parameters::create(params_str);
 
-         const auto kat_seed = Botan::lock(vars.get_req_bin("seed"));
+         const auto kat_seed = vars.get_req_bin("seed");
          const auto ct_invalid = vars.get_req_bin("ct_invalid");
-         const auto ref_ss_invalid = Botan::lock(vars.get_req_bin("ss_invalid"));
+         const auto ref_ss_invalid = vars.get_req_bin("ss_invalid");
 
          const auto test_rng = std::make_unique<CTR_DRBG_AES256>(kat_seed);
 
@@ -243,17 +245,17 @@ class CMCE_Invalid_Test : public Text_Based_Test {
          auto dec = Botan::PK_KEM_Decryptor(*private_key, *test_rng, "Raw");
          auto decaps_ct_invalid = dec.decrypt(ct_invalid);
 
-         result.test_is_eq("Decaps an invalid encapsulated key", decaps_ct_invalid, ref_ss_invalid);
+         result.test_bin_eq("Decaps an invalid encapsulated key", decaps_ct_invalid, ref_ss_invalid);
 
          if(params.is_pc()) {
             // For pc variants, additionally check the plaintext confirmation (pc) logic by
             // flipping a bit in the second part of the ciphertext (C_1 in pc). In this case
             // C_0 is decoded correctly, but pc will change the shared secret, since C_1' != C_1.
             const auto ct_invalid_c1 = vars.get_opt_bin("ct_invalid_c1");
-            const auto ref_ss_invalid_c1 = Botan::lock(vars.get_opt_bin("ss_invalid_c1"));
+            const auto ref_ss_invalid_c1 = vars.get_opt_bin("ss_invalid_c1");
             auto decaps_ct_invalid_c1 = dec.decrypt(ct_invalid_c1);
 
-            result.test_is_eq("Decaps with invalid C_1 in pc", decaps_ct_invalid_c1, ref_ss_invalid_c1);
+            result.test_bin_eq("Decaps with invalid C_1 in pc", decaps_ct_invalid_c1, ref_ss_invalid_c1);
          }
 
          return result;

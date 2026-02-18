@@ -165,21 +165,21 @@ class SIMD_4X32_Tests final : public Test {
          auto simd_le_array_vec = Botan::store_le<std::vector<uint8_t>>(simd_le_array);
          auto simd_be_array_vec = Botan::store_be(simd_be_array);
 
-         result.test_is_eq("roundtrip SIMD little-endian", simd_le_vec, simd_le_in);
-         result.test_is_eq(
+         result.test_bin_eq("roundtrip SIMD little-endian", simd_le_vec, simd_le_in);
+         result.test_bin_eq(
             "roundtrip SIMD big-endian", std::vector(simd_be_vec.begin(), simd_be_vec.end()), simd_be_in);
-         result.test_is_eq("roundtrip SIMD array little-endian", simd_le_array_vec, simd_le_array_in);
-         result.test_is_eq("roundtrip SIMD array big-endian",
-                           std::vector(simd_be_array_vec.begin(), simd_be_array_vec.end()),
-                           simd_be_array_in);
+         result.test_bin_eq("roundtrip SIMD array little-endian", simd_le_array_vec, simd_le_array_in);
+         result.test_bin_eq("roundtrip SIMD array big-endian",
+                            std::vector(simd_be_array_vec.begin(), simd_be_array_vec.end()),
+                            simd_be_array_in);
 
          using StrongSIMD = Botan::Strong<Botan::SIMD_4x32, struct StrongSIMD_>;
          const auto simd_le_strong = Botan::load_le<StrongSIMD>(simd_le_in);
          const auto simd_be_strong = Botan::load_be<StrongSIMD>(simd_be_in);
 
-         result.test_is_eq(
+         result.test_bin_eq(
             "roundtrip SIMD strong little-endian", Botan::store_le<std::vector<uint8_t>>(simd_le_strong), simd_le_in);
-         result.test_is_eq(
+         result.test_bin_eq(
             "roundtrip SIMD strong big-endian", Botan::store_be<std::vector<uint8_t>>(simd_be_strong), simd_be_in);
 
          return {result};
@@ -205,37 +205,37 @@ class SIMD_4X32_Tests final : public Test {
 
             simd.store_be(mem_be);
 
-            result.test_int_eq(
+            result.test_u32_eq(
                "SIMD_4x32 " + op + " elem0 BE", Botan::make_uint32(mem_be[0], mem_be[1], mem_be[2], mem_be[3]), exp0);
-            result.test_int_eq(
+            result.test_u32_eq(
                "SIMD_4x32 " + op + " elem1 BE", Botan::make_uint32(mem_be[4], mem_be[5], mem_be[6], mem_be[7]), exp1);
-            result.test_int_eq(
+            result.test_u32_eq(
                "SIMD_4x32 " + op + " elem2 BE", Botan::make_uint32(mem_be[8], mem_be[9], mem_be[10], mem_be[11]), exp2);
-            result.test_int_eq("SIMD_4x32 " + op + " elem3 BE",
+            result.test_u32_eq("SIMD_4x32 " + op + " elem3 BE",
                                Botan::make_uint32(mem_be[12], mem_be[13], mem_be[14], mem_be[15]),
                                exp3);
 
             // Check load_be+store_be results in same value
             const Botan::SIMD_4x32 reloaded_be = Botan::SIMD_4x32::load_be(mem_be);
             reloaded_be.store_be(mem_be2);
-            result.test_eq(nullptr, "SIMD_4x32 load_be", mem_be, 16, mem_be2, 16);
+            result.test_bin_eq("SIMD_4x32 load_be", {mem_be, 16}, {mem_be2, 16});
 
             simd.store_le(mem_le);
 
-            result.test_int_eq(
+            result.test_u32_eq(
                "SIMD_4x32 " + op + " elem0 LE", Botan::make_uint32(mem_le[3], mem_le[2], mem_le[1], mem_le[0]), exp0);
-            result.test_int_eq(
+            result.test_u32_eq(
                "SIMD_4x32 " + op + " elem1 LE", Botan::make_uint32(mem_le[7], mem_le[6], mem_le[5], mem_le[4]), exp1);
-            result.test_int_eq(
+            result.test_u32_eq(
                "SIMD_4x32 " + op + " elem2 LE", Botan::make_uint32(mem_le[11], mem_le[10], mem_le[9], mem_le[8]), exp2);
-            result.test_int_eq("SIMD_4x32 " + op + " elem3 LE",
+            result.test_u32_eq("SIMD_4x32 " + op + " elem3 LE",
                                Botan::make_uint32(mem_le[15], mem_le[14], mem_le[13], mem_le[12]),
                                exp3);
 
             // Check load_le+store_le results in same value
             const Botan::SIMD_4x32 reloaded_le = Botan::SIMD_4x32::load_le(mem_le);
             reloaded_le.store_le(mem_le2);
-            result.test_eq(nullptr, "SIMD_4x32 load_le", mem_le, 16, mem_le2, 16);
+            result.test_bin_eq("SIMD_4x32 load_le", {mem_le, 16}, {mem_le2, 16});
          }
       }
 };
@@ -339,21 +339,21 @@ class SIMD_2X64_Tests final : public Test {
          auto simd_le_array_vec = Botan::store_le<std::vector<uint8_t>>(simd_le_array);
          auto simd_be_array_vec = Botan::store_be(simd_be_array);
 
-         result.test_is_eq("roundtrip SIMD little-endian", simd_le_vec, simd_le_in);
-         result.test_is_eq(
+         result.test_bin_eq("roundtrip SIMD little-endian", simd_le_vec, simd_le_in);
+         result.test_bin_eq(
             "roundtrip SIMD big-endian", std::vector(simd_be_vec.begin(), simd_be_vec.end()), simd_be_in);
-         result.test_is_eq("roundtrip SIMD array little-endian", simd_le_array_vec, simd_le_array_in);
-         result.test_is_eq("roundtrip SIMD array big-endian",
-                           std::vector(simd_be_array_vec.begin(), simd_be_array_vec.end()),
-                           simd_be_array_in);
+         result.test_bin_eq("roundtrip SIMD array little-endian", simd_le_array_vec, simd_le_array_in);
+         result.test_bin_eq("roundtrip SIMD array big-endian",
+                            std::vector(simd_be_array_vec.begin(), simd_be_array_vec.end()),
+                            simd_be_array_in);
 
          using StrongSIMD = Botan::Strong<Botan::SIMD_2x64, struct StrongSIMD_>;
          const auto simd_le_strong = Botan::load_le<StrongSIMD>(simd_le_in);
          const auto simd_be_strong = Botan::load_be<StrongSIMD>(simd_be_in);
 
-         result.test_is_eq(
+         result.test_bin_eq(
             "roundtrip SIMD strong little-endian", Botan::store_le<std::vector<uint8_t>>(simd_le_strong), simd_le_in);
-         result.test_is_eq(
+         result.test_bin_eq(
             "roundtrip SIMD strong big-endian", Botan::store_be<std::vector<uint8_t>>(simd_be_strong), simd_be_in);
 
          return {result};
@@ -375,12 +375,12 @@ class SIMD_2X64_Tests final : public Test {
 
             simd.store_be(mem_be);
 
-            result.test_int_eq(
+            result.test_u64_eq(
                "SIMD_2x64 " + op + " elem0 BE",
                Botan::make_uint64(
                   mem_be[0], mem_be[1], mem_be[2], mem_be[3], mem_be[4], mem_be[5], mem_be[6], mem_be[7]),
                exp0);
-            result.test_int_eq(
+            result.test_u64_eq(
                "SIMD_2x64 " + op + " elem1 BE",
                Botan::make_uint64(
                   mem_be[8], mem_be[9], mem_be[10], mem_be[11], mem_be[12], mem_be[13], mem_be[14], mem_be[15]),
@@ -389,16 +389,16 @@ class SIMD_2X64_Tests final : public Test {
             // Check load_be+store_be results in same value
             const Botan::SIMD_2x64 reloaded_be = Botan::SIMD_2x64::load_be(mem_be);
             reloaded_be.store_be(mem_be2);
-            result.test_eq(nullptr, "SIMD_2x64 load_be", mem_be, 16, mem_be2, 16);
+            result.test_bin_eq("SIMD_2x64 load_be", {mem_be, 16}, {mem_be2, 16});
 
             simd.store_le(mem_le);
 
-            result.test_int_eq(
+            result.test_u64_eq(
                "SIMD_2x64 " + op + " elem0 LE",
                Botan::make_uint64(
                   mem_le[7], mem_le[6], mem_le[5], mem_le[4], mem_le[3], mem_le[2], mem_le[1], mem_le[0]),
                exp0);
-            result.test_int_eq(
+            result.test_u64_eq(
                "SIMD_2x64 " + op + " elem1 LE",
                Botan::make_uint64(
                   mem_le[15], mem_le[14], mem_le[13], mem_le[12], mem_le[11], mem_le[10], mem_le[9], mem_le[8]),
@@ -407,7 +407,7 @@ class SIMD_2X64_Tests final : public Test {
             // Check load_le+store_le results in same value
             const Botan::SIMD_2x64 reloaded_le = Botan::SIMD_2x64::load_le(mem_le);
             reloaded_le.store_le(mem_le2);
-            result.test_eq(nullptr, "SIMD_2x64 load_le", mem_le, 16, mem_le2, 16);
+            result.test_bin_eq("SIMD_2x64 load_le", {mem_le, 16}, {mem_le2, 16});
          }
       }
 };

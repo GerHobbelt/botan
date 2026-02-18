@@ -8,6 +8,7 @@
 #include "tests.h"
 
 #if defined(BOTAN_HAS_OCSP)
+   #include "test_arb_eq.h"
    #include <botan/certstor.h>
    #include <botan/ocsp.h>
    #include <botan/x509path.h>
@@ -39,7 +40,8 @@ class OCSP_Tests final : public Test {
          for(const std::string& ocsp_input_path : ocsp_input_paths) {
             try {
                const Botan::OCSP::Response resp(Test::read_binary_data_file(ocsp_input_path));
-               result.confirm("parsing was successful", resp.status() == Botan::OCSP::Response_Status_Code::Successful);
+               result.test_enum_eq(
+                  "parsing was successful", resp.status(), Botan::OCSP::Response_Status_Code::Successful);
                result.test_success("Parsed input " + ocsp_input_path);
             } catch(Botan::Exception& e) {
                result.test_failure("Parsing failed", e.what());
@@ -48,8 +50,8 @@ class OCSP_Tests final : public Test {
 
          const Botan::OCSP::Response resp(
             Test::read_binary_data_file("x509/ocsp/patrickschmidt_ocsp_try_later_wrong_sig.der"));
-         result.confirm("parsing exposes correct status code",
-                        resp.status() == Botan::OCSP::Response_Status_Code::Try_Later);
+         result.test_enum_eq(
+            "parsing exposes correct status code", resp.status(), Botan::OCSP::Response_Status_Code::Try_Later);
 
          return result;
       }
@@ -60,17 +62,17 @@ class OCSP_Tests final : public Test {
          try {
             const Botan::OCSP::Response resp1(Test::read_binary_data_file("x509/ocsp/resp1.der"));
             const auto& certs1 = resp1.certificates();
-            if(result.test_eq("Expected count of certificates", certs1.size(), 1)) {
+            if(result.test_sz_eq("Expected count of certificates", certs1.size(), 1)) {
                const auto& cert = certs1.front();
                const Botan::X509_DN expected_dn(
                   {std::make_pair("X520.CommonName", "Symantec Class 3 EV SSL CA - G3 OCSP Responder")});
                const bool matches = cert.subject_dn() == expected_dn;
-               result.test_eq("CN matches expected", matches, true);
+               result.test_is_true("CN matches expected", matches);
             }
 
             const Botan::OCSP::Response resp2(Test::read_binary_data_file("x509/ocsp/resp2.der"));
             const auto& certs2 = resp2.certificates();
-            result.test_eq("Expect no certificates", certs2.size(), 0);
+            result.test_sz_eq("Expect no certificates", certs2.size(), 0);
          } catch(Botan::Exception& e) {
             result.test_failure("Parsing failed", e.what());
          }
@@ -95,18 +97,16 @@ class OCSP_Tests final : public Test {
             "ME4wTKADAgEAMEUwQzBBMAkGBSsOAwIaBQAEFPLgavmFih2NcJtJGSN6qbUaKH5kBBRK3QYWG7z2aLV29YG2u2IaulqBLwIIQkg+DF+RYMY=";
 
          const Botan::OCSP::Request req1(issuer, end_entity);
-         result.test_eq("Encoded OCSP request", req1.base64_encode(), expected_request);
+         result.test_str_eq("Encoded OCSP request", req1.base64_encode(), expected_request);
 
          const Botan::OCSP::Request req2(issuer, BigInt::from_bytes(end_entity.serial_number()));
-         result.test_eq("Encoded OCSP request", req2.base64_encode(), expected_request);
+         result.test_str_eq("Encoded OCSP request", req2.base64_encode(), expected_request);
 
          return result;
       }
 
       static Test::Result test_response_find_signing_certificate() {
          Test::Result result("OCSP response finding signature certificates");
-
-         const std::optional<Botan::X509_Certificate> nullopt_cert;
 
          // OCSP response is signed by the issuing CA itself
          auto randombit_ocsp = load_test_OCSP_resp("x509/ocsp/randombit_ocsp.der");
@@ -119,13 +119,13 @@ class OCSP_Tests final : public Test {
          auto bdr_ca = load_test_X509_cert("x509/ocsp/bdr-int.pem");
 
          // The response in bdr_ocsp contains two certificates
-         if(result.test_eq("both certificates found", bdr_ocsp.certificates().size(), 2)) {
-            result.test_eq("first cert in response",
-                           bdr_ocsp.certificates()[0].subject_info("X520.CommonName").at(0),
-                           "D-TRUST OCSP 4 2-2 EV 2016");
-            result.test_eq("second cert in response",
-                           bdr_ocsp.certificates()[1].subject_info("X520.CommonName").at(0),
-                           "D-TRUST CA 2-2 EV 2016");
+         if(result.test_sz_eq("both certificates found", bdr_ocsp.certificates().size(), 2)) {
+            result.test_str_eq("first cert in response",
+                               bdr_ocsp.certificates()[0].subject_info("X520.CommonName").at(0),
+                               "D-TRUST OCSP 4 2-2 EV 2016");
+            result.test_str_eq("second cert in response",
+                               bdr_ocsp.certificates()[1].subject_info("X520.CommonName").at(0),
+                               "D-TRUST CA 2-2 EV 2016");
          }
 
          // Dummy OCSP response is not signed at all
@@ -137,28 +137,30 @@ class OCSP_Tests final : public Test {
          auto randombit_alt_resp_ocsp = load_test_OCSP_resp("x509/ocsp/randombit_ocsp_forged_valid_nocerts.der");
          auto randombit_alt_resp_cert = load_test_X509_cert("x509/ocsp/randombit_ocsp_forged_responder.pem");
 
-         result.test_is_eq("Dummy has no signing certificate",
-                           dummy_ocsp.find_signing_certificate(Botan::X509_Certificate()),
-                           nullopt_cert);
+         result.test_opt_is_null("Dummy has no signing certificate",
+                                 dummy_ocsp.find_signing_certificate(Botan::X509_Certificate()));
 
-         result.test_is_eq("CA is returned as signing certificate",
-                           randombit_ocsp.find_signing_certificate(randombit_ca),
-                           std::optional(randombit_ca));
-         result.test_is_eq("No signer certificate is returned when signer couldn't be determined",
-                           randombit_ocsp.find_signing_certificate(bdr_ca),
-                           nullopt_cert);
+         test_arb_eq(result,
+                     "CA is returned as signing certificate",
+                     randombit_ocsp.find_signing_certificate(randombit_ca),
+                     std::optional(randombit_ca));
+         result.test_opt_is_null("No signer certificate is returned when signer couldn't be determined",
+                                 randombit_ocsp.find_signing_certificate(bdr_ca));
 
-         result.test_is_eq("Delegated responder certificate is returned for further validation",
-                           bdr_ocsp.find_signing_certificate(bdr_ca),
-                           std::optional(bdr_responder));
+         test_arb_eq(result,
+                     "Delegated responder certificate is returned for further validation",
+                     bdr_ocsp.find_signing_certificate(bdr_ca),
+                     std::optional(bdr_responder));
 
-         result.test_is_eq("Delegated responder without stapled certs does not find signer without user-provided certs",
-                           randombit_alt_resp_ocsp.find_signing_certificate(randombit_ca),
-                           nullopt_cert);
+         result.test_opt_is_null(
+            "Delegated responder without stapled certs does not find signer without user-provided certs",
+            randombit_alt_resp_ocsp.find_signing_certificate(randombit_ca));
+
          auto trusted_responders = std::make_unique<Botan::Certificate_Store_In_Memory>(randombit_alt_resp_cert);
-         result.test_is_eq("Delegated responder returns user-provided cert",
-                           randombit_alt_resp_ocsp.find_signing_certificate(randombit_ca, trusted_responders.get()),
-                           std::optional(randombit_alt_resp_cert));
+         test_arb_eq(result,
+                     "Delegated responder returns user-provided cert",
+                     randombit_alt_resp_ocsp.find_signing_certificate(randombit_ca, trusted_responders.get()),
+                     std::optional(randombit_alt_resp_cert));
 
          return result;
       }
@@ -182,10 +184,10 @@ class OCSP_Tests final : public Test {
             const auto ocsp_status = Botan::PKIX::check_ocsp(
                cert_path, {ocsp}, {&certstore}, valid_time, Botan::Path_Validation_Restrictions());
 
-            return result.test_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
-                   result.test_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
-                   result.confirm(std::string("Status: '") + Botan::to_string(expected) + "'",
-                                  ocsp_status[0].contains(expected));
+            return result.test_sz_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
+                   result.test_sz_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
+                   result.test_is_true(std::string("Status: '") + Botan::to_string(expected) + "'",
+                                       ocsp_status[0].contains(expected));
          };
 
          check_ocsp(Botan::calendar_point(2016, 11, 11, 12, 30, 0).to_std_timepoint(),
@@ -222,10 +224,10 @@ class OCSP_Tests final : public Test {
             const Botan::Path_Validation_Restrictions pvr(false, 110, false, max_age);
             const auto ocsp_status = Botan::PKIX::check_ocsp(cert_path, {ocsp}, {&certstore}, valid_time, pvr);
 
-            return result.test_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
-                   result.test_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
-                   result.confirm(std::string("Status: '") + Botan::to_string(expected) + "'",
-                                  ocsp_status[0].contains(expected));
+            return result.test_sz_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
+                   result.test_sz_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
+                   result.test_is_true(std::string("Status: '") + Botan::to_string(expected) + "'",
+                                       ocsp_status[0].contains(expected));
          };
 
          check_ocsp(Botan::calendar_point(2016, 11, 11, 12, 30, 0).to_std_timepoint(),
@@ -262,10 +264,10 @@ class OCSP_Tests final : public Test {
             const Botan::Path_Validation_Restrictions pvr(false, 110, false, max_age);
             const auto ocsp_status = Botan::PKIX::check_ocsp(cert_path, {ocsp}, {&certstore}, valid_time, pvr);
 
-            return result.test_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
-                   result.test_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
-                   result.confirm(std::string("Status: '") + Botan::to_string(expected) + "'",
-                                  ocsp_status[0].contains(expected));
+            return result.test_sz_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
+                   result.test_sz_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
+                   result.test_is_true(std::string("Status: '") + Botan::to_string(expected) + "'",
+                                       ocsp_status[0].contains(expected));
          };
 
          check_ocsp(Botan::calendar_point(2019, 5, 28, 7, 0, 0).to_std_timepoint(),
@@ -297,10 +299,10 @@ class OCSP_Tests final : public Test {
             const auto ocsp_status = Botan::PKIX::check_ocsp(
                cert_path, {ocsp}, {&certstore}, valid_time, Botan::Path_Validation_Restrictions());
 
-            return result.test_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
-                   result.test_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
-                   result.confirm(std::string("Status: '") + Botan::to_string(expected) + "'",
-                                  ocsp_status[0].contains(expected));
+            return result.test_sz_eq("Expected size of ocsp_status", ocsp_status.size(), 1) &&
+                   result.test_sz_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1) &&
+                   result.test_is_true(std::string("Status: '") + Botan::to_string(expected) + "'",
+                                       ocsp_status[0].contains(expected));
          };
 
          check_ocsp(Botan::calendar_point(2019, 5, 28, 7, 0, 0).to_std_timepoint(),
@@ -332,9 +334,9 @@ class OCSP_Tests final : public Test {
          const auto ocsp_status =
             Botan::PKIX::check_ocsp(cert_path, {ocsp}, {&certstore}, valid_time, Botan::Path_Validation_Restrictions());
 
-         if(result.test_eq("Expected size of ocsp_status", ocsp_status.size(), 1)) {
-            if(result.test_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1)) {
-               result.test_gt(
+         if(result.test_sz_eq("Expected size of ocsp_status", ocsp_status.size(), 1)) {
+            if(result.test_sz_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1)) {
+               result.test_sz_gt(
                   "Status warning", ocsp_status[0].count(Botan::Certificate_Status_Code::OCSP_NO_REVOCATION_URL), 0);
             }
          }
@@ -359,12 +361,12 @@ class OCSP_Tests final : public Test {
          auto ocsp_status = Botan::PKIX::check_ocsp_online(
             cert_path, {&certstore}, now, ocsp_timeout, Botan::Path_Validation_Restrictions());
 
-         if(result.test_eq("Expected size of ocsp_status", ocsp_status.size(), 1)) {
-            if(result.test_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1)) {
+         if(result.test_sz_eq("Expected size of ocsp_status", ocsp_status.size(), 1)) {
+            if(result.test_sz_eq("Expected size of ocsp_status[0]", ocsp_status[0].size(), 1)) {
                const bool status_good = ocsp_status[0].contains(Botan::Certificate_Status_Code::OCSP_RESPONSE_GOOD);
                const bool server_not_found =
                   ocsp_status[0].contains(Botan::Certificate_Status_Code::OCSP_SERVER_NOT_AVAILABLE);
-               result.confirm("Expected status", status_good || server_not_found);
+               result.test_is_true("Expected status", status_good || server_not_found);
             }
          }
 
@@ -382,28 +384,25 @@ class OCSP_Tests final : public Test {
          auto responder = load_test_X509_cert("x509/ocsp/randombit_ocsp_forged_responder.pem");
          auto ca = load_test_X509_cert("x509/ocsp/letsencrypt.pem");
 
-         const std::optional<Botan::X509_Certificate> nullopt_cert;
-
          Botan::Certificate_Store_In_Memory trusted_responders;
 
          // without providing the 3rd party responder certificate no issuer will be found
-         result.test_is_eq("cannot find signing certificate without trusted responders",
-                           ocsp.find_signing_certificate(ca),
-                           nullopt_cert);
-         result.test_is_eq("cannot find signing certificate without additional help",
-                           ocsp.find_signing_certificate(ca, &trusted_responders),
-                           nullopt_cert);
+         result.test_opt_is_null("cannot find signing certificate without trusted responders",
+                                 ocsp.find_signing_certificate(ca));
+         result.test_opt_is_null("cannot find signing certificate without additional help",
+                                 ocsp.find_signing_certificate(ca, &trusted_responders));
 
          // add the 3rd party responder certificate to the list of trusted OCSP responder certs
          // to find the issuer certificate of this response
          trusted_responders.add_certificate(responder);
-         result.test_is_eq("the responder certificate is returned when it is trusted",
-                           ocsp.find_signing_certificate(ca, &trusted_responders),
-                           std::optional(responder));
+         test_arb_eq(result,
+                     "the responder certificate is returned when it is trusted",
+                     ocsp.find_signing_certificate(ca, &trusted_responders),
+                     std::optional(responder));
 
-         result.test_is_eq("the responder's signature checks out",
-                           ocsp.verify_signature(responder),
-                           Botan::Certificate_Status_Code::OCSP_SIGNATURE_OK);
+         result.test_enum_eq("the responder's signature checks out",
+                             ocsp.verify_signature(responder),
+                             Botan::Certificate_Status_Code::OCSP_SIGNATURE_OK);
 
          return result;
       }
@@ -417,7 +416,7 @@ class OCSP_Tests final : public Test {
                return cert.v3_extensions().extension_set(Botan::OID::from_string("PKIX.OCSP.NoCheck"));
             }) != ocsp.certificates().end();
 
-         result.confirm("Contains NoCheck extension", contains_cert_with_nocheck);
+         result.test_is_true("Contains NoCheck extension", contains_cert_with_nocheck);
 
          return result;
       }

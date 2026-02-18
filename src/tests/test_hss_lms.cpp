@@ -8,6 +8,7 @@
 #include "tests.h"
 
 #if defined(BOTAN_HAS_HSS_LMS)
+   #include "test_arb_eq.h"
    #include "test_pubkey.h"
    #include <botan/hss_lms.h>
    #include <botan/pk_algs.h>
@@ -30,23 +31,23 @@ std::vector<Test::Result> test_hss_lms_params_parsing() {
                result.test_no_throw("no throw", [&] {
                   const Botan::HSS_LMS_Params hss_params("SHA-256,HW(5,1),HW(25,8)");
 
-                  result.test_is_eq("hss levels", hss_params.L(), Botan::HSS_Level(2));
+                  test_arb_eq(result, "hss levels", hss_params.L(), Botan::HSS_Level(2));
                   const auto& top_lms_params = hss_params.params_at_level(Botan::HSS_Level(0));
-                  result.test_is_eq("hash name", top_lms_params.lms_params().hash_name(), std::string("SHA-256"));
-                  result.test_is_eq("top level - lms type",
-                                    top_lms_params.lms_params().algorithm_type(),
-                                    Botan::LMS_Algorithm_Type::SHA256_M32_H5);
-                  result.test_is_eq("top level - ots type",
-                                    top_lms_params.lmots_params().algorithm_type(),
-                                    Botan::LMOTS_Algorithm_Type::SHA256_N32_W1);
+                  result.test_str_eq("hash name", top_lms_params.lms_params().hash_name(), std::string("SHA-256"));
+                  result.test_enum_eq("top level - lms type",
+                                      top_lms_params.lms_params().algorithm_type(),
+                                      Botan::LMS_Algorithm_Type::SHA256_M32_H5);
+                  result.test_enum_eq("top level - ots type",
+                                      top_lms_params.lmots_params().algorithm_type(),
+                                      Botan::LMOTS_Algorithm_Type::SHA256_N32_W1);
 
                   const auto& second_lms_params = hss_params.params_at_level(Botan::HSS_Level(1));
-                  result.test_is_eq("2nd level - lms type",
-                                    second_lms_params.lms_params().algorithm_type(),
-                                    Botan::LMS_Algorithm_Type::SHA256_M32_H25);
-                  result.test_is_eq("2nd level - ots type",
-                                    second_lms_params.lmots_params().algorithm_type(),
-                                    Botan::LMOTS_Algorithm_Type::SHA256_N32_W8);
+                  result.test_enum_eq("2nd level - lms type",
+                                      second_lms_params.lms_params().algorithm_type(),
+                                      Botan::LMS_Algorithm_Type::SHA256_M32_H25);
+                  result.test_enum_eq("2nd level - ots type",
+                                      second_lms_params.lmots_params().algorithm_type(),
+                                      Botan::LMOTS_Algorithm_Type::SHA256_N32_W8);
                });
             }),
 
@@ -64,7 +65,7 @@ class HSS_LMS_Signature_Generation_Test final : public PK_Signature_Generation_T
       std::string default_padding(const VarMap& /*vars*/) const final { return ""; }
 
       std::unique_ptr<Botan::Private_Key> load_private_key(const VarMap& vars) final {
-         const auto sk_bytes = Botan::lock(vars.get_req_bin("PrivateKey"));
+         const auto sk_bytes = vars.get_req_bin("PrivateKey");
          return std::make_unique<Botan::HSS_LMS_PrivateKey>(sk_bytes);
       }
 };
@@ -135,14 +136,14 @@ class HSS_LMS_Negative_Tests final : public Test {
          signer.update(mes);
          auto valid_sig = signer.signature(Test::rng());
          verifier.update(mes);
-         result.confirm("Entire signature is valid", verifier.check_signature(valid_sig.data(), valid_sig.size()));
+         result.test_is_true("Entire signature is valid", verifier.check_signature(valid_sig.data(), valid_sig.size()));
          for(size_t idx = 0; idx < valid_sig.size(); ++idx) {
             auto bad_sig = valid_sig;
             bad_sig.at(idx) ^= 0x80;
             result.test_no_throw(Botan::fmt("Verification does not throw (byte idx {})", idx), [&]() {
                verifier.update(mes);
                const bool valid = verifier.check_signature(bad_sig);
-               result.confirm(Botan::fmt("Manipulated signature is invalid (byte idx {})", idx), !valid);
+               result.test_is_true(Botan::fmt("Manipulated signature is invalid (byte idx {})", idx), !valid);
             });
          }
 
@@ -162,12 +163,12 @@ class HSS_LMS_Negative_Tests final : public Test {
          signer.update(mes);
          auto valid_sig = signer.signature(Test::rng());
          verifier.update(mes);
-         result.confirm("Entire signature is valid", verifier.check_signature(valid_sig.data(), valid_sig.size()));
+         result.test_is_true("Entire signature is valid", verifier.check_signature(valid_sig.data(), valid_sig.size()));
          for(size_t n = 0; n < valid_sig.size(); ++n) {
             result.test_no_throw("Verification does not throw", [&]() {
                verifier.update(mes);
                const bool valid = verifier.check_signature(valid_sig.data(), n);
-               result.confirm("Too short signature is invalid", !valid);
+               result.test_is_true("Too short signature is invalid", !valid);
             });
          }
 
@@ -246,23 +247,23 @@ class HSS_LMS_Statefulness_Test final : public Test {
 
          // Tree heights: 5,5 => 2^(5+5) = 1024 signatures available
          const uint64_t expected_total = 1024;
-         result.confirm("Fresh key starts with total number of remaining signatures.",
-                        sk.remaining_operations() == expected_total);
+         result.test_is_true("Fresh key starts with total number of remaining signatures.",
+                             sk.remaining_operations() == expected_total);
 
          // Creating a signature should update the private key's state
          auto sig_0 = signer.sign_message(mes, Test::rng());
-         result.confirm(
+         result.test_is_true(
             "First signature uses index 0.",
             Botan::HSS_Signature::from_bytes_or_throw(sig_0).bottom_sig().q() == Botan::LMS_Tree_Node_Idx(0));
 
          auto sk_bytes_after_sig = sk.private_key_bits();
 
-         result.confirm("Signature decreases number of remaining signatures.",
-                        sk.remaining_operations() == expected_total - 1);
-         result.test_ne("Signature updates private key.", sk_bytes_after_sig, sk_bytes_begin);
+         result.test_is_true("Signature decreases number of remaining signatures.",
+                             sk.remaining_operations() == expected_total - 1);
+         result.test_bin_ne("Signature updates private key.", sk_bytes_after_sig, sk_bytes_begin);
 
          auto sig_1 = signer.sign_message(mes, Test::rng());
-         result.confirm(
+         result.test_is_true(
             "Next signature uses the new index.",
             Botan::HSS_Signature::from_bytes_or_throw(sig_1).bottom_sig().q() == Botan::LMS_Tree_Node_Idx(1));
 
@@ -279,11 +280,11 @@ class HSS_LMS_Statefulness_Test final : public Test {
          std::vector<uint8_t> mes = {0xde, 0xad, 0xbe, 0xef};
          auto sk_bytes_begin = sk.private_key_bits();
 
-         result.confirm("One remaining signature.", sk.remaining_operations() == uint64_t(1));
+         result.test_is_true("One remaining signature.", sk.remaining_operations() == uint64_t(1));
          result.test_no_throw("Use last signature index.", [&]() { signer.sign_message(mes, Test::rng()); });
-         result.confirm("No remaining signatures.", sk.remaining_operations() == uint64_t(0));
+         result.test_is_true("No remaining signatures.", sk.remaining_operations() == uint64_t(0));
          result.test_throws("Cannot sign with exhausted key.", [&]() { signer.sign_message(mes, Test::rng()); });
-         result.confirm("Still zero remaining signatures.", sk.remaining_operations() == uint64_t(0));
+         result.test_is_true("Still zero remaining signatures.", sk.remaining_operations() == uint64_t(0));
 
          return result;
       }
@@ -301,23 +302,23 @@ class HSS_LMS_Missing_API_Test final : public Test {
          // HSS_LMS_PublicKey::key_length()
          auto sk = Botan::create_private_key("HSS-LMS", Test::rng(), "SHA-256,HW(10,4)");
          sk->key_length();
-         result.test_gt("Public key length must be greater than the simply type information plus I",
-                        sk->key_length(),
-                        3 * sizeof(uint32_t) + Botan::LMS_IDENTIFIER_LEN);
+         result.test_sz_gt("Public key length must be greater than the simply type information plus I",
+                           sk->key_length(),
+                           3 * sizeof(uint32_t) + Botan::LMS_IDENTIFIER_LEN);
 
          // HSS_LMS_Verification_Operation::hash_function()
          const Botan::PK_Verifier verifier(*sk, "");
-         result.test_eq("PK_Verifier should report the hash of the key", verifier.hash_function(), "SHA-256");
+         result.test_str_eq("PK_Verifier should report the hash of the key", verifier.hash_function(), "SHA-256");
 
          // HSS_LMS_PrivateKey::raw_private_key_bits()
-         result.test_eq("Our BER and raw encoding is the same", sk->raw_private_key_bits(), sk->private_key_bits());
+         result.test_bin_eq("Our BER and raw encoding is the same", sk->raw_private_key_bits(), sk->private_key_bits());
 
          // HSS_LMS_Signature_Operation::algorithm_identifier()
          const Botan::PK_Signer signer(*sk, Test::rng(), "");
-         result.test_is_eq(signer.algorithm_identifier(), sk->algorithm_identifier());
+         result.test_is_true("signature algorithm", signer.algorithm_identifier() == sk->algorithm_identifier());
 
          // HSS_LMS_Signature_Operation::hash_function()
-         result.test_eq("PK_Signer should report the hash of the key", signer.hash_function(), "SHA-256");
+         result.test_str_eq("PK_Signer should report the hash of the key", signer.hash_function(), "SHA-256");
 
          return {result};
       }

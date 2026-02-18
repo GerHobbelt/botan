@@ -53,12 +53,12 @@ class Cipher_Mode_Padding_Tests final : public Text_Based_Test {
             // This is a pad plaintext and unpad valid padding round trip test
             Botan::secure_vector<uint8_t> buf(input.begin(), input.end());
             const size_t outlen = pad->output_length(buf.size(), block_size);
-            if(!result.test_eq("output length", outlen, expected.size())) {
+            if(!result.test_sz_eq("output length", outlen, expected.size())) {
                return result;
             }
             buf.resize(outlen);
             pad->add_padding(buf, input.size() % block_size, block_size);
-            result.test_eq("pad", buf, expected);
+            result.test_bin_eq("pad", buf, expected);
 
             buf.assign(expected.begin(), expected.end());
 
@@ -66,7 +66,7 @@ class Cipher_Mode_Padding_Tests final : public Text_Based_Test {
                if(algo == "NoPadding") {
                   const size_t maybe_partial = (buf.size() < block_size) ? buf.size() : block_size;
                   const auto no_padding = maybe_partial - pad->unpad(std::span{buf}.last(maybe_partial));
-                  result.test_eq("no padding", no_padding, 0);
+                  result.test_sz_eq("no padding", no_padding, 0);
                   return no_padding;
                } else {
                   return block_size - pad->unpad(std::span{buf}.last(block_size));
@@ -74,7 +74,7 @@ class Cipher_Mode_Padding_Tests final : public Text_Based_Test {
             }();
 
             buf.resize(buf.size() - pad_bytes);  // remove padding
-            result.test_eq("unpad", buf, input);
+            result.test_bin_eq("unpad", buf, input);
          }
 
          return result;

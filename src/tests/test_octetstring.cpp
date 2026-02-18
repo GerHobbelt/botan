@@ -19,7 +19,7 @@ Test::Result test_from_rng() {
    auto rng = Test::new_rng("octet_string_from_rng");
 
    const Botan::OctetString os(*rng, 32);
-   result.test_eq("length is 32 bytes", os.size(), 32);
+   result.test_sz_eq("length is 32 bytes", os.size(), 32);
 
    return result;
 }
@@ -28,7 +28,7 @@ Test::Result test_from_hex() {
    Test::Result result("OctetString");
 
    const Botan::OctetString os("0123456789ABCDEF");
-   result.test_eq("length is 8 bytes", os.size(), 8);
+   result.test_sz_eq("length is 8 bytes", os.size(), 8);
 
    return result;
 }
@@ -39,7 +39,7 @@ Test::Result test_from_byte() {
    auto rng = Test::new_rng("octet_string_from_byte");
    auto rand_bytes = rng->random_vec(8);
    const Botan::OctetString os(rand_bytes.data(), rand_bytes.size());
-   result.test_eq("length is 8 bytes", os.size(), 8);
+   result.test_sz_eq("length is 8 bytes", os.size(), 8);
 
    return result;
 }
@@ -50,12 +50,12 @@ Test::Result test_odd_parity() {
    Botan::OctetString os("FFFFFFFFFFFFFFFF");
    os.set_odd_parity();
    const Botan::OctetString expected("FEFEFEFEFEFEFEFE");
-   result.test_eq("odd parity set correctly", os, expected);
+   result.test_bin_eq("odd parity set correctly", os, expected);
 
    Botan::OctetString os2("EFCBDA4FAA997F63");
    os2.set_odd_parity();
    const Botan::OctetString expected2("EFCBDA4FAB987F62");
-   result.test_eq("odd parity set correctly", os2, expected2);
+   result.test_bin_eq("odd parity set correctly", os2, expected2);
 
    return result;
 }
@@ -64,7 +64,7 @@ Test::Result test_to_string() {
    Test::Result result("OctetString");
 
    const Botan::OctetString os("0123456789ABCDEF");
-   result.test_eq("OctetString::to_string() returns correct string", os.to_string(), "0123456789ABCDEF");
+   result.test_str_eq("OctetString::to_string() returns correct string", os.to_string(), "0123456789ABCDEF");
 
    return result;
 }
@@ -76,19 +76,19 @@ Test::Result test_xor() {
    const Botan::OctetString os2("FFFFFFFFFFFFFFFF");
 
    Botan::OctetString xor_result = os1 ^ os2;
-   result.test_eq("OctetString XOR operations works as expected", xor_result, os2);
+   result.test_bin_eq("OctetString XOR operations works as expected", xor_result, os2);
 
    xor_result = os1;
    xor_result ^= os2;
-   result.test_eq("OctetString XOR operations works as expected", xor_result, os2);
+   result.test_bin_eq("OctetString XOR operations works as expected", xor_result, os2);
 
    xor_result = os2 ^ os2;  // NOLINT(*-redundant-expression)
-   result.test_eq("OctetString XOR operations works as expected", xor_result, os1);
+   result.test_bin_eq("OctetString XOR operations works as expected", xor_result, os1);
 
    const Botan::OctetString os3("0123456789ABCDEF");
    xor_result = os3 ^ os2;
    const Botan::OctetString expected("FEDCBA9876543210");
-   result.test_eq("OctetString XOR operations works as expected", xor_result, expected);
+   result.test_bin_eq("OctetString XOR operations works as expected", xor_result, expected);
 
    return result;
 }
@@ -101,9 +101,9 @@ Test::Result test_equality() {
    const Botan::OctetString os2("FFFFFFFFFFFFFFFF");
    const Botan::OctetString& os2_copy = os2;
 
-   result.confirm("OctetString equality operations works as expected", os1 == os1_copy);
-   result.confirm("OctetString equality operations works as expected", os2 == os2_copy);
-   result.confirm("OctetString equality operations works as expected", os1 != os2);
+   result.test_is_true("OctetString equality operations works as expected", os1 == os1_copy);
+   result.test_is_true("OctetString equality operations works as expected", os2 == os2_copy);
+   result.test_is_true("OctetString equality operations works as expected", os1 != os2);
 
    return result;
 }
@@ -117,7 +117,7 @@ Test::Result test_append() {
 
    const Botan::OctetString append_result = os1 + os2;
 
-   result.test_eq("OctetString append operations works as expected", append_result, expected);
+   result.test_bin_eq("OctetString append operations works as expected", append_result, expected);
 
    return result;
 }

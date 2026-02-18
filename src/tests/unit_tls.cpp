@@ -419,11 +419,11 @@ class TLS_Handshake_Test final {
                   if(unknown_ext != nullptr) {
                      const std::vector<uint8_t> val = unknown_ext->value();
 
-                     if(m_results.test_eq("Expected size for test extn", val.size(), 7)) {
+                     if(m_results.test_sz_eq("Expected size for test extn", val.size(), 7)) {
                         if(which_side == Botan::TLS::Connection_Side::Client) {
-                           m_results.test_eq("Expected extension value", val, "06636C69656E74");
+                           m_results.test_bin_eq("Expected extension value", val, "06636C69656E74");
                         } else {
-                           m_results.test_eq("Expected extension value", val, "06736572766572");
+                           m_results.test_bin_eq("Expected extension value", val, "06736572766572");
                         }
                      }
                   } else {
@@ -450,9 +450,9 @@ class TLS_Handshake_Test final {
             }
 
             std::string tls_server_choose_app_protocol(const std::vector<std::string>& protos) override {
-               m_results.test_eq("ALPN protocol count", protos.size(), 2);
-               m_results.test_eq("ALPN protocol 1", protos[0], "test/1");
-               m_results.test_eq("ALPN protocol 2", protos[1], "test/2");
+               m_results.test_sz_eq("ALPN protocol count", protos.size(), 2);
+               m_results.test_str_eq("ALPN protocol 1", protos[0], "test/1");
+               m_results.test_str_eq("ALPN protocol 2", protos[1], "test/2");
                return "test/3";
             }
 
@@ -595,7 +595,7 @@ void TLS_Handshake_Test::go() {
       }
 
       if(client->is_active() && !client_has_written) {
-         m_results.test_eq("client ALPN protocol", client->application_protocol(), "test/3");
+         m_results.test_str_eq("client ALPN protocol", client->application_protocol(), "test/3");
 
          size_t sent_so_far = 0;
          while(sent_so_far != client_msg.size()) {
@@ -611,7 +611,7 @@ void TLS_Handshake_Test::go() {
       }
 
       if(m_server->is_active() && !server_has_written) {
-         m_results.test_eq("server ALPN protocol", m_server->application_protocol(), "test/3");
+         m_results.test_str_eq("server ALPN protocol", m_server->application_protocol(), "test/3");
 
          size_t sent_so_far = 0;
          while(sent_so_far != server_msg.size()) {
@@ -638,7 +638,7 @@ void TLS_Handshake_Test::go() {
 
          try {
             const size_t needed = m_server->received_data(input.data(), input.size());
-            m_results.test_eq("full packet received", needed, 0);
+            m_results.test_sz_eq("full packet received", needed, 0);
          } catch(...) { /* ignore exceptions */
          }
 
@@ -651,7 +651,7 @@ void TLS_Handshake_Test::go() {
 
          try {
             const size_t needed = client->received_data(input.data(), input.size());
-            m_results.test_eq("full packet received", needed, 0);
+            m_results.test_sz_eq("full packet received", needed, 0);
          } catch(...) { /* ignore exceptions */
          }
 
@@ -659,11 +659,11 @@ void TLS_Handshake_Test::go() {
       }
 
       if(!m_client_recv.empty()) {
-         m_results.test_eq("client recv", m_client_recv, server_msg);
+         m_results.test_bin_eq("client recv", m_client_recv, server_msg);
       }
 
       if(!m_server_recv.empty()) {
-         m_results.test_eq("server recv", m_server_recv, client_msg);
+         m_results.test_bin_eq("server recv", m_server_recv, client_msg);
       }
 
       if(client->is_closed() && m_server->is_closed()) {
@@ -673,17 +673,17 @@ void TLS_Handshake_Test::go() {
       if(m_server->is_active()) {
          const std::vector<Botan::X509_Certificate> certs = m_server->peer_cert_chain();
          if(m_client_auth) {
-            m_results.test_eq("got client certs", certs.size(), 2);
+            m_results.test_sz_eq("got client certs", certs.size(), 2);
 
             const std::vector<Botan::X509_DN> acceptable_CAs = m_creds->get_acceptable_cas();
 
-            m_results.test_eq("client got CA list", acceptable_CAs.size(), 2);  // RSA + ECDSA
+            m_results.test_sz_eq("client got CA list", acceptable_CAs.size(), 2);  // RSA + ECDSA
 
             for(const Botan::X509_DN& dn : acceptable_CAs) {
-               m_results.test_eq("Expected CA country field", dn.get_first_attribute("C"), "VT");
+               m_results.test_str_eq("Expected CA country field", dn.get_first_attribute("C"), "VT");
             }
          } else {
-            m_results.test_eq("no client certs", certs.size(), 0);
+            m_results.test_sz_eq("no client certs", certs.size(), 0);
          }
       }
 
@@ -691,13 +691,13 @@ void TLS_Handshake_Test::go() {
          const Botan::SymmetricKey client_key = client->key_material_export("label", "context", 32);
          const Botan::SymmetricKey server_key = m_server->key_material_export("label", "context", 32);
 
-         m_results.test_eq("TLS key material export", client_key.bits_of(), server_key.bits_of());
+         m_results.test_bin_eq("TLS key material export", client_key.bits_of(), server_key.bits_of());
 
-         m_results.confirm("Client is active", client->is_active());
-         m_results.confirm("Client is not closed", !client->is_closed());
+         m_results.test_is_true("Client is active", client->is_active());
+         m_results.test_is_false("Client is not closed", client->is_closed());
          client->close();
-         m_results.confirm("Client is no longer active", !client->is_active());
-         m_results.confirm("Client is closed", client->is_closed());
+         m_results.test_is_false("Client is no longer active", client->is_active());
+         m_results.test_is_true("Client is closed", client->is_closed());
       }
    }
 
@@ -1069,8 +1069,8 @@ class TLS_Unit_Tests final : public Test {
                });
 
             test.go();
-            test.results().confirm("custom generation was used", generator_called);
-            test.results().confirm("custom agreement was used", agreement_called);
+            test.results().test_is_true("custom generation was used", generator_called);
+            test.results().test_is_true("custom agreement was used", agreement_called);
             results.push_back(test.results());
          }
       }
@@ -1487,8 +1487,8 @@ class DTLS_Reconnection_Test : public Test {
             }
 
             if(!server_recv.empty() && !client1_recv.empty()) {
-               result.test_eq("Expected message from client1", server_recv, c1_to_server_magic);
-               result.test_eq("Expected message to client1", client1_recv, server_to_c1_magic);
+               result.test_bin_eq("Expected message from client1", server_recv, c1_to_server_magic);
+               result.test_bin_eq("Expected message to client1", client1_recv, server_to_c1_magic);
                break;
             }
          }
@@ -1551,8 +1551,8 @@ class DTLS_Reconnection_Test : public Test {
             }
 
             if(!server_recv.empty() && !client2_recv.empty()) {
-               result.test_eq("Expected message from client2", server_recv, c2_to_server_magic);
-               result.test_eq("Expected message to client2", client2_recv, server_to_c2_magic);
+               result.test_bin_eq("Expected message from client2", server_recv, c2_to_server_magic);
+               result.test_bin_eq("Expected message to client2", client2_recv, server_to_c2_magic);
                break;
             }
          }

@@ -37,17 +37,17 @@ class EME_PKCS1v15_Decoding_Tests final : public Text_Based_Test {
          const std::vector<uint8_t> plaintext = vars.get_opt_bin("Plaintext");
 
          if(!is_valid) {
-            result.test_eq("Plaintext value should be empty for invalid EME inputs", plaintext.size(), 0);
+            result.test_sz_eq("Plaintext value should be empty for invalid EME inputs", plaintext.size(), 0);
          }
 
          std::vector<uint8_t> decoded(ciphertext.size());
          auto len = pkcs->unpad(decoded, ciphertext);
 
-         result.test_eq("EME decoding valid/invalid matches", len.has_value().as_bool(), is_valid);
+         result.test_bool_eq("EME decoding valid/invalid matches", len.has_value().as_bool(), is_valid);
 
          if(len.has_value().as_bool()) {
             decoded.resize(len.value_or(0));
-            result.test_eq("EME decoded plaintext correct", decoded, plaintext);
+            result.test_bin_eq("EME decoded plaintext correct", decoded, plaintext);
          } else {
             bool all_zeros = true;
             for(const uint8_t b : decoded) {
@@ -56,7 +56,7 @@ class EME_PKCS1v15_Decoding_Tests final : public Text_Based_Test {
                }
             }
 
-            result.confirm("On invalid padding output is all zero", all_zeros);
+            result.test_is_true("On invalid padding output is all zero", all_zeros);
          }
 
          // TODO: also test that encoding is accepted
@@ -106,7 +106,7 @@ class SignaturePaddingSchemeNameTests final : public Test {
                const std::string hash_to_use = "SHA-256";
                auto padding = Botan::SignaturePaddingScheme::create_or_throw(Botan::fmt("{}({})", pad, hash_to_use));
                auto padding_copy = Botan::SignaturePaddingScheme::create(padding->name());
-               result.test_eq("SignaturePaddingScheme::name for " + pad, padding->name(), padding_copy->name());
+               result.test_str_eq("SignaturePaddingScheme::name for " + pad, padding->name(), padding_copy->name());
             } catch(Botan::Lookup_Error&) {
                result.test_note("Skipping test due to missing hash");
             } catch(const std::exception& e) {
@@ -123,9 +123,9 @@ class SignaturePaddingSchemeNameTests final : public Test {
             } catch(Botan::Lookup_Error&) {
                result.test_note("Skipping test due to missing hash");
             } catch(const std::exception& e) {
-               result.test_eq("SignaturePaddingScheme::name for " + pad,
-                              e.what(),
-                              "Could not find any algorithm named \"" + algo_name + "\"");
+               result.test_str_eq("SignaturePaddingScheme::name for " + pad,
+                                  e.what(),
+                                  "Could not find any algorithm named \"" + algo_name + "\"");
             }
          }
 
@@ -133,7 +133,7 @@ class SignaturePaddingSchemeNameTests final : public Test {
             try {
                auto padding = Botan::SignaturePaddingScheme::create(pad);
                auto padding_copy = Botan::SignaturePaddingScheme::create(padding->name());
-               result.test_eq("SignaturePaddingScheme::name for " + pad, padding->name(), padding_copy->name());
+               result.test_str_eq("SignaturePaddingScheme::name for " + pad, padding->name(), padding_copy->name());
             } catch(Botan::Lookup_Error&) {
                result.test_note("Skipping test due to missing hash");
             } catch(const std::exception& e) {

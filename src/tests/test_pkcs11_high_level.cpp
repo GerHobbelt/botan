@@ -147,7 +147,7 @@ Test::Result test_multiple_modules() {
    const Module first_module(Test::pkcs11_lib());
 
    result.test_throws("Module ctor fails if module is already initialized",
-                      []() { Module const second_module(Test::pkcs11_lib()); });
+                      []() { const Module second_module(Test::pkcs11_lib()); });
 
    return result;
 }
@@ -158,7 +158,7 @@ Test::Result test_module_get_info() {
    const Module module(Test::pkcs11_lib());
 
    const Info info = module.get_info();
-   result.test_ne("Cryptoki version != 0", info.cryptokiVersion.major, 0);
+   result.test_sz_ne("Cryptoki version != 0", info.cryptokiVersion.major, 0);
 
    return result;
 }
@@ -185,7 +185,7 @@ Test::Result test_slot_get_available_slots() {
 
    Module module(Test::pkcs11_lib());
    const std::vector<SlotId> slot_vec = Slot::get_available_slots(module, true);
-   result.test_gte("Available Slots with attached token >= 1", slot_vec.size(), 1);
+   result.test_sz_gte("Available Slots with attached token >= 1", slot_vec.size(), 1);
 
    return result;
 }
@@ -198,7 +198,7 @@ Test::Result test_slot_ctor() {
 
    const Slot slot(module, slot_vec.at(0));
    result.test_success("Slot ctor completed successfully");
-   result.test_is_eq(slot.slot_id(), slot_vec.at(0));
+   result.test_u64_eq(slot.slot_id(), slot_vec.at(0));
 
    return result;
 }
@@ -212,7 +212,7 @@ Test::Result test_get_slot_info() {
 
    SlotInfo info = slot.get_slot_info();
    const std::string description = reinterpret_cast<char*>(info.slotDescription);
-   result.confirm("Slot description is not empty", !description.empty());
+   result.test_is_true("Slot description is not empty", !description.empty());
 
    return result;
 }
@@ -253,7 +253,7 @@ Test::Result test_get_token_info() {
 
    TokenInfo info = slot.get_token_info();
    const std::string label = reinterpret_cast<char*>(info.label);
-   result.confirm("Token label is not empty", !label.empty());
+   result.test_is_true("Token label is not empty", !label.empty());
 
    return result;
 }
@@ -266,7 +266,7 @@ Test::Result test_get_mechanism_list() {
    const Slot slot(module, slot_vec.at(0));
 
    const std::vector<MechanismType> mechanisms = slot.get_mechanism_list();
-   result.confirm("The Slot supports at least one mechanism", !mechanisms.empty());
+   result.test_is_true("The Slot supports at least one mechanism", !mechanisms.empty());
 
    return result;
 }
@@ -389,13 +389,13 @@ Test::Result test_session_info() {
 
    Session session(slot, false);
    SessionInfo info = session.get_info();
-   result.test_is_eq("slot id is correct", info.slotID, slot_vec.at(0));
-   result.test_is_eq(
+   result.test_u64_eq("slot id is correct", info.slotID, slot_vec.at(0));
+   result.test_u64_eq(
       "state is a read write public session", info.state, static_cast<CK_STATE>(SessionState::RwPublicSession));
 
    session.login(UserType::User, PIN());
    info = session.get_info();
-   result.test_is_eq(
+   result.test_u64_eq(
       "state is a read write user session", info.state, static_cast<CK_STATE>(SessionState::RwUserFunctions));
 
    session.logoff();
@@ -445,17 +445,20 @@ Test::Result test_attribute_container() {
    attributes.add_numeric(AttributeType::Id, 21);
    attributes.add_numeric(AttributeType::PixelY, 40);
 
-   result.test_eq("8 elements in attribute container", attributes.count(), 8);
+   result.test_sz_eq("8 elements in attribute container", attributes.count(), 8);
 
    const std::vector<Botan::PKCS11::Attribute>& storedAttributes = attributes.attributes();
-   result.test_int_eq("ObjectId type", storedAttributes.at(4).type, AttributeType::ObjectId);
-   result.test_int_eq("ObjectId value", *reinterpret_cast<uint64_t*>(storedAttributes.at(4).pValue), 10);
-   result.test_int_eq("Id type", storedAttributes.at(5).type, AttributeType::Id);
-   result.test_int_eq("Id value", *reinterpret_cast<uint64_t*>(storedAttributes.at(5).pValue), 21);
-   result.test_int_eq("PixelX type", storedAttributes.at(6).type, AttributeType::PixelX);
-   result.test_int_eq("PixelX value", *reinterpret_cast<uint64_t*>(storedAttributes.at(6).pValue), 30);
-   result.test_int_eq("PixelY type", storedAttributes.at(7).type, AttributeType::PixelY);
-   result.test_int_eq("PixelY value", *reinterpret_cast<uint64_t*>(storedAttributes.at(7).pValue), 40);
+   result.test_u64_eq(
+      "ObjectId type", storedAttributes.at(4).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::ObjectId));
+   result.test_u64_eq("ObjectId value", *reinterpret_cast<uint64_t*>(storedAttributes.at(4).pValue), 10);
+   result.test_u64_eq("Id type", storedAttributes.at(5).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::Id));
+   result.test_u64_eq("Id value", *reinterpret_cast<uint64_t*>(storedAttributes.at(5).pValue), 21);
+   result.test_u64_eq(
+      "PixelX type", storedAttributes.at(6).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::PixelX));
+   result.test_u64_eq("PixelX value", *reinterpret_cast<uint64_t*>(storedAttributes.at(6).pValue), 30);
+   result.test_u64_eq(
+      "PixelY type", storedAttributes.at(7).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::PixelY));
+   result.test_u64_eq("PixelY value", *reinterpret_cast<uint64_t*>(storedAttributes.at(7).pValue), 40);
 
    return result;
 }
@@ -511,7 +514,7 @@ Test::Result test_get_set_attribute_values() {
    // get attribute
    secure_vector<uint8_t> retrieved_label = data_obj.get_attribute_value(AttributeType::Label);
    std::string retrieved_label_string(retrieved_label.begin(), retrieved_label.end());
-   result.test_eq("label was set correctly", retrieved_label_string, label);
+   result.test_str_eq("label was set correctly", retrieved_label_string, label);
 
    // set attribute
    std::string new_label = "Botan test modified data object label";
@@ -521,7 +524,7 @@ Test::Result test_get_set_attribute_values() {
    // get and check attribute
    retrieved_label = data_obj.get_attribute_value(AttributeType::Label);
    retrieved_label_string = std::string(retrieved_label.begin(), retrieved_label.end());
-   result.test_eq("label was modified correctly", retrieved_label_string, new_label);
+   result.test_str_eq("label was modified correctly", retrieved_label_string, new_label);
 
    data_obj.destroy();
    return result;
@@ -543,18 +546,18 @@ Test::Result test_object_finder() {
    ObjectFinder finder(test_session.session(), search_template.attributes());
 
    auto search_result = finder.find();
-   result.test_eq("one object found", search_result.size(), 1);
+   result.test_sz_eq("one object found", search_result.size(), 1);
    finder.finish();
 
    const Object obj_found(test_session.session(), search_result.at(0));
-   result.test_eq("found the object just created (same application)",
-                  obj_found.get_attribute_value(AttributeType::Application),
-                  data_obj.get_attribute_value(AttributeType::Application));
+   result.test_bin_eq("found the object just created (same application)",
+                      obj_found.get_attribute_value(AttributeType::Application),
+                      data_obj.get_attribute_value(AttributeType::Application));
 
    auto search_result2 = Object::search<Object>(test_session.session(), search_template.attributes());
-   result.test_eq("found the object just created (same label)",
-                  obj_found.get_attribute_value(AttributeType::Label),
-                  search_result2.at(0).get_attribute_value(AttributeType::Label));
+   result.test_bin_eq("found the object just created (same label)",
+                      obj_found.get_attribute_value(AttributeType::Label),
+                      search_result2.at(0).get_attribute_value(AttributeType::Label));
 
    data_obj.destroy();
    return result;
@@ -577,7 +580,7 @@ Test::Result test_object_copy() {
 
    const ObjectFinder searcher(test_session.session(), copy_attributes.attributes());
    auto search_result = searcher.find();
-   result.test_eq("one object found", search_result.size(), 1);
+   result.test_sz_eq("one object found", search_result.size(), 1);
 
    data_obj.destroy();
 
@@ -620,7 +623,7 @@ Test::Result test_rsa_privkey_import() {
 
    // create private key
    const RSA_PrivateKey priv_key(*rng, 2048);
-   result.confirm("Key self test OK", priv_key.check_key(*rng, true));
+   result.test_is_true("Key self test OK", priv_key.check_key(*rng, true));
 
    // import to card
    RSA_PrivateKeyImportProperties props(priv_key.get_n(), priv_key.get_d());
@@ -638,7 +641,7 @@ Test::Result test_rsa_privkey_import() {
 
    const PKCS11_RSA_PrivateKey pk(test_session.session(), props);
    result.test_success("RSA private key import was successful");
-   result.confirm("PK self test OK", pk.check_key(*rng, true));
+   result.test_is_true("PK self test OK", pk.check_key(*rng, true));
 
    pk.destroy();
    return result;
@@ -671,11 +674,11 @@ Test::Result test_rsa_privkey_export() {
    props.set_sensitive(false);
 
    const PKCS11_RSA_PrivateKey pk(test_session.session(), props);
-   result.confirm("Check PK11 key", pk.check_key(*rng, true));
+   result.test_is_true("Check PK11 key", pk.check_key(*rng, true));
 
    const RSA_PrivateKey exported = pk.export_key();
    result.test_success("RSA private key export was successful");
-   result.confirm("Check exported key", exported.check_key(*rng, true));
+   result.test_is_true("Check exported key", exported.check_key(*rng, true));
 
    pk.destroy();
    return result;
@@ -699,7 +702,7 @@ Test::Result test_rsa_pubkey_import() {
 
    const PKCS11_RSA_PublicKey pk(test_session.session(), props);
    result.test_success("RSA public key import was successful");
-   result.confirm("Check PK11 key", pk.check_key(*rng, true));
+   result.test_is_true("Check PK11 key", pk.check_key(*rng, true));
 
    pk.destroy();
 
@@ -792,7 +795,7 @@ Test::Result test_rsa_encrypt_decrypt() {
             result.test_failure(err.str(), e.what());
          }
 
-         result.test_eq("RSA PKCS11 encrypt and decrypt: " + padding, decrypted, plaintext);
+         result.test_bin_eq("RSA PKCS11 encrypt and decrypt: " + padding, decrypted, plaintext);
       };
 
    std::vector<uint8_t> plaintext(256);
@@ -844,7 +847,7 @@ Test::Result test_rsa_sign_verify() {
          rsa_ok = verifier.verify_message(plaintext, signature);
       }
 
-      result.test_eq("RSA PKCS11 sign and verify: " + padding, rsa_ok, true);
+      result.test_is_true("RSA PKCS11 sign and verify: " + padding, rsa_ok);
    };
 
    // single-part sign
@@ -902,7 +905,7 @@ Test::Result test_ecdsa_privkey_import() {
 
    // create ecdsa private key
    const ECDSA_PrivateKey priv_key(*rng, EC_Group::from_name("secp256r1"));
-   result.confirm("Key self test OK", priv_key.check_key(*rng, true));
+   result.test_is_true("Key self test OK", priv_key.check_key(*rng, true));
 
    // import to card
    EC_PrivateKeyImportProperties props(priv_key.DER_domain(), priv_key.private_value());
@@ -917,7 +920,7 @@ Test::Result test_ecdsa_privkey_import() {
    PKCS11_ECDSA_PrivateKey pk(test_session.session(), props);
    result.test_success("ECDSA private key import was successful");
    pk.set_public_point(priv_key._public_ec_point());
-   result.confirm("P11 key self test OK", pk.check_key(*rng, false));
+   result.test_is_true("P11 key self test OK", pk.check_key(*rng, false));
 
    pk.destroy();
    return result;
@@ -933,7 +936,7 @@ Test::Result test_ecdsa_privkey_export() {
    // create private key
    const ECDSA_PrivateKey priv_key(*rng, EC_Group::from_name("secp256r1"));
 
-   result.confirm("Check ECDSA key", priv_key.check_key(*rng, true));
+   result.test_is_true("Check ECDSA key", priv_key.check_key(*rng, true));
    // import to card
    EC_PrivateKeyImportProperties props(priv_key.DER_domain(), priv_key.private_value());
    props.set_token(true);
@@ -947,12 +950,12 @@ Test::Result test_ecdsa_privkey_export() {
 
    PKCS11_ECDSA_PrivateKey pk(test_session.session(), props);
    pk.set_public_point(priv_key._public_ec_point());
-   result.confirm("Check PK11 key", pk.check_key(*rng, false));
+   result.test_is_true("Check PK11 key", pk.check_key(*rng, false));
 
    const ECDSA_PrivateKey exported = pk.export_key();
    result.test_success("ECDSA private key export was successful");
-   result.confirm("Check exported key valid", exported.check_key(*rng, true));
-   result.test_eq("Check exported key contents", exported.private_key_bits(), priv_key.private_key_bits());
+   result.test_is_true("Check exported key valid", exported.check_key(*rng, true));
+   result.test_bin_eq("Check exported key contents", exported.private_key_bits(), priv_key.private_key_bits());
 
    pk.destroy();
    return result;
@@ -1104,14 +1107,14 @@ Test::Result test_ecdsa_sign_verify_core(EC_Group_Encoding enc, const std::strin
          Botan::PK_Verifier token_verifier(keypair.first, padding, format);
          const bool ecdsa_ok = token_verifier.verify_message(plaintext, signature);
 
-         result.test_eq("ECDSA PKCS11 sign and verify: " + padding, ecdsa_ok, true);
+         result.test_is_true("ECDSA PKCS11 sign and verify: " + padding, ecdsa_ok);
 
          // test against software implementation if available
          if(check_soft) {
             Botan::PK_Verifier soft_verifier(keypair.first, padding, format);
             const bool soft_ecdsa_ok = soft_verifier.verify_message(plaintext, signature);
 
-            result.test_eq("ECDSA PKCS11 verify (in software): " + padding, soft_ecdsa_ok, true);
+            result.test_is_true("ECDSA PKCS11 verify (in software): " + padding, soft_ecdsa_ok);
          }
       };
 
@@ -1354,7 +1357,7 @@ Test::Result test_ecdh_derive() {
    const Botan::SymmetricKey bob_key = kb.derive_key(32, keypair.first.raw_public_key_bits());
 
    const bool eq = alice_key == bob_key;
-   result.test_eq("same secret key derived", eq, true);
+   result.test_is_true("same secret key derived", eq);
 
    keypair.first.destroy();
    keypair.second.destroy();
@@ -1391,11 +1394,11 @@ Test::Result test_rng_generate_random() {
    const TestSession test_session(true);
 
    PKCS11_RNG p11_rng(test_session.session());
-   result.confirm("RNG already seeded", p11_rng.is_seeded());
+   result.test_is_true("RNG already seeded", p11_rng.is_seeded());
 
    std::vector<uint8_t> random(20);
    p11_rng.randomize(random.data(), random.size());
-   result.test_ne("random data generated", random, std::vector<uint8_t>(20));
+   result.test_bin_ne("random data generated", random, std::vector<uint8_t>(20));
 
    return result;
 }
@@ -1406,12 +1409,12 @@ Test::Result test_rng_add_entropy() {
 
    PKCS11_RNG p11_rng(test_session.session());
 
-   result.confirm("RNG already seeded", p11_rng.is_seeded());
+   result.test_is_true("RNG already seeded", p11_rng.is_seeded());
    p11_rng.clear();
-   result.confirm("RNG ignores call to clear", p11_rng.is_seeded());
+   result.test_is_true("RNG ignores call to clear", p11_rng.is_seeded());
 
    #if defined(BOTAN_HAS_ENTROPY_SOURCE)
-   result.test_eq(
+   result.test_sz_eq(
       "RNG ignores calls to reseed", p11_rng.reseed_from_sources(Botan::Entropy_Sources::global_sources(), 256), 0);
    #endif
 
@@ -1433,16 +1436,16 @@ Test::Result test_pkcs11_hmac_drbg() {
    HMAC_DRBG drbg(MessageAuthenticationCode::create("HMAC(SHA-512)"), p11_rng);
    // result.test_success("HMAC_DRBG(HMAC(SHA512)) instantiated with PKCS11_RNG");
 
-   result.test_eq("HMAC_DRBG is not seeded yet.", drbg.is_seeded(), false);
+   result.test_is_false("HMAC_DRBG is not seeded yet.", drbg.is_seeded());
    const secure_vector<uint8_t> rnd = drbg.random_vec(64);
-   result.test_eq("HMAC_DRBG is seeded now", drbg.is_seeded(), true);
+   result.test_is_true("HMAC_DRBG is seeded now", drbg.is_seeded());
 
    std::string personalization_string = "Botan PKCS#11 Tests";
    std::vector<uint8_t> personalization_data(personalization_string.begin(), personalization_string.end());
    drbg.add_entropy(personalization_data.data(), personalization_data.size());
 
    auto rnd_vec = drbg.random_vec(256);
-   result.test_ne("HMAC_DRBG generated a random vector", rnd_vec, std::vector<uint8_t>(256));
+   result.test_bin_ne("HMAC_DRBG generated a random vector", rnd_vec, std::vector<uint8_t>(256));
 
    return result;
 }
@@ -1563,7 +1566,7 @@ Test::Result test_x509_import() {
    result.test_success("X509 certificate imported");
 
    const PKCS11_X509_Certificate pkcs11_cert2(test_session.session(), pkcs11_cert.handle());
-   result.test_eq("X509 certificate by handle", pkcs11_cert == pkcs11_cert2, true);
+   result.test_is_true("X509 certificate by handle", pkcs11_cert == pkcs11_cert2);
 
    pkcs11_cert.destroy();
       #endif

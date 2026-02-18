@@ -28,12 +28,12 @@ class Test_Buf_Comp final : public Botan::Buffered_Computation {
       size_t output_length() const override { return sizeof(m_counter); }
 
       void add_data(std::span<const uint8_t> input) override {
-         if(m_result.test_eq("input length as expected", input.size(), size_t(5))) {
-            m_result.confirm("input[0] == 'A'", input[0] == 'A');
-            m_result.confirm("input[0] == 'B'", input[1] == 'B');
-            m_result.confirm("input[0] == 'C'", input[2] == 'C');
-            m_result.confirm("input[0] == 'D'", input[3] == 'D');
-            m_result.confirm("input[0] == 'E'", input[4] == 'E');
+         if(m_result.test_sz_eq("input length as expected", input.size(), size_t(5))) {
+            m_result.test_is_true("input[0] == 'A'", input[0] == 'A');
+            m_result.test_is_true("input[0] == 'B'", input[1] == 'B');
+            m_result.test_is_true("input[0] == 'C'", input[2] == 'C');
+            m_result.test_is_true("input[0] == 'D'", input[3] == 'D');
+            m_result.test_is_true("input[0] == 'E'", input[4] == 'E');
          }
 
          ++m_counter;
@@ -52,9 +52,9 @@ class Test_Buf_Comp final : public Botan::Buffered_Computation {
 };
 
 void check(Test::Result& result, std::span<const uint8_t> produced, size_t expected) {
-   uint8_t expected_bytes[sizeof(size_t)];
-   std::memcpy(expected_bytes, &expected, sizeof(expected));
-   result.test_eq("", "result is correct", produced.data(), produced.size(), expected_bytes, sizeof(expected_bytes));
+   std::array<uint8_t, sizeof(size_t)> expected_bytes{};
+   std::memcpy(&expected_bytes[0], &expected, sizeof(expected));  // NOLINT
+   result.test_bin_eq("expected result", produced, expected_bytes);
 }
 
 using TestStdVector = Botan::Strong<std::vector<uint8_t>, struct TestStdVector_>;
@@ -105,7 +105,7 @@ Test::Result test_buffered_computation_convenience_api() {
    t.final(out_vec);
    out_vec.resize(t.output_length() * 2);
    t.final(out_vec);
-   result.test_int_eq("out vector is resized", out_vec.size(), t.output_length());
+   result.test_sz_eq("out vector is resized", out_vec.size(), t.output_length());
 
    check(result, out_vec, 6);
 

@@ -13,6 +13,7 @@
    #include "test_pubkey.h"
    #include "test_rng.h"
    #include <botan/hash.h>
+   #include <botan/hex.h>
    #include <botan/pubkey.h>
    #include <botan/xmss.h>
    #include <botan/internal/buffer_slicer.h>
@@ -125,8 +126,8 @@ class XMSS_Keygen_Reference_Test final : public Text_Based_Test {
          const auto xmss_algo = Botan::XMSS_Parameters::xmss_id_from_string(vars.get_req_str("Params"));
          const Botan::XMSS_PrivateKey keypair(xmss_algo, fixed_rng);
 
-         result.test_eq("Generated private key matches", keypair.raw_private_key(), vars.get_req_bin("PrivateKey"));
-         result.test_eq("Generated public key matches", keypair.raw_public_key(), vars.get_req_bin("PublicKey"));
+         result.test_bin_eq("Generated private key matches", keypair.raw_private_key(), vars.get_req_bin("PrivateKey"));
+         result.test_bin_eq("Generated public key matches", keypair.raw_public_key(), vars.get_req_bin("PublicKey"));
 
          return result;
       }
@@ -279,15 +280,15 @@ std::vector<Test::Result> xmss_legacy_private_key() {
                auto signature = signer.sign_message(message, *rng);
 
                Botan::PK_Verifier verifier(*public_key_from_secret_key, algo_name);
-               result.confirm("legacy private key generates signatures that are still verifiable",
-                              verifier.verify_message(message, signature));
+               result.test_is_true("legacy private key generates signatures that are still verifiable",
+                                   verifier.verify_message(message, signature));
             }),
 
       CHECK("Verify a legacy signature",
             [&](auto& result) {
                Botan::PK_Verifier verifier(*public_key_from_secret_key, algo_name);
-               result.confirm("legacy private key generates signatures that are still verifiable",
-                              verifier.verify_message(message, legacy_signature));
+               result.test_is_true("legacy private key generates signatures that are still verifiable",
+                                   verifier.verify_message(message, legacy_signature));
             }),
 
       CHECK("Verify a new signature by a legacy private key with a legacy public key",
@@ -296,8 +297,8 @@ std::vector<Test::Result> xmss_legacy_private_key() {
                auto signature = signer.sign_message(message, *rng);
 
                Botan::PK_Verifier verifier(legacy_public_key, algo_name);
-               result.confirm("legacy private key generates signatures that are still verifiable",
-                              verifier.verify_message(message, legacy_signature));
+               result.test_is_true("legacy private key generates signatures that are still verifiable",
+                                   verifier.verify_message(message, legacy_signature));
             }),
    };
 }

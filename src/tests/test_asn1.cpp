@@ -74,7 +74,7 @@ Test::Result test_ber_eoc_decoding_limits() {
       }
    }
 
-   result.test_eq("EOC limited to prevent stack exhaustion", max_eoc_allowed, 16);
+   result.test_sz_eq("EOC limited to prevent stack exhaustion", max_eoc_allowed, 16);
 
    return result;
 }
@@ -94,7 +94,7 @@ Test::Result test_asn1_utf8_ascii_parsing() {
       Botan::ASN1_String str;
       str.decode_from(dec);
 
-      result.test_eq("value()", str.value(), moscow_plain);
+      result.test_str_eq("value()", str.value(), moscow_plain);
    } catch(const Botan::Decoding_Error& ex) {
       result.test_failure(ex.what());
    }
@@ -117,7 +117,7 @@ Test::Result test_asn1_utf8_parsing() {
       Botan::ASN1_String str;
       str.decode_from(dec);
 
-      result.test_eq("value()", str.value(), moscow_plain);
+      result.test_str_eq("value()", str.value(), moscow_plain);
    } catch(const Botan::Decoding_Error& ex) {
       result.test_failure(ex.what());
    }
@@ -141,7 +141,7 @@ Test::Result test_asn1_ucs2_parsing() {
       Botan::ASN1_String str;
       str.decode_from(dec);
 
-      result.test_eq("value()", str.value(), moscow_plain);
+      result.test_str_eq("value()", str.value(), moscow_plain);
    } catch(const Botan::Decoding_Error& ex) {
       result.test_failure(ex.what());
    }
@@ -165,7 +165,7 @@ Test::Result test_asn1_ucs4_parsing() {
       Botan::ASN1_String str;
       str.decode_from(dec);
 
-      result.test_eq("value()", str.value(), moscow_plain);
+      result.test_str_eq("value()", str.value(), moscow_plain);
    } catch(const Botan::Decoding_Error& ex) {
       result.test_failure(ex.what());
    }
@@ -188,7 +188,7 @@ Test::Result test_asn1_ascii_encoding() {
 
       // \x13 - ASN1 tag for 'printable string'
       // \x06 - 6 characters of payload
-      result.test_eq("encoding result", encodingResult, "13064D6F73636F77");
+      result.test_bin_eq("encoding result", encodingResult, "13064D6F73636F77");
 
       result.test_success("No crash");
    } catch(const std::exception& ex) {
@@ -213,7 +213,7 @@ Test::Result test_asn1_utf8_encoding() {
 
       // \x0C - ASN1 tag for 'UTF8 string'
       // \x0C - 12 characters of payload
-      result.test_eq("encoding result", encodingResult, "0C0CD09CD0BED181D0BAD0B2D0B0");
+      result.test_bin_eq("encoding result", encodingResult, "0C0CD09CD0BED181D0BAD0B2D0B0");
 
       result.test_success("No crash");
    } catch(const std::exception& ex) {
@@ -254,7 +254,7 @@ Test::Result test_asn1_negative_int_encoding() {
       BigInt n_dec;
       Botan::BER_Decoder(enc).decode(n_dec);
 
-      result.test_eq("DER encoding round trips negative integers", n_dec, n);
+      result.test_bn_eq("DER encoding round trips negative integers", n_dec, n);
    }
 
    return result;
@@ -333,7 +333,7 @@ class ASN1_Printer_Tests final : public Test {
 
             try {
                const std::string output = printer.print(input_data);
-               result.test_eq("Test " + i_str, output, expected_output);
+               result.test_str_eq("Test " + i_str, output, expected_output);
             } catch(Botan::Exception& e) {
                result.test_failure(Botan::fmt("Printing test {} failed with an exception: '{}'", i, e.what()));
             }
