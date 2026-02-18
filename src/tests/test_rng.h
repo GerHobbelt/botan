@@ -9,16 +9,17 @@
 #define BOTAN_TESTS_RNGS_FOR_TESTING_H_
 
 #include "tests.h"
-#include <botan/exceptn.h>
 #include <botan/hex.h>
 #include <botan/rng.h>
 #include <deque>
 #include <optional>
 #include <string>
 
-#if defined(BOTAN_HAS_AES)
-   #include <botan/block_cipher.h>
-#endif
+namespace Botan {
+
+class BlockCipher;
+
+}
 
 namespace Botan_Tests {
 
@@ -33,10 +34,6 @@ class Fixed_Output_RNG : public Botan::RandomNumberGenerator {
       bool is_seeded() const override { return !m_buf.empty(); }
 
       bool accepts_input() const override { return true; }
-
-      size_t reseed(Botan::Entropy_Sources& /*src*/, size_t /*bits*/, std::chrono::milliseconds /*timeout*/) override {
-         return 0;
-      }
 
       std::string name() const override { return "Fixed_Output_RNG"; }
 
@@ -212,6 +209,13 @@ class CTR_DRBG_AES256 final : public Botan::RandomNumberGenerator {
       bool is_seeded() const override { return true; }
 
       explicit CTR_DRBG_AES256(std::span<const uint8_t> seed);
+
+      ~CTR_DRBG_AES256() override;
+
+      CTR_DRBG_AES256(const CTR_DRBG_AES256& other) = delete;
+      CTR_DRBG_AES256(CTR_DRBG_AES256&& other) = default;
+      CTR_DRBG_AES256& operator=(const CTR_DRBG_AES256& other) = delete;
+      CTR_DRBG_AES256& operator=(CTR_DRBG_AES256&& other) = delete;
 
    private:
       void fill_bytes_with_input(std::span<uint8_t> output, std::span<const uint8_t> input) override;

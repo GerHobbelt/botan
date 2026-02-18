@@ -15,9 +15,6 @@ Each include is parsed for every test file which can get quite expensive
 */
 
 #include <botan/assert.h>
-#include <botan/exceptn.h>
-#include <botan/hex.h>
-#include <botan/symkey.h>
 #include <botan/types.h>
 #include <functional>
 #include <iosfwd>
@@ -25,6 +22,7 @@ Each include is parsed for every test file which can get quite expensive
 #include <optional>
 #include <span>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <variant>
 #include <vector>
@@ -32,6 +30,7 @@ Each include is parsed for every test file which can get quite expensive
 namespace Botan {
 
 class RandomNumberGenerator;
+class OctetString;
 
 #if defined(BOTAN_HAS_BIGINT)
 class BigInt;
@@ -49,11 +48,9 @@ namespace Botan_Tests {
 using Botan::BigInt;
 #endif
 
-class Test_Error : public Botan::Exception {
+class Test_Error : public std::runtime_error {
    public:
-      explicit Test_Error(const std::string& what) : Exception("Test error", what) {}
-
-      Botan::ErrorType error_type() const noexcept override { return Botan::ErrorType::Unknown; }
+      explicit Test_Error(const std::string& what) : std::runtime_error(what) {}
 };
 
 class Test_Aborted final : public Test_Error {
@@ -182,11 +179,6 @@ class Test_Options {
 namespace detail {
 
 template <typename, typename = void>
-constexpr bool has_Botan_to_string = false;
-template <typename T>
-constexpr bool has_Botan_to_string<T, std::void_t<decltype(Botan::to_string(std::declval<T>()))>> = true;
-
-template <typename, typename = void>
 constexpr bool has_std_to_string = false;
 template <typename T>
 constexpr bool has_std_to_string<T, std::void_t<decltype(std::to_string(std::declval<T>()))>> = true;
@@ -278,31 +270,11 @@ class Test {
                return r;
             }
 
-            static Result OfExpectedFailure(bool expecting_failure, const Test::Result& result) {
-               if(!expecting_failure) {
-                  return result;
-               }
-
-               if(result.tests_failed() == 0) {
-                  Result r = result;
-                  r.test_failure("Expected this test to fail, but it did not");
-                  return r;
-               } else {
-                  Result r(result.who());
-                  r.test_note("Got expected failure");
-                  return r;
-               }
-            }
-
             void merge(const Result& other, bool ignore_test_name = false);
 
             void test_note(const std::string& note, const char* extra = nullptr);
 
-            template <typename Alloc>
-            void test_note(const std::string& who, const std::vector<uint8_t, Alloc>& vec) {
-               const std::string hex = Botan::hex_encode(vec);
-               return test_note(who, hex.c_str());
-            }
+            void test_note(const std::string& who, std::span<const uint8_t> data);
 
             void note_missing(const std::string& whatever);
 
@@ -415,38 +387,10 @@ class Test {
             bool test_gt(const std::string& what, size_t produced, size_t expected);
             bool test_gte(const std::string& what, size_t produced, size_t expected);
 
-            template <typename T>
-            bool test_rc_ok(const std::string& func, T rc) {
-               static_assert(std::is_integral_v<T>, "Integer required.");
-
-               if(rc != 0) {
-                  std::ostringstream err;
-                  err << m_who;
-                  err << " " << func;
-                  err << " unexpectedly failed with error code " << rc;
-                  return test_failure(err.str());
-               }
-
-               return test_success();
-            }
-
-            template <typename T>
-            bool test_rc_fail(const std::string& func, const std::string& why, T rc) {
-               static_assert(std::is_integral_v<T>, "Integer required.");
-
-               if(rc == 0) {
-                  std::ostringstream err;
-                  err << m_who;
-                  err << " call to " << func << " unexpectedly succeeded";
-                  err << " expecting failure because " << why;
-                  return test_failure(err.str());
-               }
-
-               return test_success();
-            }
-
+            /* Test predicates on integer return codes */
+            bool test_rc_ok(const std::string& func, int rc);
+            bool test_rc_fail(const std::string& func, const std::string& why, int rc);
             bool test_rc(const std::string& func, int expected, int rc);
-
             bool test_rc_init(const std::string& func, int rc);
 
             bool test_ne(const std::string& what, size_t produced, size_t expected);
@@ -489,10 +433,7 @@ class Test {
                   producer.c_str(), what, produced.data(), produced.size(), expected.data(), expected.size());
             }
 
-            bool test_eq(const std::string& what, std::span<const uint8_t> produced, const char* expected_hex) {
-               const std::vector<uint8_t> expected = Botan::hex_decode(expected_hex);
-               return test_eq(nullptr, what, produced.data(), produced.size(), expected.data(), expected.size());
-            }
+            bool test_eq(const std::string& what, std::span<const uint8_t> produced, const char* expected_hex);
 
             template <std::size_t N>
             bool test_eq(const std::string& what,
@@ -591,15 +532,15 @@ class Test {
             std::string to_string(const T& v) {
                if constexpr(detail::is_optional_v<T>) {
                   return (v.has_value()) ? to_string(v.value()) : std::string("std::nullopt");
-               } else if constexpr(detail::has_Botan_to_string<T>) {
-                  return Botan::to_string(v);
                } else if constexpr(detail::has_ostream_operator<T>) {
                   std::ostringstream oss;
                   oss << v;
                   return oss.str();
                } else if constexpr(detail::has_std_to_string<T>) {
+                  //static_assert(false, "no std::to_string for you");
                   return std::to_string(v);
                } else {
+                  //static_assert(false, "unknown type");
                   return "<?>";
                }
             }

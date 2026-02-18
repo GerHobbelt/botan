@@ -8,6 +8,7 @@
 
 #include <botan/hex.h>
 #include <botan/rng.h>
+#include <botan/symkey.h>
 #include <botan/internal/filesystem.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/loadstor.h>
@@ -89,6 +90,11 @@ void Test::Result::end_timer() {
       m_ns_taken += Test::timestamp() - m_started;
       m_started = 0;
    }
+}
+
+void Test::Result::test_note(const std::string& who, std::span<const uint8_t> data) {
+   const std::string hex = Botan::hex_encode(data);
+   return test_note(who, hex.c_str());
 }
 
 void Test::Result::test_note(const std::string& note, const char* extra) {
@@ -194,6 +200,11 @@ bool Test::Result::test_ne(const std::string& what,
       return test_failure(who() + ": " + what + " produced matching");
    }
    return test_success();
+}
+
+bool Test::Result::test_eq(const std::string& what, std::span<const uint8_t> produced, const char* expected_hex) {
+   const std::vector<uint8_t> expected = Botan::hex_decode(expected_hex);
+   return test_eq(nullptr, what, produced.data(), produced.size(), expected.data(), expected.size());
 }
 
 bool Test::Result::test_eq(const char* producer,
@@ -373,6 +384,26 @@ bool Test::Result::test_eq(const std::string& what, const Botan::EC_Point& a, co
 
 bool Test::Result::test_eq(const std::string& what, bool produced, bool expected) {
    return test_is_eq(what, produced, expected);
+}
+
+bool Test::Result::test_rc_ok(const std::string& func, int rc) {
+   if(rc != 0) {
+      std::ostringstream err;
+      err << m_who << " " << func << " unexpectedly failed with error code " << rc;
+      return test_failure(err.str());
+   }
+
+   return test_success();
+}
+
+bool Test::Result::test_rc_fail(const std::string& func, const std::string& why, int rc) {
+   if(rc == 0) {
+      std::ostringstream err;
+      err << m_who << " call to " << func << " unexpectedly succeeded expecting failure because " << why;
+      return test_failure(err.str());
+   }
+
+   return test_success();
 }
 
 bool Test::Result::test_rc_init(const std::string& func, int rc) {

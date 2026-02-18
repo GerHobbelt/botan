@@ -5,13 +5,15 @@
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#include "test_pubkey.h"
+#include "tests.h"
 
 #if defined(BOTAN_HAS_PUBLIC_KEY_CRYPTO)
 
+   #include "test_pubkey.h"
    #include "test_rng.h"
 
    #include <botan/data_src.h>
+   #include <botan/exceptn.h>
    #include <botan/hex.h>
    #include <botan/pk_algs.h>
    #include <botan/pkcs8.h>
@@ -95,6 +97,11 @@ std::string PK_Test::choose_padding(const VarMap& vars, const std::string& pad_h
 
 std::vector<std::string> PK_Test::possible_providers(const std::string& /*params*/) {
    return Test::provider_filter({"base", "commoncrypto", "openssl", "tpm"});
+}
+
+std::unique_ptr<Botan::RandomNumberGenerator> PK_Signature_Generation_Test::test_rng(
+   const std::vector<uint8_t>& nonce) const {
+   return std::make_unique<Fixed_Output_RNG>(nonce);
 }
 
 Test::Result PK_Signature_Generation_Test::run_one_test(const std::string& pad_hdr, const VarMap& vars) {
@@ -342,6 +349,11 @@ std::vector<std::string> PK_Sign_Verify_DER_Test::possible_providers(const std::
    const std::vector<std::string> pk_provider =
       Botan::probe_provider_private_key(algo_name, {"base", "commoncrypto", "openssl", "tpm"});
    return Test::provider_filter(pk_provider);
+}
+
+std::unique_ptr<Botan::RandomNumberGenerator> PK_Encryption_Decryption_Test::test_rng(
+   const std::vector<uint8_t>& nonce) const {
+   return std::make_unique<Fixed_Output_RNG>(nonce);
 }
 
 Test::Result PK_Encryption_Decryption_Test::run_one_test(const std::string& pad_hdr, const VarMap& vars) {

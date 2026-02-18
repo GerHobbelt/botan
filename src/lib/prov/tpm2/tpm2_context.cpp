@@ -11,12 +11,14 @@
 #include <botan/tpm2_key.h>
 #include <botan/tpm2_session.h>
 
+#include <botan/internal/buffer_stuffer.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/int_utils.h>
 #include <botan/internal/loadstor.h>
 #include <botan/internal/stl_util.h>
 #include <botan/internal/tpm2_algo_mappings.h>
 #include <botan/internal/tpm2_util.h>
+#include <algorithm>
 
 #include <tss2/tss2_esys.h>
 #include <tss2/tss2_tcti.h>

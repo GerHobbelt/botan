@@ -11,6 +11,7 @@
 #include <botan/exceptn.h>
 #include <botan/hash.h>
 #include <botan/rng.h>
+#include <botan/internal/buffer_stuffer.h>
 #include <botan/internal/ct_utils.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/hash_id.h>

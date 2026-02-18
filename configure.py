@@ -1394,32 +1394,6 @@ class CompilerInfo(InfoObject):
 
         return None
 
-    def get_isa_specific_flags(self, isas, arch, options):
-        flags = set()
-
-        def simd32_impl():
-            for simd_isa in ['ssse3', 'altivec', 'neon']:
-                if simd_isa in arch.isa_extensions and \
-                   (simd_isa, arch.basename) not in options.disable_intrinsics and \
-                   self.isa_flags_for(simd_isa, arch.basename):
-                    return simd_isa
-            return None
-
-        for isa in isas:
-
-            if isa == 'simd':
-                isa = simd32_impl()
-
-                if isa is None:
-                    continue
-
-            flagset = self.isa_flags_for(isa, arch.basename)
-            if flagset is None:
-                raise UserError('Compiler %s does not support %s' % (self.basename, isa))
-            flags.add(flagset)
-
-        return " ".join(sorted(flags))
-
     def gen_lib_flags(self, options, variables):
         """
         Return any flags specific to building the library
@@ -1991,7 +1965,7 @@ def yield_objectfile_list(sources, obj_dir, obj_suffix, options):
         name = name.replace('.cpp', obj_suffix)
         yield normalize_source_path(os.path.join(obj_dir, name))
 
-def generate_build_info(build_paths, modules, cc, arch, osinfo, options):
+def generate_build_info(build_paths, modules, osinfo, options):
     # first create a map of src_file->owning module
 
     module_that_owns = {}
@@ -2000,27 +1974,12 @@ def generate_build_info(build_paths, modules, cc, arch, osinfo, options):
         for src in mod.sources():
             module_that_owns[src] = mod
 
-    def _isa_specific_flags(src):
-        if os.path.basename(src) == 'test_simd.cpp':
-            return cc.get_isa_specific_flags(['simd'], arch, options)
-
-        if src in module_that_owns:
-            module = module_that_owns[src]
-            isas = module.isas_needed(arch.basename)
-            if 'simd_4x32' in module.dependencies(osinfo, arch):
-                isas.append('simd')
-
-            return cc.get_isa_specific_flags(isas, arch, options)
-
-        return ''
-
     def _build_info(sources, objects, target_type):
         output = []
         for (obj_file, src) in zip(objects, sources):
             info = {
                 'src': src,
                 'obj': obj_file,
-                'isa_flags': _isa_specific_flags(src)
                 }
 
             if target_type in ['fuzzer', 'examples']:
@@ -2040,8 +1999,6 @@ def generate_build_info(build_paths, modules, cc, arch, osinfo, options):
 
     targets = ['lib', 'cli', 'test', 'fuzzer', 'examples']
 
-    out['isa_build_info'] = []
-
     fuzzer_bin = []
     example_bin = []
 
@@ -2059,10 +2016,6 @@ def generate_build_info(build_paths, modules, cc, arch, osinfo, options):
             src_list.sort()
             objects = list(yield_objectfile_list(src_list, src_dir, osinfo.obj_suffix, options))
             build_info = _build_info(src_list, objects, t)
-
-            for b in build_info:
-                if b['isa_flags'] != '':
-                    out['isa_build_info'].append(b)
 
             if t == 'fuzzer':
                 fuzzer_bin = [b['exe'] for b in build_info]
@@ -3510,7 +3463,7 @@ def check_compiler_arch(options, ccinfo, archinfo, source_paths):
     logging.info('Auto-detected compiler arch %s', cc_output)
     return cc_output
 
-def do_io_for_build(cc, arch, osinfo, using_mods, info_modules, build_paths, source_paths, template_vars, options):
+def do_io_for_build(osinfo, using_mods, info_modules, build_paths, source_paths, template_vars, options):
     try:
         robust_rmtree(build_paths.build_dir)
     except OSError as ex:
@@ -3590,7 +3543,7 @@ def do_io_for_build(cc, arch, osinfo, using_mods, info_modules, build_paths, sou
         if options.build_shared_lib:
             logging.warning('Unless you are building a DLL or .so from the amalgamation, use --disable-shared as well')
 
-    template_vars.update(generate_build_info(build_paths, using_mods, cc, arch, osinfo, options))
+    template_vars.update(generate_build_info(build_paths, using_mods, osinfo, options))
 
     with open(os.path.join(build_paths.build_dir, 'build_config.json'), 'w', encoding='utf8') as f:
         json.dump(template_vars, f, sort_keys=True, indent=2)
@@ -3784,7 +3737,7 @@ def main(argv):
     template_vars = create_template_vars(source_paths, build_paths, options, using_mods, not_using_mods, cc, arch, osinfo)
 
     # Now we start writing to disk
-    do_io_for_build(cc, arch, osinfo, using_mods, info_modules, build_paths, source_paths, template_vars, options)
+    do_io_for_build(osinfo, using_mods, info_modules, build_paths, source_paths, template_vars, options)
 
     return 0
 

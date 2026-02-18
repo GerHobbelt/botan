@@ -13,9 +13,10 @@
    #include "test_pubkey.h"
    #include "test_rng.h"
    #include <botan/hash.h>
+   #include <botan/pubkey.h>
    #include <botan/xmss.h>
+   #include <botan/internal/buffer_slicer.h>
    #include <botan/internal/loadstor.h>
-   #include <botan/internal/stl_util.h>
 #endif
 
 namespace Botan_Tests {

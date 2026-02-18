@@ -10,6 +10,8 @@
 #if defined(BOTAN_TARGET_OS_HAS_FILESYSTEM)
 
    #include <botan/build.h>
+   #include <botan/exceptn.h>
+   #include <botan/hex.h>
    #include <botan/version.h>
    #include <botan/internal/loadstor.h>
    #include <botan/internal/target_info.h>

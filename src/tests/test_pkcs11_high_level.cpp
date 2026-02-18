@@ -7,20 +7,19 @@
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#include "test_pkcs11.h"
 #include "tests.h"
 
-#include <memory>
-#include <numeric>
-#include <sstream>
-#include <string>
-#include <vector>
-
 #if defined(BOTAN_HAS_PKCS11)
+   #include "test_pkcs11.h"
    #include <botan/p11.h>
    #include <botan/p11_object.h>
    #include <botan/p11_randomgenerator.h>
    #include <botan/internal/fmt.h>
+   #include <memory>
+   #include <numeric>
+   #include <sstream>
+   #include <string>
+   #include <vector>
 #endif
 
 #if defined(BOTAN_HAS_ASN1)
@@ -61,6 +60,7 @@
 
 #if defined(BOTAN_HAS_HMAC_DRBG)
    #include <botan/hmac_drbg.h>
+   #include <botan/mac.h>
 #endif
 
 namespace Botan_Tests {
@@ -1410,9 +1410,8 @@ Test::Result test_rng_add_entropy() {
    result.confirm("RNG ignores call to clear", p11_rng.is_seeded());
 
    #if defined(BOTAN_HAS_ENTROPY_SOURCE)
-   result.test_eq("RNG ignores calls to reseed",
-                  p11_rng.reseed(Botan::Entropy_Sources::global_sources(), 256, std::chrono::milliseconds(300)),
-                  0);
+   result.test_eq(
+      "RNG ignores calls to reseed", p11_rng.reseed_from_sources(Botan::Entropy_Sources::global_sources(), 256), 0);
    #endif
 
    auto rng = Test::new_rng(__func__);

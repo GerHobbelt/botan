@@ -4,11 +4,12 @@
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#include "test_rng.h"
 #include "tests.h"
 
 #if defined(BOTAN_HAS_RSA)
    #include "test_pubkey.h"
+   #include "test_rng.h"
+   #include <botan/pubkey.h>
    #include <botan/rsa.h>
    #include <botan/internal/blinding.h>
    #include <botan/internal/fmt.h>
@@ -262,7 +263,7 @@ class RSA_Blinding_Tests final : public Test {
 
          // one more decryption should trigger a blinder reinitialization
          result.test_throws("RSA blinding reinit",
-                            "Test error Fixed output RNG ran out of bytes, test bug?",
+                            "Fixed output RNG ran out of bytes, test bug?",
                             [&decryptor, &encryptor, &null_rng]() {
                                std::vector<uint8_t> ciphertext =
                                   encryptor.encrypt(std::vector<uint8_t>(16, 5), null_rng);

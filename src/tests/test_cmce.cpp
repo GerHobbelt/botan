@@ -7,13 +7,13 @@
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#include "test_pubkey.h"
-#include "test_pubkey_pqc.h"
-#include "test_rng.h"
 #include "tests.h"
 
 #if defined(BOTAN_HAS_CLASSICMCELIECE)
 
+   #include "test_pubkey.h"
+   #include "test_pubkey_pqc.h"
+   #include "test_rng.h"
    #include <botan/cmce.h>
    #include <botan/hash.h>
    #include <botan/pk_algs.h>
@@ -21,6 +21,7 @@
    #include <botan/internal/cmce_gf.h>
    #include <botan/internal/cmce_parameters.h>
    #include <botan/internal/cmce_poly.h>
+   #include <algorithm>
 
 namespace Botan_Tests {
 

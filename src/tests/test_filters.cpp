@@ -7,13 +7,12 @@
 * Botan is released under the Simplified BSD License (see license.txt)
 */
 
-#define BOTAN_NO_DEPRECATED_WARNINGS
-
 #include "tests.h"
 
 #if defined(BOTAN_HAS_FILTERS)
    #include <botan/data_snk.h>
    #include <botan/filters.h>
+   #include <botan/hex.h>
    #include <botan/pipe.h>
    #include <botan/internal/secqueue.h>
    #include <botan/internal/target_info.h>

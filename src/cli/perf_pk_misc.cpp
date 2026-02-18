@@ -10,11 +10,13 @@
    #include <botan/assert.h>
    #include <botan/pk_algs.h>
    #include <botan/pkcs8.h>
+   #include <botan/rng.h>
    #include <botan/x509_key.h>
    #include <botan/internal/fmt.h>
 #endif
 
 #if defined(BOTAN_HAS_ECDSA)
+   #include <botan/ec_group.h>
    #include <botan/ecdsa.h>
    #include <botan/pubkey.h>
 #endif

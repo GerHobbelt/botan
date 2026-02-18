@@ -11,6 +11,7 @@
 #include "test_stdout_reporter.h"
 #include "test_xml_reporter.h"
 
+#include <botan/hex.h>
 #include <botan/version.h>
 #include <botan/internal/loadstor.h>
 
@@ -117,13 +118,6 @@ std::vector<Test::Result> run_a_test(const std::string& test_name) {
    std::vector<Test::Result> results;
 
    try {
-#if defined(BOTAN_HAS_CPUID) && defined(BOTAN_HAS_SIMD_4X32)
-      if(test_name == "simd_4x32" && !Botan::CPUID::has(Botan::CPUID::Feature::SIMD_4X32)) {
-         results.push_back(Test::Result::Note(test_name, "SIMD 4x32 not available on this platform"));
-         return results;
-      }
-#endif
-
       if(std::unique_ptr<Test> test = Test::get_test(test_name)) {
          std::vector<Test::Result> test_results = test->run();
          for(auto& result : test_results) {

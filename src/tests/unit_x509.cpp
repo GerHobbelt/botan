@@ -10,6 +10,7 @@
 #if defined(BOTAN_HAS_X509_CERTIFICATES)
    #include <botan/ber_dec.h>
    #include <botan/der_enc.h>
+   #include <botan/hex.h>
    #include <botan/pk_algs.h>
    #include <botan/pkcs10.h>
    #include <botan/pkcs8.h>
@@ -19,6 +20,7 @@
    #include <botan/x509path.h>
    #include <botan/x509self.h>
    #include <botan/internal/calendar.h>
+   #include <algorithm>
 
    #if defined(BOTAN_HAS_ECC_GROUP)
       #include <botan/ec_group.h>

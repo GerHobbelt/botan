@@ -8,6 +8,7 @@
 
 #include <botan/internal/tls_server_impl_12.h>
 
+#include <botan/ocsp.h>
 #include <botan/tls_callbacks.h>
 #include <botan/tls_magic.h>
 #include <botan/tls_messages_12.h>
@@ -805,7 +806,7 @@ void Server_Impl_12::session_create(Server_Handshake_State& pending_state) {
          const auto resp_bytes = callbacks().tls_provide_cert_status(cert_chains[algo_used], *csr);
          if(!resp_bytes.empty()) {
             pending_state.server_cert_status(
-               std::make_unique<Certificate_Status>(pending_state.handshake_io(), pending_state.hash(), resp_bytes));
+               std::make_unique<Certificate_Status_12>(pending_state.handshake_io(), pending_state.hash(), resp_bytes));
          }
       }
 

@@ -8,15 +8,18 @@
 #include "tests.h"
 
 #if defined(BOTAN_HAS_TPM2)
+   #include <botan/hex.h>
    #include <botan/pubkey.h>
    #include <botan/tpm2_key.h>
    #include <botan/tpm2_rng.h>
    #include <botan/tpm2_session.h>
+   #include <botan/internal/buffer_slicer.h>
    #include <botan/internal/fmt.h>
    #include <botan/internal/loadstor.h>
    #include <botan/internal/mem_utils.h>
    #include <botan/internal/stl_util.h>
    #include <botan/internal/tpm2_hash.h>
+   #include <algorithm>
 
    #if defined(BOTAN_HAS_TPM2_RSA_ADAPTER)
       #include <botan/tpm2_rsa.h>
