@@ -14,6 +14,8 @@
 
 #if defined(BOTAN_HAS_TLS)
 
+   #include <botan/rng.h>
+   #include <botan/tls_callbacks.h>
    #include <botan/tls_client.h>
    #include <botan/tls_exceptn.h>
    #include <botan/tls_extensions.h>
@@ -744,7 +746,7 @@ class HardwareEcdhKey final : public Botan::PK_Key_Agreement_Key {
          return op == Botan::PublicKeyOperation::KeyAgreement;
       }
 
-      bool check_key(Botan::RandomNumberGenerator&, bool) const override { return true; }
+      bool check_key(Botan::RandomNumberGenerator& /*rng*/, bool /*strong*/) const override { return true; }
 
       size_t key_length() const override { return m_group.get_p().bits() / 2; }
 
@@ -767,7 +769,7 @@ class HardwareEcdhKey final : public Botan::PK_Key_Agreement_Key {
          return std::make_unique<Botan::ECDH_PublicKey>(m_group, Botan::EC_AffinePoint(m_group, raw_public_key_bits()));
       }
 
-      std::unique_ptr<Botan::Private_Key> generate_another(Botan::RandomNumberGenerator&) const override {
+      std::unique_ptr<Botan::Private_Key> generate_another(Botan::RandomNumberGenerator& /*rng*/) const override {
          return std::make_unique<HardwareEcdhKey>(m_group, m_public_key_format);
       }
 
