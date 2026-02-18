@@ -9,6 +9,7 @@
 #include <botan/internal/ct_utils.h>
 #include <botan/internal/divide.h>
 #include <botan/internal/mp_core.h>
+#include <botan/internal/value_barrier.h>
 
 namespace Botan {
 
@@ -23,7 +24,7 @@ Barrett_Reduction Barrett_Reduction::for_secret_modulus(const BigInt& mod) {
    BOTAN_ARG_CHECK(!mod.is_zero(), "Modulus cannot be zero");
    BOTAN_ARG_CHECK(!mod.is_negative(), "Modulus cannot be negative");
 
-   size_t mod_words = mod.sig_words();
+   const size_t mod_words = mod.sig_words();
 
    // Compute mu = floor(2^{2k} / m)
    const size_t mu_bits = 2 * WordInfo<word>::bits * mod_words;
@@ -34,7 +35,7 @@ Barrett_Reduction Barrett_Reduction::for_public_modulus(const BigInt& mod) {
    BOTAN_ARG_CHECK(!mod.is_zero(), "Modulus cannot be zero");
    BOTAN_ARG_CHECK(!mod.is_negative(), "Modulus cannot be negative");
 
-   size_t mod_words = mod.sig_words();
+   const size_t mod_words = mod.sig_words();
 
    // Compute mu = floor(2^{2k} / m)
    const size_t mu_bits = 2 * WordInfo<word>::bits * mod_words;
@@ -121,13 +122,11 @@ BigInt barrett_reduce(
    /*
    If r is negative then we have to set r to r + 2^(k+1)
 
-   However for r negative computing this sum is equivalent to computing 2^(k+1) - r
+   However for r negative computing this sum is equivalent to computing 2^(k+1) - abs(r)
    */
-   word borrow = 0;
-   for(size_t i = 0; i != mod_words + 1; ++i) {
-      ws[i] = word_sub(static_cast<word>(0), r[i], &borrow);
-   }
-   ws[mod_words + 1] = word_sub(static_cast<word>(1), r[mod_words + 1], &borrow);
+   clear_mem(ws.data(), mod_words + 2);
+   ws[mod_words + 1] = 1;
+   bigint_sub2(ws.data(), mod_words + 2, r.data(), mod_words + 2);
 
    // If relative_size > 0 then assign r to 2^(k+1) - r
    CT::Mask<word>::is_equal(static_cast<word>(relative_size), 1).select_n(r.data(), ws.data(), r.data(), mod_words + 2);
@@ -139,7 +138,7 @@ BigInt barrett_reduce(
 
    BOTAN_ASSERT_NOMSG(r.size() >= mod_words + 1);
    for(size_t i = 0; i != bound; ++i) {
-      borrow = bigint_sub3(ws.data(), r.data(), mod_words + 1, modulus._data(), mod_words);
+      const word borrow = bigint_sub3(ws.data(), r.data(), mod_words + 1, modulus._data(), mod_words);
       CT::Mask<word>::is_zero(borrow).select_n(r.data(), ws.data(), r.data(), mod_words + 1);
    }
 

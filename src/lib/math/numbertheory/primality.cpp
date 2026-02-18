@@ -29,7 +29,7 @@ bool is_lucas_probable_prime(const BigInt& C, const Barrett_Reduction& mod_C) {
    BigInt D = BigInt::from_word(5);
 
    for(;;) {
-      int32_t j = jacobi(D, C);
+      const int32_t j = jacobi(D, C);
       if(j == 0) {
          return false;
       }
@@ -102,7 +102,7 @@ bool is_bailie_psw_probable_prime(const BigInt& n, const Barrett_Reduction& mod_
       return false;
    }
 
-   Montgomery_Params monty_n(n, mod_n);
+   const Montgomery_Params monty_n(n, mod_n);
    const auto base = BigInt::from_word(2);
    return passes_miller_rabin_test(n, mod_n, monty_n, base) && is_lucas_probable_prime(n, mod_n);
 }
@@ -118,7 +118,13 @@ bool passes_miller_rabin_test(const BigInt& n,
    BOTAN_ASSERT_NOMSG(n > 1);
 
    const BigInt n_minus_1 = n - 1;
-   const size_t s = low_zero_bits(n_minus_1);
+   /*
+   * This unpoison is not ideal but realistically there is no way to
+   * hide the number of loop iterations (below). The main user of
+   * secret primes is RSA and we always generate RSA primes such that
+   * p == 3 (mod 4), which means s is always 1.
+   */
+   const size_t s = CT::driveby_unpoison(low_zero_bits(n_minus_1));
    const BigInt nm1_s = n_minus_1 >> s;
    const size_t n_bits = n.bits();
 
@@ -159,7 +165,7 @@ bool is_miller_rabin_probable_prime(const BigInt& n,
       return false;
    }
 
-   Montgomery_Params monty_n(n, mod_n);
+   const Montgomery_Params monty_n(n, mod_n);
 
    for(size_t i = 0; i != test_iterations; ++i) {
       const BigInt a = BigInt::random_integer(rng, BigInt::from_word(2), n);

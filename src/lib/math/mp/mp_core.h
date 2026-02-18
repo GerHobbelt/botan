@@ -528,6 +528,28 @@ inline constexpr auto bigint_ct_is_eq(const W x[], size_t x_size, const W y[], s
    return CT::Mask<W>::is_zero(diff);
 }
 
+template <WordType W, W div>
+consteval std::pair<W, size_t> div_magic()
+   requires(div == 10)
+{
+   if constexpr(div == 10 && std::same_as<W, uint32_t>) {
+      constexpr W magic = 0xCCCCCCCD;
+      constexpr size_t shift = 35;
+      return std::make_pair(magic, shift);
+   } else if constexpr(div == 10 && std::same_as<W, uint64_t>) {
+      constexpr W magic = 0xCCCCCCCCCCCCCCCD;
+      constexpr size_t shift = 67;
+      return std::make_pair(magic, shift);
+   }
+}
+
+template <WordType W>
+inline constexpr W divide_10(W x) {
+   auto [magic, shift] = div_magic<W, 10>();
+   const auto p = typename WordInfo<W>::dword(magic) * x;
+   return static_cast<W>(p >> shift);
+}
+
 /**
 * Setup for variable-time word level division/modulo operations
 *
@@ -547,6 +569,15 @@ class divide_precomp final {
       // This assumes n1 < d so that the quotient fits in a word
       inline constexpr W vartime_div_2to1(W n1, W n0) const {
          BOTAN_ASSERT_NOMSG(n1 < m_divisor);
+
+         if(m_divisor == WordInfo<W>::max) {
+            return vartime_div_2to1_max_d(n1, n0);
+         }
+
+         if(m_divisor == WordInfo<W>::top_bit) {
+            // Simply a shift by N-1 bits
+            return (n1 << 1) | (n0 >> (WordInfo<W>::bits - 1));
+         }
 
          if(!std::is_constant_evaluated()) {
 #if defined(BOTAN_MP_USE_X86_64_ASM)
@@ -608,6 +639,45 @@ class divide_precomp final {
       }
 
    private:
+      /*
+      * When the divisor is the maximum integer value, then a two word
+      * division becomes simple.
+      */
+      static inline constexpr W vartime_div_2to1_max_d(W n1, W n0) {
+         /*
+         Use k to refer to WordInfo<W>::bits
+
+         We are dividing n = (n1 * 2^k) + n0 by 2^k - 1
+
+         Recall that 2^k = 1 (mod 2^k - 1)
+
+         Rewrite n = n1*2^k + n0 as n1*(2^k - 1) + n1 + n0
+
+         The result of dividing n by (2^k - 1) will be equal to
+         (n1*(2^k-1) + n1 + n0) / (2^k-1) =
+         n1 + ((n1 + n0) / (2^k-1)
+
+         Use c to refer to ((n1 + n0) / (2^k-1))
+
+         If (n1 + n0) < (2^k - 1) then c is 0
+         If (n1 + n0) >= (2^k - 1) then c is 1
+
+         Since n1 < 2^k - 1 [*] and n0 <= 2^k - 1 it is impossible for (n1 + n0) / (2^k -1)
+         to be greater than 1.
+
+         [*] We require n1 be strictly less than the divisor to ensure that the
+         output fits in a single word; this is checked at the start of vartime_div_2to1.
+         */
+
+         const W s = n0 + n1;
+         // did n0 + n1 overflow? or does (n0 + n1) == 2^k - 1? if either, c == 1
+         if(s < n0 || s == WordInfo<W>::max) {
+            n1 += 1;
+         }
+
+         return n1;
+      }
+
       W m_divisor;
 };
 
@@ -631,7 +701,7 @@ inline constexpr auto monty_inverse(W a) -> W {
    W r = 0;
 
    for(size_t i = 0; i != WordInfo<W>::bits; ++i) {
-      const W bi = b % 2;
+      const W bi = CT::value_barrier(b % 2);
       r >>= 1;
       r += bi << (WordInfo<W>::bits - 1);
 
