@@ -8,6 +8,7 @@
 
 #include <botan/tls_messages_12.h>
 
+#include <botan/bigint.h>
 #include <botan/credentials_manager.h>
 #include <botan/dl_group.h>
 #include <botan/pubkey.h>
@@ -23,6 +24,8 @@
 #include <botan/dh.h>
 
 namespace Botan::TLS {
+
+Server_Key_Exchange::~Server_Key_Exchange() = default;
 
 /**
 * Create a new Server Key Exchange message

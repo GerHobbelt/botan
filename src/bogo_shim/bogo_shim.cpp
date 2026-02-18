@@ -11,6 +11,7 @@
 */
 
 #include <botan/base64.h>
+#include <botan/certstor.h>
 #include <botan/chacha_rng.h>
 #include <botan/data_src.h>
 #include <botan/hex.h>
@@ -21,11 +22,13 @@
 #include <botan/tls_callbacks.h>
 #include <botan/tls_client.h>
 #include <botan/tls_exceptn.h>
+#include <botan/tls_extensions.h>
 #include <botan/tls_messages.h>
 #include <botan/tls_policy.h>
 #include <botan/tls_server.h>
 #include <botan/tls_session_manager_hybrid.h>
 #include <botan/tls_session_manager_memory.h>
+#include <botan/internal/concat_util.h>
 #include <botan/internal/fmt.h>
 #include <botan/internal/loadstor.h>
 #include <botan/internal/parsing.h>
@@ -129,6 +132,7 @@ std::string map_to_bogo_error(const std::string& e) noexcept {
       {"Client did not comply with the requested key exchange group", ":WRONG_CURVE:"},
       {"Client Hello must either contain both key_share and supported_groups extensions or neither",
        ":MISSING_KEY_SHARE:"},
+      {"Server Hello did not contain a key share extension", ":MISSING_KEY_SHARE:"},
       {"Client Hello offered a PSK without a psk_key_exchange_modes extension", ":MISSING_EXTENSION:"},
       {"Client offered DTLS version with major version 0xFF", ":UNSUPPORTED_PROTOCOL:"},
       {"Client offered SSLv3 which is not supported", ":UNSUPPORTED_PROTOCOL:"},
@@ -340,6 +344,7 @@ std::string map_to_bogo_error(const std::string& e) noexcept {
       {"Peer sent unknown signature scheme", ":WRONG_SIGNATURE_TYPE:"},
       {"We did not offer the usage of RSA_PSS_SHA256 as a signature scheme", ":WRONG_SIGNATURE_TYPE:"},
       {"X25519 public point appears to be of low order", ":BAD_ECPOINT:"},
+      {"TLS signature extension did not allow for RSA/SHA-256 signature", ":WRONG_SIGNATURE_TYPE:"},
    };
 
    auto err_map_i = err_map.find(e);
@@ -1531,6 +1536,7 @@ class Shim_Callbacks final : public Botan::TLS::Callbacks {
       void tls_modify_extensions(Botan::TLS::Extensions& exts,
                                  Botan::TLS::Connection_Side /* side */,
                                  Botan::TLS::Handshake_Type msg_type) override {
+#if defined(BOTAN_HAS_TLS_13)
          if(msg_type == Botan::TLS::Handshake_Type::CertificateRequest) {
             if(m_args.option_used("use-client-ca-list")) {
                // The CertificateAuthorities extension is filled with the CA
@@ -1549,6 +1555,9 @@ class Shim_Callbacks final : public Botan::TLS::Callbacks {
                }
             }
          }
+#else
+         BOTAN_UNUSED(exts, msg_type);
+#endif
       }
 
       std::string tls_server_choose_app_protocol(const std::vector<std::string>& client_protos) override {

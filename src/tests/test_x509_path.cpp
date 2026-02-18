@@ -8,6 +8,7 @@
 #include "tests.h"
 
 #if defined(BOTAN_HAS_X509_CERTIFICATES)
+   #include <botan/assert.h>
    #include <botan/data_src.h>
    #include <botan/exceptn.h>
    #include <botan/pk_keys.h>
@@ -889,11 +890,11 @@ class Non_Self_Signed_Trust_Anchors_Test final : public Test {
          return {result};
       }
 
-      Test::Result stand_alone_root_test(std::string test_name,
+      Test::Result stand_alone_root_test(std::string_view test_name,
                                          const Botan::Path_Validation_Restrictions& restrictions,
                                          const Botan::X509_Certificate& standalone_cert,
                                          Botan::Certificate_Status_Code expected_result) {
-         Test::Result result(std::move(test_name));
+         Test::Result result(test_name);
 
          const auto validation_time = get_validation_time();
          Botan::Certificate_Store_In_Memory cert_store(standalone_cert);

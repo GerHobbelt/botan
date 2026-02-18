@@ -20,8 +20,8 @@
 #include <botan/der_enc.h>
 #include <botan/rng.h>
 #include <botan/internal/buffer_slicer.h>
+#include <botan/internal/concat_util.h>
 #include <botan/internal/loadstor.h>
-#include <botan/internal/stl_util.h>
 #include <botan/internal/xmss_verification_operation.h>
 
 namespace Botan {
@@ -46,8 +46,7 @@ XMSS_Parameters::xmss_algorithm_t deserialize_xmss_oid(std::span<const uint8_t> 
 std::vector<uint8_t> extract_raw_public_key(std::span<const uint8_t> key_bits) {
    std::vector<uint8_t> raw_key;
    try {
-      DataSource_Memory src(key_bits);
-      BER_Decoder(src).decode(raw_key, ASN1_Type::OctetString).verify_end();
+      BER_Decoder(key_bits).decode(raw_key, ASN1_Type::OctetString).verify_end();
 
       // Smoke check the decoded key. Valid raw keys might be decodable as BER
       // and they might be either a sole public key or a concatenation of public

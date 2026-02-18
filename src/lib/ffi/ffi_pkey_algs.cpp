@@ -8,8 +8,10 @@
 
 #include <botan/ffi.h>
 
+#include <botan/assert.h>
 #include <botan/ec_group.h>
 #include <botan/hash.h>
+#include <botan/mem_ops.h>
 #include <botan/pem.h>
 #include <botan/internal/ffi_mp.h>
 #include <botan/internal/ffi_pkey.h>
@@ -62,10 +64,6 @@
 
 #if defined(BOTAN_HAS_ED448)
    #include <botan/ed448.h>
-#endif
-
-#if defined(BOTAN_HAS_MCELIECE)
-   #include <botan/mceliece.h>
 #endif
 
 #if defined(BOTAN_HAS_DIFFIE_HELLMAN)

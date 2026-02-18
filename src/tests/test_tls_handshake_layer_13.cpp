@@ -13,7 +13,7 @@
    #include <botan/tls_exceptn.h>
    #include <botan/tls_magic.h>
    #include <botan/tls_policy.h>
-   #include <botan/internal/stl_util.h>
+   #include <botan/internal/concat_util.h>
    #include <botan/internal/tls_handshake_layer_13.h>
    #include <botan/internal/tls_transcript_hash_13.h>
 
@@ -194,7 +194,7 @@ std::vector<Test::Result> read_handshake_messages() {
                Transcript_Hash_State th("SHA-256");
                hl.copy_data(server_hello_12_message);
                result.confirm("is a legacy server hello",
-                              has_message<Server_Hello_12>(result, hl.next_message(Policy(), th)));
+                              has_message<Server_Hello_12_Shim>(result, hl.next_message(Policy(), th)));
                check_transcript_hash_filled(result, th);
             }),
 

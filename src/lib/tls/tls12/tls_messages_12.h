@@ -11,7 +11,91 @@
 
 #include <botan/tls_messages.h>
 
+namespace Botan {
+
+class PK_Key_Agreement_Key;
+
+}
+
 namespace Botan::TLS {
+
+class BOTAN_UNSTABLE_API Server_Hello_12 final : public Server_Hello_12_Shim {
+   public:
+      class Settings final {
+         public:
+            Settings(Session_ID new_session_id,
+                     Protocol_Version new_session_version,
+                     uint16_t ciphersuite,
+                     bool offer_session_ticket) :
+                  m_new_session_id(std::move(new_session_id)),
+                  m_new_session_version(new_session_version),
+                  m_ciphersuite(ciphersuite),
+                  m_offer_session_ticket(offer_session_ticket) {}
+
+            const Session_ID& session_id() const { return m_new_session_id; }
+
+            Protocol_Version protocol_version() const { return m_new_session_version; }
+
+            uint16_t ciphersuite() const { return m_ciphersuite; }
+
+            bool offer_session_ticket() const { return m_offer_session_ticket; }
+
+         private:
+            const Session_ID m_new_session_id;
+            Protocol_Version m_new_session_version;
+            uint16_t m_ciphersuite;
+            bool m_offer_session_ticket;
+      };
+
+      Server_Hello_12(Handshake_IO& io,
+                      Handshake_Hash& hash,
+                      const Policy& policy,
+                      Callbacks& cb,
+                      RandomNumberGenerator& rng,
+                      const std::vector<uint8_t>& secure_reneg_info,
+                      const Client_Hello_12& client_hello,
+                      const Settings& settings,
+                      std::string_view next_protocol);
+
+      Server_Hello_12(Handshake_IO& io,
+                      Handshake_Hash& hash,
+                      const Policy& policy,
+                      Callbacks& cb,
+                      RandomNumberGenerator& rng,
+                      const std::vector<uint8_t>& secure_reneg_info,
+                      const Client_Hello_12& client_hello,
+                      const Session& resumed_session,
+                      bool offer_session_ticket,
+                      std::string_view next_protocol);
+
+      explicit Server_Hello_12(const std::vector<uint8_t>& buf);
+
+   private:
+      explicit Server_Hello_12(std::unique_ptr<Server_Hello_Internal> data);
+
+   public:
+      using Server_Hello::compression_method;
+      using Server_Hello::extension_types;
+      using Server_Hello::legacy_version;
+      using Server_Hello::random;
+
+      bool secure_renegotiation() const;
+
+      std::vector<uint8_t> renegotiation_info() const;
+
+      std::string next_protocol() const;
+
+      bool supports_extended_master_secret() const;
+
+      bool supports_encrypt_then_mac() const;
+
+      bool supports_certificate_status_message() const;
+
+      bool supports_session_ticket() const;
+
+      uint16_t srtp_profile() const;
+      bool prefers_compressed_ec_points() const;
+};
 
 /**
 * Client Key Exchange Message
@@ -53,19 +137,21 @@ class BOTAN_UNSTABLE_API Client_Key_Exchange final : public Handshake_Message {
 /**
 * Certificate Message of TLS 1.2
 */
-class BOTAN_UNSTABLE_API Certificate_12 final : public Handshake_Message {
+class BOTAN_UNSTABLE_API Certificate_12 final : public Handshake_Message /* NOLINT(*-special-member-functions) */ {
    public:
       Handshake_Type type() const override { return Handshake_Type::Certificate; }
 
       const std::vector<X509_Certificate>& cert_chain() const { return m_certs; }
 
-      size_t count() const { return m_certs.size(); }
+      size_t count() const;
 
       bool empty() const { return m_certs.empty(); }
 
       Certificate_12(Handshake_IO& io, Handshake_Hash& hash, const std::vector<X509_Certificate>& certs);
 
       Certificate_12(const std::vector<uint8_t>& buf, const Policy& policy);
+
+      ~Certificate_12() override;
 
       std::vector<uint8_t> serialize() const override;
 
@@ -92,6 +178,13 @@ class BOTAN_UNSTABLE_API Certificate_Request_12 final : public Handshake_Message
                              const std::vector<X509_DN>& allowed_cas);
 
       explicit Certificate_Request_12(const std::vector<uint8_t>& buf);
+
+      ~Certificate_Request_12() override;
+
+      Certificate_Request_12(const Certificate_Request_12&) = delete;
+      Certificate_Request_12(Certificate_Request_12&&) = delete;
+      Certificate_Request_12& operator=(const Certificate_Request_12& other) = delete;
+      Certificate_Request_12& operator=(Certificate_Request_12&& other) = delete;
 
       std::vector<uint8_t> serialize() const override;
 
@@ -188,6 +281,13 @@ class BOTAN_UNSTABLE_API Server_Key_Exchange final : public Handshake_Message {
                           Auth_Method sig_alg,
                           Protocol_Version version);
 
+      ~Server_Key_Exchange() override;
+
+      Server_Key_Exchange(const Server_Key_Exchange& other) = delete;
+      Server_Key_Exchange(Server_Key_Exchange&& other) = delete;
+      Server_Key_Exchange& operator=(const Server_Key_Exchange& other) = delete;
+      Server_Key_Exchange& operator=(Server_Key_Exchange&& other) = delete;
+
    private:
       std::vector<uint8_t> serialize() const override;
 
@@ -221,14 +321,14 @@ class BOTAN_UNSTABLE_API New_Session_Ticket_12 final : public Handshake_Message 
    public:
       Handshake_Type type() const override { return Handshake_Type::NewSessionTicket; }
 
-      std::chrono::seconds ticket_lifetime_hint() const { return m_ticket_lifetime_hint; }
+      uint32_t ticket_lifetime_hint() const { return m_ticket_lifetime_hint; }
 
       const Session_Ticket& ticket() const { return m_ticket; }
 
       New_Session_Ticket_12(Handshake_IO& io,
                             Handshake_Hash& hash,
                             Session_Ticket ticket,
-                            std::chrono::seconds lifetime);
+                            uint32_t lifetime_in_seconds);
 
       New_Session_Ticket_12(Handshake_IO& io, Handshake_Hash& hash);
 
@@ -237,7 +337,7 @@ class BOTAN_UNSTABLE_API New_Session_Ticket_12 final : public Handshake_Message 
       std::vector<uint8_t> serialize() const override;
 
    private:
-      std::chrono::seconds m_ticket_lifetime_hint{};
+      uint32_t m_ticket_lifetime_hint = 0;
       Session_Ticket m_ticket;
 };
 

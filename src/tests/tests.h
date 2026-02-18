@@ -14,7 +14,6 @@ Warning: be very careful about adding any new includes here
 Each include is parsed for every test file which can get quite expensive
 */
 
-#include <botan/assert.h>
 #include <botan/types.h>
 #include <functional>
 #include <iosfwd>
@@ -30,7 +29,6 @@ Each include is parsed for every test file which can get quite expensive
 namespace Botan {
 
 class RandomNumberGenerator;
-class OctetString;
 
 #if defined(BOTAN_HAS_BIGINT)
 class BigInt;
@@ -50,12 +48,12 @@ using Botan::BigInt;
 
 class Test_Error : public std::runtime_error {
    public:
-      explicit Test_Error(const std::string& what) : std::runtime_error(what) {}
+      explicit Test_Error(std::string_view what);
 };
 
 class Test_Aborted final : public Test_Error {
    public:
-      explicit Test_Aborted(const std::string& what) : Test_Error(what) {}
+      explicit Test_Aborted(std::string_view what) : Test_Error(what) {}
 };
 
 class Test_Options {
@@ -223,13 +221,13 @@ class Test {
       */
       class Result final {
          public:
-            explicit Result(std::string who);
+            explicit Result(std::string_view who);
 
             /**
              * This 'consolidation constructor' creates a single test result from
              * a vector of downstream test result objects.
              */
-            Result(std::string who, const std::vector<Result>& downstream_results);
+            Result(std::string_view who, const std::vector<Result>& downstream_results);
 
             size_t tests_passed() const { return m_tests_passed; }
 
@@ -258,13 +256,13 @@ class Test {
 
             std::string result_string() const;
 
-            static Result Failure(const std::string& who, const std::string& what) {
+            static Result Failure(std::string_view who, std::string_view what) {
                Result r(who);
                r.test_failure(what);
                return r;
             }
 
-            static Result Note(const std::string& who, const std::string& what) {
+            static Result Note(std::string_view who, std::string_view what) {
                Result r(who);
                r.test_note(what);
                return r;
@@ -272,26 +270,23 @@ class Test {
 
             void merge(const Result& other, bool ignore_test_name = false);
 
-            void test_note(const std::string& note, const char* extra = nullptr);
+            void test_note(std::string_view note, const char* extra = nullptr);
 
-            void test_note(const std::string& who, std::span<const uint8_t> data);
+            void test_note(std::string_view note, std::span<const uint8_t> context);
 
-            void note_missing(const std::string& whatever);
+            void note_missing(std::string_view whatever);
 
-            bool test_success(const std::string& note = "");
+            bool test_success(std::string_view note = "");
 
-            bool test_failure(const std::string& err);
+            bool test_failure(std::string_view err);
 
-            bool test_failure(const std::string& what, const std::string& error);
+            bool test_failure(std::string_view what, std::string_view error);
 
-            void test_failure(const std::string& what, const uint8_t buf[], size_t buf_len);
+            void test_failure(std::string_view what, const uint8_t buf[], size_t buf_len);
 
-            template <typename Alloc>
-            void test_failure(const std::string& what, const std::vector<uint8_t, Alloc>& buf) {
-               test_failure(what, buf.data(), buf.size());
-            }
+            void test_failure(std::string_view what, std::span<const uint8_t> context);
 
-            bool confirm(const std::string& what, bool expr, bool expected = true) {
+            bool confirm(std::string_view what, bool expr, bool expected = true) {
                return test_eq(what, expr, expected);
             }
 
@@ -299,11 +294,7 @@ class Test {
              * Require a condition, throw Test_Aborted otherwise
              * Note: works best when combined with CHECK scopes!
              */
-            void require(const std::string& what, bool expr, bool expected = true) {
-               if(!confirm(what, expr, expected)) {
-                  throw Test_Aborted("test aborted, because required condition was not met: " + what);
-               }
-            }
+            void require(std::string_view what, bool expr, bool expected = true);
 
             template <typename T>
             bool test_is_eq(const T& produced, const T& expected) {
@@ -311,7 +302,7 @@ class Test {
             }
 
             template <typename T>
-            bool test_is_eq(const std::string& what, const T& produced, const T& expected) {
+            bool test_is_eq(std::string_view what, const T& produced, const T& expected) {
                std::ostringstream out;
                out << m_who << " " << what;
 
@@ -326,37 +317,33 @@ class Test {
             }
 
             template <typename T>
-            bool test_not_null(const std::string& what, const T& ptr) {
+            bool test_not_null(std::string_view what, const T& ptr) {
                if(ptr == nullptr) {
-                  return test_failure(what + " was null");
+                  return test_failure(what, "was null");
                } else {
-                  return test_success(what + " was not null");
+                  return test_success("not null");
                }
             }
 
             template <typename T>
-            bool test_not_nullopt(const std::string& what, const std::optional<T>& val) {
+            bool test_not_nullopt(std::string_view what, const std::optional<T>& val) {
                if(val == std::nullopt) {
-                  return test_failure(what + " was nullopt");
+                  return test_failure(what, "was nullopt");
                } else {
-                  return test_success(what + " was not nullopt");
+                  return test_success("not nullopt");
                }
             }
 
-            bool test_eq(const std::string& what, const char* produced, const char* expected);
+            bool test_eq(std::string_view what, const char* produced, const char* expected);
 
-            bool test_is_nonempty(const std::string& what_is_it, const std::string& to_examine);
+            bool test_is_nonempty(std::string_view what_is_it, std::string_view to_examine);
 
-            bool test_eq(const std::string& what, const std::string& produced, const std::string& expected);
+            bool test_eq(std::string_view what, std::string_view produced, std::string_view expected);
 
-            bool test_eq(const std::string& what, bool produced, bool expected);
+            bool test_eq(std::string_view what, bool produced, bool expected);
 
-            bool test_eq(const std::string& what, size_t produced, size_t expected);
-            bool test_eq_sz(const std::string& what, size_t produced, size_t expected);
-
-            bool test_eq(const std::string& what,
-                         const Botan::OctetString& produced,
-                         const Botan::OctetString& expected);
+            bool test_eq(std::string_view what, size_t produced, size_t expected);
+            bool test_eq_sz(std::string_view what, size_t produced, size_t expected);
 
             template <typename I1, typename I2>
             bool test_int_eq(I1 x, I2 y, const char* what) {
@@ -364,12 +351,12 @@ class Test {
             }
 
             template <typename I1, typename I2>
-            bool test_int_eq(const std::string& what, I1 x, I2 y) {
+            bool test_int_eq(std::string_view what, I1 x, I2 y) {
                return test_eq(what, static_cast<size_t>(x), static_cast<size_t>(y));
             }
 
             template <typename T>
-            bool test_eq(const std::string& what, const std::optional<T>& a, const std::optional<T>& b) {
+            bool test_eq(std::string_view what, const std::optional<T>& a, const std::optional<T>& b) {
                if(a.has_value() != b.has_value()) {
                   std::ostringstream err;
                   err << m_who << " " << what << " only one of a/b was nullopt";
@@ -382,69 +369,69 @@ class Test {
                }
             }
 
-            bool test_lt(const std::string& what, size_t produced, size_t expected);
-            bool test_lte(const std::string& what, size_t produced, size_t expected);
-            bool test_gt(const std::string& what, size_t produced, size_t expected);
-            bool test_gte(const std::string& what, size_t produced, size_t expected);
+            bool test_lt(std::string_view what, size_t produced, size_t expected);
+            bool test_lte(std::string_view what, size_t produced, size_t expected);
+            bool test_gt(std::string_view what, size_t produced, size_t expected);
+            bool test_gte(std::string_view what, size_t produced, size_t expected);
 
             /* Test predicates on integer return codes */
-            bool test_rc_ok(const std::string& func, int rc);
-            bool test_rc_fail(const std::string& func, const std::string& why, int rc);
-            bool test_rc(const std::string& func, int expected, int rc);
-            bool test_rc_init(const std::string& func, int rc);
+            bool test_rc_ok(std::string_view func, int rc);
+            bool test_rc_fail(std::string_view func, std::string_view why, int rc);
+            bool test_rc(std::string_view func, int expected, int rc);
+            bool test_rc_init(std::string_view func, int rc);
 
-            bool test_ne(const std::string& what, size_t produced, size_t expected);
+            bool test_ne(std::string_view what, size_t produced, size_t expected);
 
-            bool test_ne(const std::string& what, const std::string& str1, const std::string& str2);
+            bool test_ne(std::string_view what, std::string_view str1, std::string_view str2);
 
 #if defined(BOTAN_HAS_BIGINT)
-            bool test_eq(const std::string& what, const BigInt& produced, const BigInt& expected);
-            bool test_ne(const std::string& what, const BigInt& produced, const BigInt& expected);
+            bool test_eq(std::string_view what, const BigInt& produced, const BigInt& expected);
+            bool test_ne(std::string_view what, const BigInt& produced, const BigInt& expected);
 #endif
 
 #if defined(BOTAN_HAS_LEGACY_EC_POINT)
-            bool test_eq(const std::string& what, const Botan::EC_Point& a, const Botan::EC_Point& b);
+            bool test_eq(std::string_view what, const Botan::EC_Point& a, const Botan::EC_Point& b);
 #endif
 
             bool test_eq(const char* producer,
-                         const std::string& what,
+                         std::string_view what,
                          const uint8_t produced[],
                          size_t produced_size,
                          const uint8_t expected[],
                          size_t expected_size);
 
-            bool test_ne(const std::string& what,
+            bool test_ne(std::string_view what,
                          const uint8_t produced[],
                          size_t produced_len,
                          const uint8_t expected[],
                          size_t expected_len);
 
-            bool test_eq(const std::string& what,
-                         std::span<const uint8_t> produced,
-                         std::span<const uint8_t> expected) {
+            bool test_eq(std::string_view what, std::span<const uint8_t> produced, std::span<const uint8_t> expected) {
                return test_eq(nullptr, what, produced.data(), produced.size(), expected.data(), expected.size());
             }
 
-            bool test_eq(const std::string& producer,
-                         const std::string& what,
+            bool test_eq(std::string_view producer,
+                         std::string_view what,
                          std::span<const uint8_t> produced,
                          std::span<const uint8_t> expected) {
-               return test_eq(
-                  producer.c_str(), what, produced.data(), produced.size(), expected.data(), expected.size());
+               return test_eq(std::string(producer).c_str(),
+                              what,
+                              produced.data(),
+                              produced.size(),
+                              expected.data(),
+                              expected.size());
             }
 
-            bool test_eq(const std::string& what, std::span<const uint8_t> produced, const char* expected_hex);
+            bool test_eq(std::string_view what, std::span<const uint8_t> produced, const char* expected_hex);
 
             template <std::size_t N>
-            bool test_eq(const std::string& what,
+            bool test_eq(std::string_view what,
                          const std::array<uint8_t, N>& produced,
                          const std::array<uint8_t, N>& expected) {
                return test_eq(nullptr, what, produced.data(), produced.size(), expected.data(), expected.size());
             }
 
-            bool test_ne(const std::string& what,
-                         std::span<const uint8_t> produced,
-                         std::span<const uint8_t> expected) {
+            bool test_ne(std::string_view what, std::span<const uint8_t> produced, std::span<const uint8_t> expected) {
                return test_ne(what, produced.data(), produced.size(), expected.data(), expected.size());
             }
 
@@ -458,23 +445,16 @@ class Test {
                   ThrowExpectations(ThrowExpectations&&) = default;
                   ThrowExpectations& operator=(ThrowExpectations&&) = default;
 
-                  ~ThrowExpectations() { BOTAN_ASSERT_NOMSG(m_consumed); }
+                  ~ThrowExpectations();
 
-                  ThrowExpectations& expect_success() {
-                     BOTAN_ASSERT_NOMSG(!m_expected_message && !m_expected_exception_check_fn);
-                     m_expect_success = true;
-                     return *this;
-                  }
+                  ThrowExpectations& expect_success();
 
-                  ThrowExpectations& expect_message(const std::string& message) {
-                     BOTAN_ASSERT_NOMSG(!m_expect_success);
-                     m_expected_message = message;
-                     return *this;
-                  }
+                  ThrowExpectations& expect_message(std::string_view message);
 
                   template <typename ExT>
                   ThrowExpectations& expect_exception_type() {
-                     BOTAN_ASSERT_NOMSG(!m_expect_success);
+                     assert_that_success_is_not_expected();
+
                      m_expected_exception_check_fn = [](const std::exception_ptr& e) {
                         try {
                            if(e) {
@@ -490,9 +470,11 @@ class Test {
                      return *this;
                   }
 
-                  bool check(const std::string& test_name, Test::Result& result);
+                  bool check(std::string_view test_name, Test::Result& result);
 
                private:
+                  void assert_that_success_is_not_expected() const;
+
                   std::function<void()> m_fn;
                   std::optional<std::string> m_expected_message;
                   std::function<bool(std::exception_ptr)> m_expected_exception_check_fn;
@@ -501,21 +483,22 @@ class Test {
             };
 
          public:
-            bool test_throws(const std::string& what, const std::function<void()>& fn);
+            bool test_throws(std::string_view what, std::function<void()> fn);
 
-            bool test_throws(const std::string& what, const std::string& expected, const std::function<void()>& fn);
+            bool test_throws(std::string_view what, std::string_view expected, std::function<void()> fn);
 
-            bool test_no_throw(const std::string& what, const std::function<void()>& fn);
+            bool test_no_throw(std::string_view what, std::function<void()> fn);
 
             template <typename ExceptionT>
-            bool test_throws(const std::string& what, const std::function<void()>& fn) {
-               return ThrowExpectations(fn).expect_exception_type<ExceptionT>().check(what, *this);
+            bool test_throws(std::string_view what, std::function<void()> fn) {
+               return ThrowExpectations(std::move(fn)).expect_exception_type<ExceptionT>().check(what, *this);
             }
 
             template <typename ExceptionT>
-            bool test_throws(const std::string& what, const std::string& expected, const std::function<void()>& fn) {
-               return ThrowExpectations(fn).expect_exception_type<ExceptionT>().expect_message(expected).check(what,
-                                                                                                               *this);
+            bool test_throws(std::string_view what, std::string_view expected, std::function<void()> fn) {
+               // clang-format off
+               return ThrowExpectations(std::move(fn)).expect_exception_type<ExceptionT>().expect_message(expected).check(what, *this);
+               // clang-format on
             }
 
             void set_ns_consumed(uint64_t ns) { m_ns_taken = ns; }

@@ -10,17 +10,20 @@
 #ifndef BOTAN_TLS_MESSAGES_13_H_
 #define BOTAN_TLS_MESSAGES_13_H_
 
+#include <botan/tls_extensions.h>
 #include <botan/tls_messages.h>
+#include <botan/x509cert.h>
+#include <chrono>
 
 namespace Botan::TLS {
 
 class BOTAN_UNSTABLE_API Client_Hello_13 final : public Client_Hello {
    public:
       /**
-          * Creates a client hello which might optionally use the passed-in
-          * @p session for resumption. In that case, this will "extract" the
-          * master secret from the passed-in @p session.
-          */
+      * Creates a client hello which might optionally use the passed-in
+      * @p session for resumption. In that case, this will "extract" the
+      * master secret from the passed-in @p session.
+      */
       Client_Hello_13(const Policy& policy,
                       Callbacks& cb,
                       RandomNumberGenerator& rng,
@@ -37,29 +40,29 @@ class BOTAN_UNSTABLE_API Client_Hello_13 final : public Client_Hello {
                  RandomNumberGenerator& rng);
 
       /**
-          * Select the highest protocol version from the list of versions
-          * supported by the client. If no such version can be determined this
-          * returns std::nullopt.
-          */
+      * Select the highest protocol version from the list of versions
+      * supported by the client. If no such version can be determined this
+      * returns std::nullopt.
+      */
       std::optional<Protocol_Version> highest_supported_version(const Policy& policy) const;
 
       /**
-          * This validates that a Client Hello received after sending a Hello
-          * Retry Request was updated in accordance with RFC 8446 4.1.2. If issues
-          * are found, this method throws accordingly.
-          */
+      * This validates that a Client Hello received after sending a Hello
+      * Retry Request was updated in accordance with RFC 8446 4.1.2. If issues
+      * are found, this method throws accordingly.
+      */
       void validate_updates(const Client_Hello_13& new_ch);
 
    private:
       explicit Client_Hello_13(std::unique_ptr<Client_Hello_Internal> data);
 
       /**
-          * If the Client Hello contains a PSK extensions with identities this will
-          * generate the PSK binders as described in RFC 8446 4.2.11.2.
-          * Note that the passed in \p transcript_hash_state might be virgin for
-          * the initial Client Hello and should be primed with ClientHello1 and
-          * HelloRetryRequest for an updated Client Hello.
-          */
+      * If the Client Hello contains a PSK extensions with identities this will
+      * generate the PSK binders as described in RFC 8446 4.2.11.2.
+      * Note that the passed in \p transcript_hash_state might be virgin for
+      * the initial Client Hello and should be primed with ClientHello1 and
+      * HelloRetryRequest for an updated Client Hello.
+      */
       void calculate_psk_binders(Transcript_Hash_State transcript_hash_state);
 };
 
@@ -105,7 +108,8 @@ class BOTAN_UNSTABLE_API Server_Hello_13 : public Server_Hello {
                                                                        const Policy& policy,
                                                                        Callbacks& cb);
 
-      static std::variant<Hello_Retry_Request, Server_Hello_13, Server_Hello_12> parse(const std::vector<uint8_t>& buf);
+      static std::variant<Hello_Retry_Request, Server_Hello_13, Server_Hello_12_Shim> parse(
+         const std::vector<uint8_t>& buf);
 
       /**
        * Return desired downgrade version indicated by hello random, if any.
@@ -290,7 +294,7 @@ class BOTAN_UNSTABLE_API Certificate_Request_13 final : public Handshake_Message
       const std::vector<uint8_t>& context() const { return m_context; }
 
    private:
-      Certificate_Request_13(std::vector<X509_DN> acceptable_CAs, const Policy& policy, Callbacks& callbacks);
+      Certificate_Request_13(const std::vector<X509_DN>& acceptable_CAs, const Policy& policy, Callbacks& callbacks);
 
    private:
       std::vector<uint8_t> m_context;
@@ -409,7 +413,7 @@ using as_wrapped_references_t = typename as_wrapped_references<T>::type;
 using Handshake_Message_13 = std::variant<Client_Hello_13,
                                           Client_Hello_12,
                                           Server_Hello_13,
-                                          Server_Hello_12,
+                                          Server_Hello_12_Shim,
                                           Hello_Retry_Request,
                                           // End_Of_Early_Data,
                                           Encrypted_Extensions,
@@ -428,7 +432,7 @@ using Server_Post_Handshake_13_Message = std::variant<New_Session_Ticket_13, Key
 using Client_Post_Handshake_13_Message = std::variant<Key_Update>;
 
 using Server_Handshake_13_Message = std::variant<Server_Hello_13,
-                                                 Server_Hello_12,  // indicates a TLS version downgrade
+                                                 Server_Hello_12_Shim,  // indicates a TLS version downgrade
                                                  Hello_Retry_Request,
                                                  Encrypted_Extensions,
                                                  Certificate_13,
