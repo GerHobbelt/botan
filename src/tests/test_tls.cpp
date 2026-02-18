@@ -17,10 +17,13 @@
    #include <botan/tls_session.h>
    #include <botan/tls_signature_scheme.h>
    #include <botan/tls_version.h>
+   #include <botan/x509cert.h>
    #include <botan/internal/fmt.h>
    #include <set>
 
    #if defined(BOTAN_HAS_TLS_CBC)
+      #include <botan/block_cipher.h>
+      #include <botan/mac.h>
       #include <botan/internal/tls_cbc.h>
    #endif
 
@@ -499,8 +502,8 @@ class Test_TLS_Alert_Strings : public Test {
 
 BOTAN_REGISTER_TEST("tls", "tls_alert_strings", Test_TLS_Alert_Strings);
 
-   #if defined(BOTAN_HAS_TLS_13) && defined(BOTAN_HAS_TLS_13_PQC) && defined(BOTAN_HAS_X25519) && \
-      defined(BOTAN_HAS_X448)
+   #if defined(BOTAN_HAS_TLS_12) && defined(BOTAN_HAS_TLS_13) && defined(BOTAN_HAS_TLS_13_PQC) && \
+      defined(BOTAN_HAS_X25519) && defined(BOTAN_HAS_X448)
 
 class Test_TLS_Policy_Text : public Test {
    public:

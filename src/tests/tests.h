@@ -21,6 +21,7 @@ Each include is parsed for every test file which can get quite expensive
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -265,7 +266,7 @@ class Test {
              * Require a condition, throw Test_Aborted otherwise
              * Note: works best when combined with CHECK scopes!
              */
-            void require(std::string_view what, bool expr, bool expected = true);
+            void require(std::string_view what, bool expr);
 
             /* Generic arbitrary equality check */
 
@@ -348,7 +349,13 @@ class Test {
                }
             }
 
-            bool test_opt_u8_eq(std::string_view what, std::optional<uint8_t> a, std::optional<uint8_t> b);
+            bool test_opt_u8_eq(std::string_view what,
+                                std::optional<uint8_t> produced,
+                                std::optional<uint8_t> expected);
+
+            bool test_opt_u64_eq(std::string_view what,
+                                 std::optional<uint64_t> produced,
+                                 std::optional<uint64_t> expected);
 
 #if defined(BOTAN_HAS_BIGINT)
             /* Test predicates for BigInt */
@@ -687,39 +694,40 @@ class TestFnRegistration {
 
 class VarMap {
    public:
-      bool has_key(const std::string& key) const;
+      bool has_key(std::string_view key) const;
 
-      bool get_req_bool(const std::string& key) const;
+      bool get_req_bool(std::string_view key) const;
 
-      std::vector<uint8_t> get_req_bin(const std::string& key) const;
-      std::vector<uint8_t> get_opt_bin(const std::string& key) const;
+      std::vector<uint8_t> get_req_bin(std::string_view key) const;
+      std::vector<uint8_t> get_opt_bin(std::string_view key) const;
 
-      std::vector<std::vector<uint8_t>> get_req_bin_list(const std::string& key) const;
+      std::vector<std::vector<uint8_t>> get_req_bin_list(std::string_view key) const;
 
 #if defined(BOTAN_HAS_BIGINT)
-      Botan::BigInt get_req_bn(const std::string& key) const;
-      Botan::BigInt get_opt_bn(const std::string& key, const Botan::BigInt& def_value) const;
+      Botan::BigInt get_req_bn(std::string_view key) const;
+      Botan::BigInt get_opt_bn(std::string_view key, const Botan::BigInt& def_value) const;
 #endif
 
-      std::string get_req_str(const std::string& key) const;
-      std::string get_opt_str(const std::string& key, const std::string& def_value) const;
+      std::string get_req_str(std::string_view key) const;
+      std::string get_opt_str(std::string_view key, std::string_view def_value) const;
 
-      size_t get_req_sz(const std::string& key) const;
+      size_t get_req_sz(std::string_view key) const;
 
-      uint8_t get_req_u8(const std::string& key) const;
-      uint32_t get_req_u32(const std::string& key) const;
-      uint64_t get_req_u64(const std::string& key) const;
+      uint8_t get_req_u8(std::string_view key) const;
+      uint32_t get_req_u32(std::string_view key) const;
+      uint64_t get_req_u64(std::string_view key) const;
 
-      size_t get_opt_sz(const std::string& key, size_t def_value) const;
+      size_t get_opt_sz(std::string_view key, size_t def_value) const;
 
-      uint64_t get_opt_u64(const std::string& key, uint64_t def_value) const;
+      uint64_t get_opt_u64(std::string_view key, uint64_t def_value) const;
 
       void clear();
 
-      void add(const std::string& key, const std::string& value);
+      void add(std::string_view key, std::string_view value);
 
    private:
-      std::optional<std::string> get_var(const std::string& key) const;
+      const std::string& get_req_var(std::string_view key) const;
+      std::optional<std::string> get_opt_var(std::string_view key) const;
 
       std::vector<std::pair<std::string, std::string>> m_vars;
 };

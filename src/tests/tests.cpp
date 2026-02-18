@@ -126,8 +126,8 @@ void Test::Result::note_missing(std::string_view whatever_sv) {
    }
 }
 
-void Test::Result::require(std::string_view what, bool expr, bool expected) {
-   if(!test_bool_eq(what, expr, expected)) {
+void Test::Result::require(std::string_view what, bool expr) {
+   if(!test_is_true(what, expr)) {
       throw Test_Aborted(Botan::fmt("Test aborted, because required condition was not met: {}", what));
    }
 }
@@ -418,15 +418,30 @@ bool Test::Result::test_sz_gte(std::string_view what, size_t produced, size_t ex
    }
 }
 
-bool Test::Result::test_opt_u8_eq(std::string_view what, std::optional<uint8_t> a, std::optional<uint8_t> b) {
-   if(a.has_value() != b.has_value()) {
-      std::ostringstream err;
-      err << m_who << " " << what << " only one of a/b was nullopt";
-      return test_failure(err.str());
-   } else if(a.has_value() && b.has_value()) {
-      return test_u8_eq(what, a.value(), b.value());
+bool Test::Result::test_opt_u8_eq(std::string_view what,
+                                  std::optional<uint8_t> produced,
+                                  std::optional<uint8_t> expected) {
+   if(produced.has_value() and !expected.has_value()) {
+      return test_failure(Botan::fmt("Assertion {} produced value {} but nullopt was expected", what, *produced));
+   } else if(!produced.has_value() && expected.has_value()) {
+      return test_failure(Botan::fmt("Assertion {} produced nullopt but {} was expected", what, *expected));
+   } else if(produced.has_value() && expected.has_value()) {
+      return test_u8_eq(what, *produced, *expected);
    } else {
-      // both nullopt
+      return test_success();
+   }
+}
+
+bool Test::Result::test_opt_u64_eq(std::string_view what,
+                                   std::optional<uint64_t> produced,
+                                   std::optional<uint64_t> expected) {
+   if(produced.has_value() and !expected.has_value()) {
+      return test_failure(Botan::fmt("Assertion {} produced value {} but nullopt was expected", what, *produced));
+   } else if(!produced.has_value() && expected.has_value()) {
+      return test_failure(Botan::fmt("Assertion {} produced nullopt but {} was expected", what, *expected));
+   } else if(produced.has_value() && expected.has_value()) {
+      return test_u64_eq(what, *produced, *expected);
+   } else {
       return test_success();
    }
 }
@@ -1033,13 +1048,17 @@ void VarMap::clear() {
 
 namespace {
 
-bool varmap_pair_lt(const std::pair<std::string, std::string>& kv, const std::string& k) {
+bool varmap_pair_lt(const std::pair<std::string, std::string>& kv, std::string_view k) {
    return kv.first < k;
 }
 
 }  // namespace
 
-void VarMap::add(const std::string& key, const std::string& value) {
+bool VarMap::has_key(std::string_view key) const {
+   return get_opt_var(key).has_value();
+}
+
+void VarMap::add(std::string_view key, std::string_view value) {
    auto i = std::lower_bound(m_vars.begin(), m_vars.end(), key, varmap_pair_lt);
 
    if(i != m_vars.end() && i->first == key) {
@@ -1049,7 +1068,7 @@ void VarMap::add(const std::string& key, const std::string& value) {
    }
 }
 
-std::optional<std::string> VarMap::get_var(const std::string& key) const {
+std::optional<std::string> VarMap::get_opt_var(std::string_view key) const {
    auto i = std::lower_bound(m_vars.begin(), m_vars.end(), key, varmap_pair_lt);
 
    if(i != m_vars.end() && i->first == key) {
@@ -1059,21 +1078,22 @@ std::optional<std::string> VarMap::get_var(const std::string& key) const {
    }
 }
 
-bool VarMap::has_key(const std::string& key) const {
-   return get_var(key).has_value();
-}
+const std::string& VarMap::get_req_var(std::string_view key) const {
+   auto i = std::lower_bound(m_vars.begin(), m_vars.end(), key, varmap_pair_lt);
 
-std::string VarMap::get_req_str(const std::string& key) const {
-   auto var = get_var(key);
-   if(var) {
-      return *var;
+   if(i != m_vars.end() && i->first == key) {
+      return i->second;
    } else {
-      throw Test_Error("Test missing variable " + key);
+      throw Test_Error(Botan::fmt("Test missing variable '{}'", key));
    }
 }
 
-std::vector<std::vector<uint8_t>> VarMap::get_req_bin_list(const std::string& key) const {
-   const auto var = get_req_str(key);
+std::string VarMap::get_req_str(std::string_view key) const {
+   return std::string(get_req_var(key));
+}
+
+std::vector<std::vector<uint8_t>> VarMap::get_req_bin_list(std::string_view key) const {
+   const auto& var = get_req_var(key);
 
    std::vector<std::vector<uint8_t>> bin_list;
 
@@ -1091,67 +1111,54 @@ std::vector<std::vector<uint8_t>> VarMap::get_req_bin_list(const std::string& ke
    return bin_list;
 }
 
-std::vector<uint8_t> VarMap::get_req_bin(const std::string& key) const {
-   const auto var = get_req_str(key);
+std::vector<uint8_t> VarMap::get_req_bin(std::string_view key) const {
+   const auto& var = get_req_var(key);
 
    try {
-      if(var.starts_with("0x")) {
-         if(var.size() % 2 == 0) {
-            return Botan::hex_decode(var.substr(2));
-         } else {
-            std::string z = var;
-            std::swap(z[0], z[1]);  // swap 0x to x0 then remove x
-            return Botan::hex_decode(z.substr(1));
-         }
-      } else {
-         return Botan::hex_decode(var);
-      }
+      return Botan::hex_decode(var);
    } catch(std::exception& e) {
-      std::ostringstream oss;
-      oss << "Bad input '" << var << "'"
-          << " for key " << key << " - " << e.what();
-      throw Test_Error(oss.str());
+      throw Test_Error(Botan::fmt("Bad hex input '{}' for key '{}' err '{}'", var, key, e.what()));
    }
 }
 
-std::string VarMap::get_opt_str(const std::string& key, const std::string& def_value) const {
-   if(auto v = get_var(key)) {
+std::string VarMap::get_opt_str(std::string_view key, std::string_view def_value) const {
+   if(auto v = get_opt_var(key)) {
       return *v;
    } else {
-      return def_value;
+      return std::string(def_value);
    }
 }
 
-bool VarMap::get_req_bool(const std::string& key) const {
-   const auto var = get_req_str(key);
+bool VarMap::get_req_bool(std::string_view key) const {
+   const auto& var = get_req_var(key);
 
    if(var == "true") {
       return true;
    } else if(var == "false") {
       return false;
    } else {
-      throw Test_Error("Invalid boolean for key '" + key + "' value '" + var + "'");
+      throw Test_Error(Botan::fmt("Invalid boolean '{}' for key '{}'", var, key));
    }
 }
 
-size_t VarMap::get_req_sz(const std::string& key) const {
-   return Botan::to_u32bit(get_req_str(key));
+size_t VarMap::get_req_sz(std::string_view key) const {
+   return Botan::to_u32bit(get_req_var(key));
 }
 
-uint8_t VarMap::get_req_u8(const std::string& key) const {
+uint8_t VarMap::get_req_u8(std::string_view key) const {
    const size_t s = this->get_req_sz(key);
    if(s > 256) {
-      throw Test_Error("Invalid " + key + " expected uint8_t got " + std::to_string(s));
+      throw Test_Error(Botan::fmt("Invalid value for '{}' expected uint8_t but got '{}'", key, s));
    }
    return static_cast<uint8_t>(s);
 }
 
-uint32_t VarMap::get_req_u32(const std::string& key) const {
+uint32_t VarMap::get_req_u32(std::string_view key) const {
    return static_cast<uint32_t>(get_req_sz(key));
 }
 
-uint64_t VarMap::get_req_u64(const std::string& key) const {
-   const auto var = get_req_str(key);
+uint64_t VarMap::get_req_u64(std::string_view key) const {
+   const auto& var = get_req_var(key);
    try {
       return std::stoull(var);
    } catch(std::exception&) {
@@ -1159,16 +1166,16 @@ uint64_t VarMap::get_req_u64(const std::string& key) const {
    }
 }
 
-size_t VarMap::get_opt_sz(const std::string& key, const size_t def_value) const {
-   if(auto v = get_var(key)) {
+size_t VarMap::get_opt_sz(std::string_view key, const size_t def_value) const {
+   if(auto v = get_opt_var(key)) {
       return Botan::to_u32bit(*v);
    } else {
       return def_value;
    }
 }
 
-uint64_t VarMap::get_opt_u64(const std::string& key, const uint64_t def_value) const {
-   if(auto v = get_var(key)) {
+uint64_t VarMap::get_opt_u64(std::string_view key, const uint64_t def_value) const {
+   if(auto v = get_opt_var(key)) {
       try {
          return std::stoull(*v);
       } catch(std::exception&) {
@@ -1179,12 +1186,12 @@ uint64_t VarMap::get_opt_u64(const std::string& key, const uint64_t def_value) c
    }
 }
 
-std::vector<uint8_t> VarMap::get_opt_bin(const std::string& key) const {
-   if(auto v = get_var(key)) {
+std::vector<uint8_t> VarMap::get_opt_bin(std::string_view key) const {
+   if(auto v = get_opt_var(key)) {
       try {
          return Botan::hex_decode(*v);
       } catch(std::exception&) {
-         throw Test_Error("Test invalid hex input '" + *v + "'" + +" for key " + key);
+         throw Test_Error(Botan::fmt("Invalid hex for key '{}' got '{}'", key, *v));
       }
    } else {
       return {};
@@ -1192,22 +1199,22 @@ std::vector<uint8_t> VarMap::get_opt_bin(const std::string& key) const {
 }
 
 #if defined(BOTAN_HAS_BIGINT)
-Botan::BigInt VarMap::get_req_bn(const std::string& key) const {
-   const auto var = get_req_str(key);
+Botan::BigInt VarMap::get_req_bn(std::string_view key) const {
+   const auto& var = get_req_var(key);
 
    try {
       return Botan::BigInt(var);
    } catch(std::exception&) {
-      throw Test_Error("Test invalid bigint input '" + var + "' for key " + key);
+      throw Test_Error(Botan::fmt("Invalid BigInt for key '{}' got '{}'", key, var));
    }
 }
 
-Botan::BigInt VarMap::get_opt_bn(const std::string& key, const Botan::BigInt& def_value) const {
-   if(auto v = get_var(key)) {
+Botan::BigInt VarMap::get_opt_bn(std::string_view key, const Botan::BigInt& def_value) const {
+   if(auto v = get_opt_var(key)) {
       try {
          return Botan::BigInt(*v);
       } catch(std::exception&) {
-         throw Test_Error("Test invalid bigint input '" + *v + "' for key " + key);
+         throw Test_Error(Botan::fmt("Invalid BigInt for key '{}' got '{}'", key, *v));
       }
    } else {
       return def_value;

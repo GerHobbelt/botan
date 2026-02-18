@@ -9,15 +9,14 @@
 #ifndef BOTAN_TLS_MESSAGES_12_H_
 #define BOTAN_TLS_MESSAGES_12_H_
 
+#include <botan/secmem.h>
 #include <botan/tls_messages.h>
 
 namespace Botan {
 
 class PK_Key_Agreement_Key;
 
-}
-
-namespace Botan::TLS {
+namespace TLS {
 
 class BOTAN_UNSTABLE_API Client_Hello_12 final : public Client_Hello_12_Shim {
    public:
@@ -419,6 +418,7 @@ class BOTAN_UNSTABLE_API Change_Cipher_Spec final : public Handshake_Message {
       std::vector<uint8_t> serialize() const override { return std::vector<uint8_t>(1, 1); }
 };
 
-}  // namespace Botan::TLS
+}  // namespace TLS
+}  // namespace Botan
 
 #endif
