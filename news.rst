@@ -1,16 +1,24 @@
 Release Notes
 ========================================
 
-Version 3.10.0, Not Yet Released
+Version 3.11.0, Not Yet Released
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Add support for Ascon hash and XOF from NIST SP 800-232 (GH #5061 #5097)
+* ``SIMD_4x32`` port to Wasm SIMD128, bringing speedups to AES, ChaCha, Serpent, SHA-1,
+  SHA-256, SHACAL2, NOEKEON and ZFEC when SIMD128 is enabled
+
+Version 3.10.0, 2025-11-06
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Add support for Ascon AEAD, hash and XOF from NIST SP 800-232 (GH #5061 #5076 #5097)
 
 * Add support for building with clang-cl (GH #4255)
 
 * Optimizations for base58 encoding and decoding (GH #5051)
 
 * Optimizations for SHA-3/SHAKE (GH #5133)
+
+* Optimizations for SEED (GH #5147)
 
 * Optimizations and cleanups for BLAKE2s (GH #5117)
 

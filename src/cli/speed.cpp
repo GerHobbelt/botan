@@ -17,8 +17,6 @@
 
 // Always available:
 #include <botan/version.h>
-#include <botan/internal/fmt.h>
-#include <botan/internal/stl_util.h>
 #include <botan/internal/target_info.h>
 
 #if defined(BOTAN_HAS_CPUID)
@@ -318,6 +316,7 @@ class Speed final : public Command {
             "AES-128/GCM",
             "AES-128/XTS",
             "AES-128/SIV",
+            "Ascon-AEAD128",
 
             "Serpent/CBC",
             "Serpent/CTR-BE",

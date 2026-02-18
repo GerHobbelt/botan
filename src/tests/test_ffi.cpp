@@ -16,8 +16,8 @@
    #include <botan/ec_group.h>
    #include <botan/ffi.h>
    #include <botan/hex.h>
+   #include <botan/mem_ops.h>
    #include <botan/internal/fmt.h>
-   #include <botan/internal/loadstor.h>
    #include <botan/internal/stl_util.h>
    #include <botan/internal/target_info.h>
    #include <set>
@@ -1847,7 +1847,7 @@ class FFI_MAC_Test final : public FFI_Test {
             TEST_FFI_RC(0, botan_mac_get_keyspec, (mac, nullptr, nullptr, &mod_keylen));
 
             result.test_eq("Expected min keylen", min_keylen, 0);
-            result.test_eq("Expected max keylen", max_keylen, 4096);
+            result.test_eq("Expected max keylen", max_keylen, 8192);
             result.test_eq("Expected mod keylen", mod_keylen, 1);
 
             size_t output_len;

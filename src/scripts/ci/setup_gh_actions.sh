@@ -31,7 +31,7 @@ fi
 
 if type -p "apt-get"; then
 
-    sudo rm /var/lib/man-db/auto-update
+    sudo rm -f /var/lib/man-db/auto-update
 
     sudo apt-get -qq update
     # shellcheck disable=SC2046
@@ -94,7 +94,7 @@ else
 
     if [ -d '/Applications/Xcode_16.1.app/Contents/Developer' ]; then
         sudo xcrun xcode-select --switch '/Applications/Xcode_16.1.app/Contents/Developer'
-    else
+    elif [ -d '/Applications/Xcode_15.2.app/Contents/Developer' ]; then
         sudo xcrun xcode-select --switch '/Applications/Xcode_15.2.app/Contents/Developer'
     fi
 fi
