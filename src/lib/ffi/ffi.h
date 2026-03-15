@@ -850,16 +850,17 @@ int botan_pbkdf_timed(const char* pbkdf_algo,
 * @param salt_len length of salt in bytes
 * @return 0 on success, a negative value on failure
 */
-int BOTAN_FFI_EXPORT(2, 8) botan_pwdhash(const char* algo,
-                                         size_t param1,
-                                         size_t param2,
-                                         size_t param3,
-                                         uint8_t out[],
-                                         size_t out_len,
-                                         const char* passphrase,
-                                         size_t passphrase_len,
-                                         const uint8_t salt[],
-                                         size_t salt_len);
+BOTAN_FFI_EXPORT(2, 8)
+int botan_pwdhash(const char* algo,
+                  size_t param1,
+                  size_t param2,
+                  size_t param3,
+                  uint8_t out[],
+                  size_t out_len,
+                  const char* passphrase,
+                  size_t passphrase_len,
+                  const uint8_t salt[],
+                  size_t salt_len);
 
 /*
 * Derive a key from a passphrase
@@ -877,17 +878,18 @@ int BOTAN_FFI_EXPORT(2, 8) botan_pwdhash(const char* algo,
 * @param salt_len length of salt in bytes
 * @return 0 on success, a negative value on failure
 */
-int BOTAN_FFI_EXPORT(2, 8) botan_pwdhash_timed(const char* algo,
-                                               uint32_t msec,
-                                               size_t* param1,
-                                               size_t* param2,
-                                               size_t* param3,
-                                               uint8_t out[],
-                                               size_t out_len,
-                                               const char* passphrase,
-                                               size_t passphrase_len,
-                                               const uint8_t salt[],
-                                               size_t salt_len);
+BOTAN_FFI_EXPORT(2, 8)
+int botan_pwdhash_timed(const char* algo,
+                        uint32_t msec,
+                        size_t* param1,
+                        size_t* param2,
+                        size_t* param3,
+                        uint8_t out[],
+                        size_t out_len,
+                        const char* passphrase,
+                        size_t passphrase_len,
+                        const uint8_t salt[],
+                        size_t salt_len);
 
 /**
 * Derive a key using scrypt
@@ -2241,7 +2243,7 @@ typedef struct botan_x509_cert_struct* botan_x509_cert_t;
  *   * botan_x509_crl_view_binary_values()
  *   * botan_x509_cert_view_string_values()
  */
-typedef enum /* NOLINT(*-enum-size) */ {
+typedef enum /* NOLINT(*-enum-size,*-use-enum-class) */ {
    BOTAN_X509_SERIAL_NUMBER = 0,            /** singleton binary big-endian encoding */
    BOTAN_X509_SUBJECT_DN_BITS = 1,          /** singleton binary DER encoding of the subject distinguished name */
    BOTAN_X509_ISSUER_DN_BITS = 2,           /** singleton binary DER encoding of the issuer distinguished name */
@@ -2572,7 +2574,7 @@ int botan_x509_crl_create(botan_x509_crl_t* crl_obj,
                           const char* padding);
 
 /* Must match values of CRL_Code in pkix_enums.h */
-enum botan_x509_crl_reason_code /* NOLINT(*-enum-size) */ {
+enum botan_x509_crl_reason_code /* NOLINT(*-enum-size,*-use-enum-class) */ {
    BOTAN_CRL_ENTRY_UNSPECIFIED = 0,
    BOTAN_CRL_ENTRY_KEY_COMPROMISE = 1,
    BOTAN_CRL_ENTRY_CA_COMPROMISE = 2,
