@@ -28,11 +28,11 @@ from binascii import hexlify
 from datetime import datetime
 from collections.abc import Iterable
 
-# This Python module requires the FFI API version introduced in Botan 3.10.0
+# This Python module requires the FFI API version introduced in Botan 3.11.0
 #
 # 3.11.0 - XOF API
 # 3.10.0 - introduced botan_pubkey_load_ec*_sec1()
-BOTAN_FFI_VERSION = 20260203
+BOTAN_FFI_VERSION = 20260303
 
 #
 # Base exception for all exceptions raised from this module
@@ -310,6 +310,7 @@ def _set_prototypes(dll):
     ffi_api(dll.botan_ec_group_from_pem, [c_void_p, c_char_p])
     ffi_api(dll.botan_ec_group_from_oid, [c_void_p, c_void_p])
     ffi_api(dll.botan_ec_group_from_name, [c_void_p, c_char_p])
+    ffi_api(dll.botan_ec_group_unregister, [c_void_p])
     ffi_api(dll.botan_ec_group_view_der, [c_void_p, c_void_p, VIEW_BIN_CALLBACK])
     ffi_api(dll.botan_ec_group_view_pem, [c_void_p, c_void_p, VIEW_STR_CALLBACK])
     ffi_api(dll.botan_ec_group_get_curve_oid, [c_void_p, c_void_p])
@@ -2364,10 +2365,15 @@ class X509CRL:
 class MPI:
     """Most of the usual arithmetic operators (``__add__``, ``__mul__``, etc) are defined."""
 
-    def __init__(self, initial_value: MPILike = None, radix: int | None = None):
+    def __init__(self, initial_value: MPILike | c_void_p = None, radix: int | None = None):
         """Initialize an MPI object with specified value, left as zero otherwise.  The
         ``initial_value`` should be an ``int``, ``str``, or ``MPI``.
         The ``radix`` value should be set to 16 when initializing from a base 16 `str` value."""
+
+        if isinstance(initial_value, c_void_p):
+            self.__obj = initial_value
+            return
+
         self.__obj = c_void_p(0)
         _DLL.botan_mp_init(byref(self.__obj))
 
@@ -2734,6 +2740,14 @@ class ECGroup:
         _DLL.botan_ec_group_from_name(byref(ec_group.handle_()), _ctype_str(name))
         return ec_group
 
+    @classmethod
+    def unregister(cls, oid: OID) -> bool:
+        """Unregister a previously registered group"""
+        rc = _DLL.botan_ec_group_unregister(oid.handle_())
+        if rc == 1:
+            return True
+        return False
+
     def to_der(self) -> bytes:
         """Export the group in DER encoding"""
         return _call_fn_viewing_vec(lambda vc, vfn: _DLL.botan_ec_group_view_der(self.__obj, vc, vfn))
@@ -2750,39 +2764,39 @@ class ECGroup:
 
     def get_p(self) -> MPI:
         """Get the prime modulus of the field"""
-        p = MPI()
-        _DLL.botan_ec_group_get_p(byref(p.handle_()), self.__obj)
-        return p
+        p = c_void_p(0)
+        _DLL.botan_ec_group_get_p(byref(p), self.__obj)
+        return MPI(p)
 
     def get_a(self) -> MPI:
         """Get the a parameter of the elliptic curve equation"""
-        a = MPI()
-        _DLL.botan_ec_group_get_a(byref(a.handle_()), self.__obj)
-        return a
+        a = c_void_p(0)
+        _DLL.botan_ec_group_get_a(byref(a), self.__obj)
+        return MPI(a)
 
     def get_b(self) -> MPI:
         """Get the b parameter of the elliptic curve equation"""
-        b = MPI()
-        _DLL.botan_ec_group_get_b(byref(b.handle_()), self.__obj)
-        return b
+        b = c_void_p(0)
+        _DLL.botan_ec_group_get_b(byref(b), self.__obj)
+        return MPI(b)
 
     def get_g_x(self) -> MPI:
         """Get the x coordinate of the base point"""
-        g_x = MPI()
-        _DLL.botan_ec_group_get_g_x(byref(g_x.handle_()), self.__obj)
-        return g_x
+        g_x = c_void_p(0)
+        _DLL.botan_ec_group_get_g_x(byref(g_x), self.__obj)
+        return MPI(g_x)
 
     def get_g_y(self) -> MPI:
         """Get the y coordinate of the base point"""
-        g_y = MPI()
-        _DLL.botan_ec_group_get_g_y(byref(g_y.handle_()), self.__obj)
-        return g_y
+        g_y = c_void_p(0)
+        _DLL.botan_ec_group_get_g_y(byref(g_y), self.__obj)
+        return MPI(g_y)
 
     def get_order(self) -> MPI:
         """Get the order of the base point"""
-        order = MPI()
-        _DLL.botan_ec_group_get_order(byref(order.handle_()), self.__obj)
-        return order
+        order = c_void_p(0)
+        _DLL.botan_ec_group_get_order(byref(order), self.__obj)
+        return MPI(order)
 
     def __eq__(self, other: ECGroup | object) -> bool:
         if isinstance(other, ECGroup):

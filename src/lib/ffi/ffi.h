@@ -70,7 +70,7 @@ API follows a few simple rules:
 * that declaration is not visible here since this header is intentionally
 * free-standing, depending only on a few C standard library headers.
 */
-#define BOTAN_FFI_API_VERSION 20260203
+#define BOTAN_FFI_API_VERSION 20260303
 
 /**
 * BOTAN_FFI_EXPORT indicates public FFI functions.
@@ -1344,6 +1344,16 @@ BOTAN_FFI_EXPORT(3, 8) int botan_ec_group_from_oid(botan_ec_group_t* ec_group, b
 * @returns negative number on error, or zero on success
 */
 BOTAN_FFI_EXPORT(3, 8) int botan_ec_group_from_name(botan_ec_group_t* ec_group, const char* name);
+
+/**
+* Unregister a previously registered group.
+* @param oid the oid associated with the group to unregister
+* @returns 1 if the group was found and unregistered, else 0
+*
+* Using this is discouraged for normal use. This is only useful or necessary if
+* you are registering a very large number of distinct groups, and need to worry about memory constraints.
+*/
+BOTAN_FFI_EXPORT(3, 11) int botan_ec_group_unregister(botan_asn1_oid_t oid);
 
 /**
 * View an EC Group in DER encoding

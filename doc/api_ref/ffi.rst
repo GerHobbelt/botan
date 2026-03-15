@@ -254,7 +254,7 @@ supported it.
 ============== ===================
 FFI Version    Supported Starting
 ============== ===================
-20260203       3.11.0
+20260303       3.11.0
 20250829       3.10.0
 20250506       3.8.0
 20240408       3.4.0
@@ -966,6 +966,13 @@ EC Groups
 .. cpp:function:: int botan_ec_group_from_name(botan_ec_group_t* ec_group, const char* name)
 
    Initialize an EC Group from a common group name (eg "secp256r1")
+
+.. cpp:function:: int botan_ec_group_unregister(botan_asn1_oid_t oid)
+
+   Unregister a previously registered group. Returns 1 if the group was found and unregistered, else 0.
+
+   Using this is discouraged for normal use. This is only useful or necessary if
+   you are registering a very large number of distinct groups, and need to worry about memory constraints.
 
 .. cpp:function:: int botan_ec_group_view_der(botan_ec_group_t ec_group, botan_view_ctx ctx, botan_view_bin_fn view)
 
