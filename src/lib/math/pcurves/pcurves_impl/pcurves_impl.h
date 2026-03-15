@@ -1,5 +1,5 @@
 /*
-* (C) 2024,2025 Jack Lloyd
+* (C) 2024,2025,2026 Jack Lloyd
 *
 * Botan is released under the Simplified BSD License (see license.txt)
 */
@@ -262,7 +262,7 @@ class IntMod final {
       /**
       * Modular addition; return c = a + b
       */
-      friend constexpr Self operator+(const Self& a, const Self& b) {
+      friend constexpr BOTAN_FORCE_INLINE Self operator+(const Self& a, const Self& b) {
          std::array<W, N> t;  // NOLINT(*-member-init)
 
          W carry = 0;
@@ -278,14 +278,21 @@ class IntMod final {
       /**
       * Modular subtraction; return c = a - b
       */
-      friend constexpr Self operator-(const Self& a, const Self& b) {
+      friend constexpr BOTAN_FORCE_INLINE Self operator-(const Self& a, const Self& b) {
          std::array<W, N> r;  // NOLINT(*-member-init)
          W carry = 0;
          for(size_t i = 0; i != N; ++i) {
             r[i] = word_sub(a.m_val[i], b.m_val[i], &carry);
          }
 
-         bigint_cnd_add(carry, r.data(), P.data(), N);
+         const auto mask = CT::Mask<W>::expand(carry).value();
+
+         carry = 0;
+
+         for(size_t i = 0; i != N; ++i) {
+            r[i] = word_add(r[i], P[i] & mask, &carry);
+         }
+
          return Self(r);
       }
 
@@ -303,13 +310,19 @@ class IntMod final {
          const W borrow = shift_right<1>(t);
 
          // If value was odd, add (P/2)+1
-         bigint_cnd_add(borrow, t.data(), INV_2.data(), N);
+         const auto mask = CT::Mask<W>::expand(borrow).value();
+
+         W carry = 0;
+
+         for(size_t i = 0; i != N; ++i) {
+            t[i] = word_add(t[i], INV_2[i] & mask, &carry);
+         }
 
          return Self(t);
       }
 
       /// Return (*this) multiplied by 2
-      constexpr Self mul2() const {
+      constexpr BOTAN_FORCE_INLINE Self mul2() const {
          std::array<W, N> t = value();
          const W carry = shift_left<1>(t);
 
@@ -319,18 +332,18 @@ class IntMod final {
       }
 
       /// Return (*this) multiplied by 3
-      constexpr Self mul3() const { return mul2() + (*this); }
+      constexpr inline Self mul3() const { return mul2() + (*this); }
 
       /// Return (*this) multiplied by 4
-      constexpr Self mul4() const { return mul2().mul2(); }
+      constexpr inline Self mul4() const { return mul2().mul2(); }
 
       /// Return (*this) multiplied by 8
-      constexpr Self mul8() const { return mul2().mul2().mul2(); }
+      constexpr inline Self mul8() const { return mul2().mul2().mul2(); }
 
       /**
       * Modular multiplication; return c = a * b
       */
-      friend constexpr Self operator*(const Self& a, const Self& b) {
+      friend constexpr BOTAN_FORCE_INLINE Self operator*(const Self& a, const Self& b) {
          std::array<W, 2 * N> z;  // NOLINT(*-member-init)
          comba_mul<N>(z.data(), a.data(), b.data());
          return Self(Rep::redc(z));
@@ -339,7 +352,7 @@ class IntMod final {
       /**
       * Modular multiplication; set this to this * other
       */
-      constexpr Self& operator*=(const Self& other) {
+      constexpr BOTAN_FORCE_INLINE Self& operator*=(const Self& other) {
          std::array<W, 2 * N> z;  // NOLINT(*-member-init)
          comba_mul<N>(z.data(), data(), other.data());
          m_val = Rep::redc(z);
@@ -410,7 +423,7 @@ class IntMod final {
       *
       * Returns the square of this after modular reduction
       */
-      constexpr Self square() const {
+      constexpr BOTAN_FORCE_INLINE Self square() const {
          std::array<W, 2 * N> z;  // NOLINT(*-member-init)
          comba_sqr<N>(z.data(), this->data());
          return Self(Rep::redc(z));
@@ -1273,80 +1286,47 @@ class EllipticCurve {
 * an additional precaution to guard against compilers introducing conditional
 * jumps where not expected.
 *
-* If you would like a "go faster" button, change the BlindingEnabled variable
-* below to false.
+* If the provided RNG is not seeded, blinding is skipped and the scalar
+* is used directly. This allows blinding to be disabled at runtime.
 */
 template <typename C, size_t WindowBits>
 class BlindedScalarBits final {
    private:
       typedef typename C::W W;
 
-      static constexpr bool BlindingEnabled = true;
+      static constexpr size_t BlindingBits = scalar_blinding_bits(C::OrderBits);
 
-      // Decide size of scalar blinding factor based on bitlength of the scalar
-      //
-      // This can return any value between 0 and the scalar bit length, as long
-      // as it is a multiple of the word size.
-      //
-      // TODO(Botan4) this function should be consteval but cannot currently to a bug
-      // in older versions of Clang. Change to consteval when minimum Clang is bumped.
-      static constexpr size_t blinding_bits(size_t sb) {
-         constexpr size_t wb = WordInfo<W>::bits;
-
-         static_assert(wb == 32 || wb == 64, "Unexpected W size");
-
-         if(sb == 521) {
-            /*
-            Treat P-521 as if it was a 512 bit field; otherwise it is penalized
-            by the below computation, using either 160 or 192 bits of blinding
-            (depending on wb), vs 128 bits used for 512 bit groups.
-            */
-            return blinding_bits(512);
-         } else {
-            // For blinding use 1/4 the order, rounded up to the next word
-            return ((sb / 4 + wb - 1) / wb) * wb;
-         }
-      }
-
-      static constexpr size_t BlindingBits = blinding_bits(C::OrderBits);
-
-      static_assert(BlindingBits % WordInfo<W>::bits == 0);
       static_assert(BlindingBits < C::Scalar::BITS);
 
    public:
-      static constexpr size_t Bits = C::Scalar::BITS + (BlindingEnabled ? BlindingBits : 0);
-      static constexpr size_t Bytes = (Bits + 7) / 8;
+      // Maximum number of bits (used for table sizing)
+      static constexpr size_t Bits = C::Scalar::BITS + BlindingBits;
 
-      constexpr size_t bits() const { return Bits; }
+      size_t bits() const { return m_bits; }
 
       BlindedScalarBits(const typename C::Scalar& scalar, RandomNumberGenerator& rng) {
-         if constexpr(BlindingEnabled) {
-            constexpr size_t mask_words = BlindingBits / WordInfo<W>::bits;
-            constexpr size_t mask_bytes = mask_words * WordInfo<W>::bytes;
+         if(BlindingBits > 0 && rng.is_seeded()) {
+            constexpr size_t MaskWords = (BlindingBits + WordInfo<W>::bits - 1) / WordInfo<W>::bits;
+            constexpr size_t MaskBytes = MaskWords * WordInfo<W>::bytes;
 
             constexpr size_t n_words = C::Words;
 
-            uint8_t maskb[mask_bytes] = {0};
-            if(rng.is_seeded()) {
-               rng.randomize(maskb, mask_bytes);
-            } else {
-               // If we don't have an RNG we don't have many good options. We
-               // could just omit the blinding entirely, but this changes the
-               // size of the blinded scalar, which we're expecting otherwise is
-               // knowable at compile time. So generate a mask by XORing the
-               // bytes of the scalar together. At worst, it's equivalent to
-               // omitting the blinding entirely.
-
-               std::array<uint8_t, C::Scalar::BYTES> sbytes = {};
-               scalar.serialize_to(sbytes);
-               for(size_t i = 0; i != sbytes.size(); ++i) {
-                  maskb[i % mask_bytes] ^= sbytes[i];
-               }
-            }
+            uint8_t maskb[MaskBytes + (BlindingBits == 0 ? 1 : 0)] = {0};
+            rng.randomize(maskb, MaskBytes);
 
             W mask[n_words] = {0};
-            load_le(mask, maskb, mask_words);
-            mask[mask_words - 1] |= WordInfo<W>::top_bit;
+            load_le(mask, maskb, MaskWords);
+
+            // Mask to exactly BlindingBits
+            constexpr size_t ExcessBits = MaskWords * WordInfo<W>::bits - BlindingBits;
+            if constexpr(ExcessBits > 0) {
+               constexpr W ExcessMask = (static_cast<W>(1) << (WordInfo<W>::bits - ExcessBits)) - 1;
+               mask[MaskWords - 1] &= ExcessMask;
+            }
+
+            // Set top and bottom bits of mask
+            constexpr size_t TopMaskBit = (BlindingBits - 1) % WordInfo<W>::bits;
+            mask[(BlindingBits - 1) / WordInfo<W>::bits] |= static_cast<W>(1) << TopMaskBit;
             mask[0] |= 1;
 
             W mask_n[2 * n_words] = {0};
@@ -1359,10 +1339,12 @@ class BlindedScalarBits final {
 
             std::reverse(mask_n, mask_n + 2 * n_words);
             m_bytes = store_be<std::vector<uint8_t>>(mask_n);
+            m_bits = C::Scalar::BITS + BlindingBits;
          } else {
-            static_assert(Bytes == C::Scalar::BYTES);
-            m_bytes.resize(Bytes);
-            scalar.serialize_to(std::span{m_bytes}.template first<Bytes>());
+            // No RNG available, skip blinding
+            m_bytes.resize(C::Scalar::BYTES);
+            scalar.serialize_to(std::span{m_bytes}.template first<C::Scalar::BYTES>());
+            m_bits = C::Scalar::BITS;
          }
 
          CT::poison(m_bytes.data(), m_bytes.size());
@@ -1384,8 +1366,8 @@ class BlindedScalarBits final {
       BlindedScalarBits& operator=(BlindedScalarBits&& other) = delete;
 
    private:
-      // TODO this could be a fixed size array
       std::vector<uint8_t> m_bytes;
+      size_t m_bits;
 };
 
 template <typename C, size_t WindowBits>
@@ -1414,16 +1396,17 @@ class PrecomputedBaseMulTable final {
       static constexpr size_t WindowBits = W;
       static_assert(WindowBits >= 1 && WindowBits <= 8);
 
-      using BlindedScalar = BlindedScalarBits<C, WindowBits>;
+      // W+1 bit extraction windows for Booth recoding overlap
+      using BlindedScalar = BlindedScalarBits<C, WindowBits + 1>;
 
-      static constexpr size_t Windows = (BlindedScalar::Bits + WindowBits - 1) / WindowBits;
-
+      // +1 for Booth carry: if the top window's sign bit is set, the
+      // carry propagates into an extra window
       explicit PrecomputedBaseMulTable(const AffinePoint& p) :
-            m_table(basemul_setup<C, WindowBits>(p, BlindedScalar::Bits)) {}
+            m_table(basemul_booth_setup<C, WindowBits>(p, BlindedScalar::Bits + 1)) {}
 
       ProjectivePoint mul(const Scalar& s, RandomNumberGenerator& rng) const {
          const BlindedScalar scalar(s, rng);
-         return basemul_exec<C, WindowBits>(m_table, scalar, rng);
+         return basemul_booth_exec<C, WindowBits>(m_table, scalar, rng);
       }
 
    private:
@@ -1490,8 +1473,6 @@ class WindowedBoothMulTable final {
          }
       }
 
-      static constexpr size_t FullWindows = compute_full_windows(BlindedScalar::Bits + 1, WindowBits);
-
       static constexpr size_t compute_initial_shift(size_t sb, size_t wb) {
          if(sb % wb == 0) {
             return wb;
@@ -1499,11 +1480,6 @@ class WindowedBoothMulTable final {
             return sb - (sb / wb) * wb;
          }
       }
-
-      static constexpr size_t InitialShift = compute_initial_shift(BlindedScalar::Bits + 1, WindowBits);
-
-      static_assert(FullWindows * WindowBits + InitialShift == BlindedScalar::Bits + 1);
-      static_assert(InitialShift > 0);
 
       // 2^W elements [1*P, 2*P, ..., 2^W*P]
       static constexpr size_t TableSize = 1 << TableBits;
@@ -1513,11 +1489,18 @@ class WindowedBoothMulTable final {
       ProjectivePoint mul(const Scalar& s, RandomNumberGenerator& rng) const {
          const BlindedScalar bits(s, rng);
 
+         const size_t scalar_bits = bits.bits();
+         const size_t full_windows = compute_full_windows(scalar_bits + 1, WindowBits);
+         const size_t initial_shift = compute_initial_shift(scalar_bits + 1, WindowBits);
+
+         BOTAN_DEBUG_ASSERT(full_windows * WindowBits + initial_shift == scalar_bits + 1);
+         BOTAN_DEBUG_ASSERT(initial_shift > 0);
+
          auto accum = ProjectivePoint::identity();
          CT::poison(accum);
 
-         for(size_t i = 0; i != FullWindows; ++i) {
-            const size_t idx = BlindedScalar::Bits - InitialShift - WindowBits * i;
+         for(size_t i = 0; i != full_windows; ++i) {
+            const size_t idx = scalar_bits - initial_shift - WindowBits * i;
 
             const size_t w_i = bits.get_window(idx);
             const auto [tidx, tneg] = booth_recode<WindowBits>(w_i);
@@ -1548,18 +1531,6 @@ class WindowedBoothMulTable final {
       }
 
    private:
-      template <size_t B, std::unsigned_integral T>
-      static constexpr std::pair<size_t, CT::Choice> booth_recode(T x) {
-         static_assert(B < sizeof(T) * 8 - 2, "Invalid B");
-
-         auto s_mask = CT::Mask<T>::expand(x >> B);
-         const T neg_x = (1 << (B + 1)) - x - 1;
-         T d = s_mask.select(neg_x, x);
-         d = (d >> 1) + (d & 1);
-
-         return std::make_pair(static_cast<size_t>(d), s_mask.as_choice());
-      }
-
       AffinePointTable<C> m_table;
 };
 
@@ -1603,7 +1574,7 @@ class VartimeMul2Table final {
       using ProjectivePoint = typename C::ProjectivePoint;
 
       VartimeMul2Table(const AffinePoint& p, const AffinePoint& q) :
-            m_table(to_affine_batch<C>(mul2_setup<C, W>(p, q))) {}
+            m_table(to_affine_batch<C, true>(mul2_setup<C, W>(p, q))) {}
 
       /**
       * Variable time 2-ary multiplication

@@ -20,8 +20,6 @@
 namespace Botan {
 namespace {
 
-constexpr uint64_t MINUS_D = 39081;
-
 std::vector<uint8_t> dom4(uint8_t x, std::span<const uint8_t> y) {
    // RFC 8032 2. Notation and Conventions
    // dom4(x, y) The octet string "SigEd448" || octet(x) ||
@@ -98,9 +96,8 @@ Ed448Point Ed448Point::decode(std::span<const uint8_t, ED448_LEN> enc) {
    //    inversion of v and the square root:
    //                      (p+1)/4    3            (p-3)/4
    //             x = (u/v)        = u  v (u^5 v^3)         (mod p)
-   const auto d = -Gf448Elem(MINUS_D);
    const auto u = square(Gf448Elem(y)) - Gf448Elem::one();
-   const auto v = d * square(Gf448Elem(y)) - Gf448Elem::one();
+   const auto v = -mul_a24(square(Gf448Elem(y))) - Gf448Elem::one();
    const auto maybe_x = (u * square(u)) * v * root((square(square(u)) * u) * square(v) * v);
 
    // 3. If v * x^2 = u, the recovered x-coordinate is x.  Otherwise, no
@@ -163,7 +160,7 @@ Ed448Point Ed448Point::operator+(const Ed448Point& other) const {
    const Gf448Elem B = square(A);
    const Gf448Elem C = m_x * other.m_x;
    const Gf448Elem D = m_y * other.m_y;
-   const Gf448Elem E = (-Gf448Elem(MINUS_D)) * C * D;
+   const Gf448Elem E = -mul_a24(C * D);
    const Gf448Elem F = B - E;
    const Gf448Elem G = B + E;
    const Gf448Elem H = (m_x + m_y) * (other.m_x + other.m_y);
@@ -227,12 +224,13 @@ Ed448Point Ed448Point::scalar_mul(const Scalar448& s) const {
       res = res.double_point();
 
       // Extract 4-bit window value. Bits at position >= 446 are zero.
-      const uint8_t w = static_cast<uint8_t>(s.get_window(static_cast<size_t>(window) * 4, 4));
+      const uint64_t w = s.get_window(static_cast<size_t>(window) * 4, 4);
 
       // Constant-time table lookup
       auto selected = Ed448Point::identity();
       for(size_t i = 0; i < 16; ++i) {
-         selected.ct_conditional_assign(CT::Mask<uint8_t>::is_equal(static_cast<uint8_t>(i), w).as_bool(), table[i]);
+         const auto correct_idx = CT::Mask<uint64_t>::is_equal(static_cast<uint64_t>(i), w);
+         selected.ct_conditional_assign(correct_idx, table[i]);
       }
 
       res = res + selected;
@@ -276,14 +274,14 @@ Ed448Point Ed448Point::base_point_mul(const Scalar448& scalar) {
 
    auto res = Ed448Point::identity();
 
-   for(size_t i = 0; i < Windows; ++i) {
+   for(size_t i = 0; i != Windows; ++i) {
       const uint8_t w = static_cast<uint8_t>(scalar.get_window(i * W, W));
 
       // Constant-time table lookup from this window's 15-entry subtable
       auto selected = Ed448Point::identity();
-      for (size_t j = 0; j < WindowElements; ++j) {
-         const auto assign = CT::Mask<uint8_t>::is_equal(static_cast<uint8_t>(j + 1), w);
-         selected.ct_conditional_assign(assign.as_bool(), table[i * WindowElements + j]);
+      for(size_t j = 0; j != WindowElements; ++j) {
+         const auto assign = CT::Mask<uint64_t>::is_equal(j + 1, w);
+         selected.ct_conditional_assign(assign, table[i * WindowElements + j]);
       }
 
       res = res + selected;
@@ -333,7 +331,8 @@ Ed448Point Ed448Point::double_scalar_mul_vartime(const Scalar448& s1,
       res = res.double_point();
 
       const size_t bit_pos = static_cast<size_t>(window) * 2;
-      const uint8_t idx = static_cast<uint8_t>(s1.get_window(bit_pos, 2) | (s2.get_window(bit_pos, 2) << 2));
+      const size_t idx = s1.get_window(bit_pos, 2) | (s2.get_window(bit_pos, 2) << 2);
+
       if(idx > 0) {
          res = res + table[idx - 1];
       }
@@ -357,10 +356,10 @@ bool Ed448Point::operator==(const Ed448Point& other) const {
    return (mask_x & mask_y).as_bool();
 }
 
-void Ed448Point::ct_conditional_assign(bool cond, const Ed448Point& other) {
-   m_x.ct_cond_assign(cond, other.m_x);
-   m_y.ct_cond_assign(cond, other.m_y);
-   m_z.ct_cond_assign(cond, other.m_z);
+void Ed448Point::ct_conditional_assign(CT::Mask<uint64_t> mask, const Ed448Point& other) {
+   m_x.ct_cond_assign(mask, other.m_x);
+   m_y.ct_cond_assign(mask, other.m_y);
+   m_z.ct_cond_assign(mask, other.m_z);
 }
 
 Ed448Point operator*(const Scalar448& lhs, const Ed448Point& rhs) {

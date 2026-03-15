@@ -755,6 +755,12 @@ class GenericField final {
 
       GenericField invert() const { return pow_vartime(m_curve->_params().field_minus_2()); }
 
+      GenericField invert_vartime() const {
+         // TODO take advantage of variable time here using eg BEEA
+         // see IntMod::invert_vartime in pcurves_impl.h
+         return invert();
+      }
+
       template <concepts::resizable_byte_buffer T>
       T serialize() const {
          T bytes(m_curve->_params().field_bytes());
@@ -1100,11 +1106,19 @@ class GenericProjectivePoint final {
 
       CT::Choice is_identity() const { return z().is_zero(); }
 
+      void conditional_assign(CT::Choice cond, const Self& pt) {
+         GenericField::conditional_assign(m_x, m_y, m_z, cond, pt.x(), pt.y(), pt.z());
+      }
+
       /**
       * Mixed (projective + affine) point addition
       */
       static Self add_mixed(const Self& a, const GenericAffinePoint& b) {
          return point_add_mixed<Self, GenericAffinePoint, GenericField>(a, b, GenericField::one(a.curve()));
+      }
+
+      static Self add_or_sub(const Self& a, const GenericAffinePoint& b, CT::Choice sub) {
+         return point_add_or_sub_mixed<Self, GenericAffinePoint, GenericField>(a, b, sub, GenericField::one(a.curve()));
       }
 
       /**
@@ -1208,47 +1222,54 @@ class GenericCurve final {
 class GenericBlindedScalarBits final {
    public:
       GenericBlindedScalarBits(const GenericScalar& scalar, RandomNumberGenerator& rng, size_t wb) {
-         // Just a simplifying assumption for get_window, can extend to 1..7 as required
-         BOTAN_ASSERT_NOMSG(wb == 3 || wb == 4 || wb == 5);
+         BOTAN_ASSERT_NOMSG(wb == 1 || wb == 2 || wb == 3 || wb == 4 || wb == 5 || wb == 6 || wb == 7);
 
          const auto& params = scalar.curve()->_params();
 
          const size_t order_bits = params.order_bits();
-         const size_t blinder_bits = blinding_bits(order_bits);
+         m_window_bits = wb;
 
-         const size_t mask_words = blinder_bits / WordInfo<word>::bits;
-         const size_t mask_bytes = mask_words * WordInfo<word>::bytes;
+         const size_t blinder_bits = scalar_blinding_bits(order_bits);
 
-         const size_t words = params.words();
+         if(blinder_bits > 0 && rng.is_seeded()) {
+            const size_t mask_words = (blinder_bits + WordInfo<word>::bits - 1) / WordInfo<word>::bits;
+            const size_t mask_bytes = mask_words * WordInfo<word>::bytes;
 
-         secure_vector<uint8_t> maskb(mask_bytes);
-         if(rng.is_seeded()) {
+            const size_t words = params.words();
+
+            secure_vector<uint8_t> maskb(mask_bytes);
             rng.randomize(maskb);
-         } else {
-            auto sbytes = scalar.serialize<std::vector<uint8_t>>();
-            for(size_t i = 0; i != sbytes.size(); ++i) {
-               maskb[i % mask_bytes] ^= sbytes[i];
+
+            std::array<word, PrimeOrderCurve::StorageWords> mask{};
+            load_le(mask.data(), maskb.data(), mask_words);
+
+            // Mask to exactly blinder_bits and set MSB and LSB
+            const size_t excess = mask_words * WordInfo<word>::bits - blinder_bits;
+            if(excess > 0) {
+               mask[mask_words - 1] &= (static_cast<word>(1) << (WordInfo<word>::bits - excess)) - 1;
             }
+            const size_t msb_pos = (blinder_bits - 1) % WordInfo<word>::bits;
+            mask[(blinder_bits - 1) / WordInfo<word>::bits] |= static_cast<word>(1) << msb_pos;
+            mask[0] |= 1;
+
+            std::array<word, 2 * PrimeOrderCurve::StorageWords> mask_n{};
+
+            const auto sw = scalar.to_words();
+
+            // Compute masked scalar s + k*n
+            params.mul(mask_n, mask, params.order());
+            bigint_add2(mask_n.data(), 2 * words, sw.data(), words);
+
+            std::reverse(mask_n.begin(), mask_n.end());
+            m_bytes = store_be<std::vector<uint8_t>>(mask_n);
+            m_bits = order_bits + blinder_bits;
+         } else {
+            // No RNG available, skip blinding
+            m_bytes = scalar.serialize<std::vector<uint8_t>>();
+            m_bits = order_bits;
          }
 
-         std::array<word, PrimeOrderCurve::StorageWords> mask{};
-         load_le(mask.data(), maskb.data(), mask_words);
-         mask[mask_words - 1] |= WordInfo<word>::top_bit;
-         mask[0] |= 1;
-
-         std::array<word, 2 * PrimeOrderCurve::StorageWords> mask_n{};
-
-         const auto sw = scalar.to_words();
-
-         // Compute masked scalar s + k*n
-         params.mul(mask_n, mask, params.order());
-         bigint_add2(mask_n.data(), 2 * words, sw.data(), words);
-
-         std::reverse(mask_n.begin(), mask_n.end());
-         m_bytes = store_be<std::vector<uint8_t>>(mask_n);
-         m_bits = order_bits + blinder_bits;
-         m_window_bits = wb;
-         m_windows = (order_bits + blinder_bits + wb - 1) / wb;
+         m_windows = (m_bits + wb - 1) / wb;
       }
 
       size_t windows() const { return m_windows; }
@@ -1256,24 +1277,23 @@ class GenericBlindedScalarBits final {
       size_t bits() const { return m_bits; }
 
       size_t get_window(size_t offset) const {
-         if(m_window_bits == 3) {
+         if(m_window_bits == 1) {
+            return read_window_bits<1>(std::span{m_bytes}, offset);
+         } else if(m_window_bits == 2) {
+            return read_window_bits<2>(std::span{m_bytes}, offset);
+         } else if(m_window_bits == 3) {
             return read_window_bits<3>(std::span{m_bytes}, offset);
          } else if(m_window_bits == 4) {
             return read_window_bits<4>(std::span{m_bytes}, offset);
          } else if(m_window_bits == 5) {
             return read_window_bits<5>(std::span{m_bytes}, offset);
+         } else if(m_window_bits == 6) {
+            return read_window_bits<6>(std::span{m_bytes}, offset);
+         } else if(m_window_bits == 7) {
+            return read_window_bits<7>(std::span{m_bytes}, offset);
          } else {
             BOTAN_ASSERT_UNREACHABLE();
          }
-      }
-
-      static size_t blinding_bits(size_t order_bits) {
-         if(order_bits > 512) {
-            return blinding_bits(512);
-         }
-
-         const size_t wb = sizeof(word) * 8;
-         return ((order_bits / 4 + wb - 1) / wb) * wb;
       }
 
    private:
@@ -1305,20 +1325,20 @@ class GenericBaseMulTable final {
    public:
       static constexpr size_t WindowBits = BasePointWindowBits;
 
-      static constexpr size_t WindowElements = (1 << WindowBits) - 1;
-
+      // +1 for Booth carry from the top window
       explicit GenericBaseMulTable(const GenericAffinePoint& pt) :
-            m_table(basemul_setup<GenericCurve, WindowBits>(pt, blinded_scalar_bits(*pt.curve()))) {}
+            m_table(basemul_booth_setup<GenericCurve, WindowBits>(pt, blinded_scalar_bits(*pt.curve()) + 1)) {}
 
       GenericProjectivePoint mul(const GenericScalar& s, RandomNumberGenerator& rng) {
-         const GenericBlindedScalarBits scalar(s, rng, WindowBits);
-         return basemul_exec<GenericCurve, WindowBits>(m_table, scalar, rng);
+         // W+1 bit windows for Booth recoding overlap
+         const GenericBlindedScalarBits scalar(s, rng, WindowBits + 1);
+         return basemul_booth_exec<GenericCurve, WindowBits>(m_table, scalar, rng);
       }
 
    private:
       static size_t blinded_scalar_bits(const GenericPrimeOrderCurve& curve) {
          const size_t order_bits = curve.order_bits();
-         return order_bits + GenericBlindedScalarBits::blinding_bits(order_bits);
+         return order_bits + scalar_blinding_bits(order_bits);
       }
 
       std::vector<GenericAffinePoint> m_table;
@@ -1360,7 +1380,7 @@ class GenericVartimeWindowedMul2 final : public PrimeOrderCurve::PrecomputedMul2
       ~GenericVartimeWindowedMul2() override = default;
 
       GenericVartimeWindowedMul2(const GenericAffinePoint& p, const GenericAffinePoint& q) :
-            m_table(to_affine_batch<GenericCurve>(mul2_setup<GenericCurve, WindowBits>(p, q))) {}
+            m_table(to_affine_batch<GenericCurve, true>(mul2_setup<GenericCurve, WindowBits>(p, q))) {}
 
       GenericProjectivePoint mul2_vartime(const GenericScalar& x, const GenericScalar& y) const {
          const auto x_bits = x.serialize<std::vector<uint8_t>>();
