@@ -23,10 +23,8 @@ Hardware Specific Optimizations
 ----------------------------------------
 * AVX512 IFMA optimized field arithmetic for P-256 and/or P-384
 * Stitched AES/GCM implementation
-* GFNI implementations of SEED, ARIA, others?
+* GFNI implementations of SEED, others?
 * NEON/VMX/LSX support for the SIMD based GHASH
-* Poly1305 using AVX2/AVX512
-* Constant time bitsliced DES
 * SIMD evaluation of SHA-2 and SHA-3 compression functions
 * Improved Salsa implementations (SIMD_4x32 and/or AVX2)
 * Add CLMUL/PMULL implementations for CRC24
@@ -47,7 +45,6 @@ Public Key Crypto, Math
 Utility Functions
 ------------------
 
-* Constant time base32/base64/hex are optimized using SWAR; apply this to base58
 * Make Memory_Pool more concurrent (currently uses a global lock)
 * Guarded integer type to prevent overflow bugs
 
@@ -61,7 +58,6 @@ TLS
 ----------------------------------------
 
 * Make DTLS support optional at build time
-* Make TLS 1.2 support optional at build time
 * Improve/optimize DTLS defragmentation and retransmission
 * Make RSA optional at build time
 * Make finite field DH optional at build time
@@ -82,9 +78,6 @@ New Protocols / Formats
 * Noise protocol
 * ACME protocol (needs a story for JSON)
 * Cryptographic Message Syntax (RFC 5652)
-* Fernet symmetric encryption (https://cryptography.io/en/latest/fernet/)
-* RNCryptor format (https://github.com/RNCryptor/RNCryptor-Spec)
-* Age format (https://age-encryption.org/v1)
 * Useful OpenPGP subset 1: symmetrically encrypted files.
   Not aiming to process arbitrary OpenPGP, but rather produce
   something that happens to be readable by `gpg` and is relatively
@@ -98,12 +91,11 @@ Cleanups
 * Unicode path support on Windows (GH #1615)
 * The X.509 path validation tests have much duplicated logic
 
-New C APIs
+FFI APIs
 ----------------------------------------
 
 * PKCS10 requests
 * Certificate signing
-* CRLs
 * Expose TLS
 * Expose secret sharing
 * Expose deterministic PRNG
@@ -119,7 +111,6 @@ Build/Test
   so it can run as a standalone item (copied to a device, etc)
 * Run iOS binary under simulator in CI
 * Run Android binary under simulator in CI
-* Add support for vxWorks
 
 CLI
 ----------------------------------------
