@@ -68,7 +68,19 @@ class CertificatePathBuilder {
       }
 
       std::optional<std::vector<X509_Certificate>> next() {
+         size_t steps = 0;
+
          while(!m_stack.empty()) {
+            constexpr size_t MAX_DFS_STEPS = 1000;
+
+            steps++;
+
+            if(steps > MAX_DFS_STEPS) {
+               // Intentionally overwrite any previous builder error
+               m_error = Certificate_Status_Code::CERT_ISSUER_NOT_FOUND;
+               return std::nullopt;
+            }
+
             auto [last, trusted] = std::move(m_stack.back());  // move before pop_back
             m_stack.pop_back();
 
@@ -453,6 +465,22 @@ Certificate_Status_Code verify_ocsp_signing_cert(const X509_Certificate& signing
    //       usage extension and is issued by the CA that issued the
    //       certificate in question as stated above.
 
+   // Verify the delegated responder was issued by the CA that issued
+   // the certificate in question (the EKU and signature chain are
+   // verified by the path validation below).
+   if(signing_cert.issuer_dn() != ca.subject_dn()) {
+      return Certificate_Status_Code::OCSP_ISSUER_NOT_TRUSTED;
+   } else {
+      // If both key identifiers are available, verify they match to
+      // handle CAs that share a subject DN but have different keys
+      // (eg re-keyed or cross-certified CAs).
+      const auto& aki = signing_cert.authority_key_id();
+      const auto& ski = ca.subject_key_id();
+      if(!aki.empty() && !ski.empty() && aki != ski) {
+         return Certificate_Status_Code::OCSP_ISSUER_NOT_TRUSTED;
+      }
+   }
+
    // TODO: Implement OCSP revocation check of OCSP signer certificate
    // Note: This needs special care to prevent endless loops on specifically
    //       forged chains of OCSP responses referring to each other.
@@ -502,7 +530,7 @@ std::set<Certificate_Status_Code> evaluate_ocsp_response(const OCSP::Response& o
    // Verify the signing certificate is trusted
    auto cert_status = verify_ocsp_signing_cert(
       signing_cert.value(), ca, concat(ocsp_response.certificates(), cert_path), certstores, ref_time, restrictions);
-   if(cert_status > Certificate_Status_Code::FIRST_ERROR_STATUS) {
+   if(cert_status >= Certificate_Status_Code::FIRST_ERROR_STATUS) {
       return {cert_status, Certificate_Status_Code::OCSP_ISSUER_NOT_TRUSTED};
    }
 
@@ -930,16 +958,19 @@ Path_Validation_Result x509_path_validate(const std::vector<X509_Certificate>& e
 
    CertificatePathBuilder builder(trusted_roots, end_entity, end_entity_extra, require_self_signed);
 
-   constexpr size_t max_paths = 128;
+   constexpr size_t max_paths = 50;
+   constexpr size_t max_verifications = 200;
 
    std::optional<Path_Validation_Result> first_path_error;
    size_t paths_checked = 0;
+   size_t certs_checked = 0;
 
    while(auto cert_path = builder.next()) {
       BOTAN_ASSERT_NOMSG(cert_path->empty() == false);
 
       paths_checked += 1;
-      if(paths_checked > max_paths) {
+      certs_checked += cert_path->size();
+      if(paths_checked > max_paths || certs_checked > max_verifications) {
          break;
       }
 
