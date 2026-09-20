@@ -175,7 +175,7 @@ extern "C" {
 using namespace Botan_FFI;
 
 int botan_x509_cert_load_file(botan_x509_cert_t* cert_obj, const char* cert_path) {
-   if(cert_obj == nullptr || cert_path == nullptr) {
+   if(Botan::any_null_pointers(cert_obj, cert_path)) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
 
@@ -210,7 +210,7 @@ int botan_x509_cert_dup(botan_x509_cert_t* cert_obj, botan_x509_cert_t cert) {
 }
 
 int botan_x509_cert_load(botan_x509_cert_t* cert_obj, const uint8_t cert_bits[], size_t cert_bits_len) {
-   if(cert_obj == nullptr || cert_bits == nullptr) {
+   if(Botan::any_null_pointers(cert_obj, cert_bits)) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
 
@@ -502,7 +502,7 @@ int botan_x509_cert_get_issuer_dn(
 int botan_x509_cert_get_issuer_dn_count(botan_x509_cert_t cert, const char* key, size_t* count) {
 #if defined(BOTAN_HAS_X509_CERTIFICATES)
    return BOTAN_FFI_VISIT(cert, [=](const auto& c) -> int {
-      if(Botan::any_null_pointers(count)) {
+      if(Botan::any_null_pointers(key, count)) {
          return BOTAN_FFI_ERROR_NULL_POINTER;
       }
 
@@ -539,7 +539,7 @@ int botan_x509_cert_get_subject_dn(
 int botan_x509_cert_get_subject_dn_count(botan_x509_cert_t cert, const char* key, size_t* count) {
 #if defined(BOTAN_HAS_X509_CERTIFICATES)
    return BOTAN_FFI_VISIT(cert, [=](const auto& c) -> int {
-      if(Botan::any_null_pointers(count)) {
+      if(Botan::any_null_pointers(key, count)) {
          return BOTAN_FFI_ERROR_NULL_POINTER;
       }
 
@@ -992,6 +992,13 @@ int botan_x509_cert_verify(int* result_code,
                                       ? std::chrono::system_clock::now()
                                       : std::chrono::system_clock::from_time_t(static_cast<time_t>(reference_time));
 
+      if(intermediates_len > 0 && intermediates == nullptr) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+      if(trusted_len > 0 && trusted == nullptr) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+
       std::vector<Botan::X509_Certificate> end_certs;
       end_certs.push_back(safe_get(cert));
       for(size_t i = 0; i != intermediates_len; ++i) {
@@ -1051,7 +1058,7 @@ const char* botan_x509_cert_validation_status(int code) {
 }
 
 int botan_x509_crl_load_file(botan_x509_crl_t* crl_obj, const char* crl_path) {
-   if(crl_obj == nullptr || crl_path == nullptr) {
+   if(Botan::any_null_pointers(crl_obj, crl_path)) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
 
@@ -1068,7 +1075,7 @@ int botan_x509_crl_load_file(botan_x509_crl_t* crl_obj, const char* crl_path) {
 }
 
 int botan_x509_crl_load(botan_x509_crl_t* crl_obj, const uint8_t crl_bits[], size_t crl_bits_len) {
-   if(crl_obj == nullptr || crl_bits == nullptr) {
+   if(Botan::any_null_pointers(crl_obj, crl_bits)) {
       return BOTAN_FFI_ERROR_NULL_POINTER;
    }
 
@@ -1463,6 +1470,16 @@ int botan_x509_cert_verify_with_crl(int* result_code,
       const auto validation_time = reference_time == 0
                                       ? std::chrono::system_clock::now()
                                       : std::chrono::system_clock::from_time_t(static_cast<time_t>(reference_time));
+
+      if(intermediates_len > 0 && intermediates == nullptr) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+      if(trusted_len > 0 && trusted == nullptr) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
+      if(crls_len > 0 && crls == nullptr) {
+         return BOTAN_FFI_ERROR_NULL_POINTER;
+      }
 
       std::vector<Botan::X509_Certificate> end_certs;
       end_certs.push_back(safe_get(cert));

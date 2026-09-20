@@ -416,6 +416,38 @@ Test::Result test_mixed_points() {
    return result;
 }
 
+Test::Result test_mixed_scalars() {
+   Test::Result result("Mixed EC_Scalar Arithmetic");
+
+   if(Botan::EC_Group::supports_named_group("secp256r1") && Botan::EC_Group::supports_named_group("secp384r1")) {
+      const auto secp256r1 = Botan::EC_Group::from_name("secp256r1");
+      const auto secp384r1 = Botan::EC_Group::from_name("secp384r1");
+
+      const auto five_256 = Botan::EC_Scalar::from_bigint(secp256r1, 5);
+      const auto five_384 = Botan::EC_Scalar::from_bigint(secp384r1, 5);
+
+      result.test_is_false("same integer in different scalar groups is different", five_256 == five_384);
+      result.test_throws<Botan::Invalid_Argument>("Adding scalars from different groups",
+                                                  [&] { static_cast<void>(five_256 + five_384); });
+      result.test_throws<Botan::Invalid_Argument>("Subtracting scalars from different groups",
+                                                  [&] { static_cast<void>(five_256 - five_384); });
+      result.test_throws<Botan::Invalid_Argument>("Multiplying scalars from different groups",
+                                                  [&] { static_cast<void>(five_256 * five_384); });
+
+      auto scalar_copy = Botan::EC_Scalar::from_bigint(secp256r1, 1);
+      scalar_copy = five_384;
+      result.test_is_true("copy assignment replaces scalar group", scalar_copy == five_384);
+      result.test_sz_eq("copy assignment replaces scalar size", scalar_copy.bytes(), five_384.bytes());
+
+      auto scalar_assign = Botan::EC_Scalar::from_bigint(secp256r1, 1);
+      scalar_assign.assign(five_384);
+      result.test_is_true("assign replaces scalar group", scalar_assign == five_384);
+      result.test_sz_eq("assign replaces scalar size", scalar_assign.bytes(), five_384.bytes());
+   }
+
+   return result;
+}
+
 class ECC_Unit_Tests final : public Test {
    public:
       std::vector<Test::Result> run() override {
@@ -423,6 +455,7 @@ class ECC_Unit_Tests final : public Test {
 
          results.push_back(test_decoding_with_seed());
          results.push_back(test_mixed_points());
+         results.push_back(test_mixed_scalars());
 
          return results;
       }
@@ -877,6 +910,19 @@ class EC_Point_Arithmetic_Tests final : public Test {
             const auto zero = one - one;  // NOLINT(*-redundant-expression)
             const auto g = Botan::EC_AffinePoint::generator(group);
             const auto g_bytes = g.serialize_uncompressed();
+
+            auto moved_from = Botan::EC_Scalar::from_bigint(group, 1);
+            const auto replacement = Botan::EC_Scalar::from_bigint(group, 2);
+            auto moved_to = std::move(moved_from);
+            auto as_rvalue = [](auto& x) -> decltype(auto) { return std::move(x); };
+            moved_from = as_rvalue(moved_from);
+            moved_from = replacement;
+            result.test_is_true("copy assignment into moved-from EC_Scalar", moved_from == replacement);
+            moved_from = std::move(moved_to);
+            result.test_is_true("move assignment into EC_Scalar", moved_from == one);
+            const auto before_self_move = moved_from.to_bigint();
+            moved_from = as_rvalue(moved_from);
+            result.test_bn_eq("self-move keeps EC_Scalar value", moved_from.to_bigint(), before_self_move);
 
             const auto id = Botan::EC_AffinePoint::g_mul(zero, rng);
             result.test_is_true("g*zero is point at identity", id.is_identity());

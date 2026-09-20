@@ -163,7 +163,15 @@ void RSA_PublicKey::init(BigInt&& n, BigInt&& e) {
    m_public = std::make_shared<RSA_Public_Data>(std::move(n), std::move(e));
 }
 
-RSA_PublicKey::RSA_PublicKey(const AlgorithmIdentifier& /*unused*/, std::span<const uint8_t> key_bits) {
+RSA_PublicKey::RSA_PublicKey(const AlgorithmIdentifier& alg_id, std::span<const uint8_t> key_bits) {
+   // RFC 4055 Section 1.2 has that parameters MUST be NULL, but historical
+   // reasons make that difficult to enforce, so absent is also accepted.
+   //
+   // This only checks rsaEncryption; PSS/OAEP key identifiers have their own parameter encoding
+   if(alg_id.oid().to_formatted_string() == "RSA" && !alg_id.parameters_are_null_or_empty()) {
+      throw Decoding_Error("Unexpected parameters for RSA public key");
+   }
+
    BigInt n;
    BigInt e;
    BER_Decoder(key_bits, BER_Decoder::Limits::DER()).start_sequence().decode(n).decode(e).end_cons().verify_end();
@@ -271,7 +279,11 @@ void RSA_PrivateKey::init(BigInt&& d, BigInt&& p, BigInt&& q, BigInt&& d1, BigIn
       std::move(d), std::move(p), std::move(q), std::move(d1), std::move(d2), std::move(c));
 }
 
-RSA_PrivateKey::RSA_PrivateKey(const AlgorithmIdentifier& /*unused*/, std::span<const uint8_t> key_bits) {
+RSA_PrivateKey::RSA_PrivateKey(const AlgorithmIdentifier& alg_id, std::span<const uint8_t> key_bits) {
+   if(alg_id.oid().to_formatted_string() == "RSA" && !alg_id.parameters_are_null_or_empty()) {
+      throw Decoding_Error("Unexpected parameters for RSA private key");
+   }
+
    BigInt n;
    BigInt e;
    BigInt d;
@@ -775,10 +787,7 @@ class RSA_Verify_Operation final : public PK_Ops::Verification,
          //    If the length of the signature S is not k octets,
          //    output "invalid signature" and stop.
          //
-         // However right now TLS-Anvil has a bug which causes it to occasionally send
-         // short signatures, so accept this for now.
-         // TODO(Botan4) if this check hasn't been addressed by now, do so for Botan4
-         if(input_len > public_modulus_bytes()) {
+         if(input_len != public_modulus_bytes()) {
             throw Decoding_Error("RSA signature is an incorrect size for this public key");
          }
          const BigInt input_bn(input, input_len);
