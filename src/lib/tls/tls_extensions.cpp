@@ -360,7 +360,21 @@ Server_Name_Indicator::Server_Name_Indicator(TLS_Data_Reader& reader, uint16_t e
             if(!m_sni_host_name.empty()) {
                throw Decoding_Error("TLS ServerNameIndicator contains more than one host_name");
             }
-            m_sni_host_name = reader.get_string(2, 1, 65535);
+
+            const std::string host_name = reader.get_string(2, 1, 65535);
+
+            /*
+            RFC 6066 Section 3
+               The hostname is represented as a byte string using ASCII
+               encoding without a trailing dot. [...] Literal IPv4 and IPv6
+               addresses are not permitted in "HostName".
+            */
+            if(auto dns_name = DNSName::from_string(host_name)) {
+               m_sni_host_name = dns_name->to_string();
+            } else {
+               throw TLS_Exception(Alert::IllegalParameter,
+                                   "TLS ServerNameIndicator host_name is not a valid DNS name");
+            }
          } else {
             /*
             Unknown name type - skip its length-prefixed value and continue
@@ -761,9 +775,10 @@ SRTP_Protection_Profiles::SRTP_Protection_Profiles(TLS_Data_Reader& reader, uint
       throw Decoding_Error("Bad encoding for SRTP protection extension");
    }
 
-   if(!mki.empty()) {
-      throw Decoding_Error("Unhandled non-empty MKI for SRTP protection extension");
-   }
+   // Any srtp_mki the peer offers is ignored; serialize() always answers with an
+   // empty srtp_mki, per RFC 5764 4.1.3:
+   //    2.  return an empty "srtp_mki" value to indicate that it cannot make
+   //        use of the MKI.
 }
 
 std::vector<uint8_t> SRTP_Protection_Profiles::serialize(Connection_Side /*whoami*/) const {

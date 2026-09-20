@@ -10,7 +10,7 @@
 #include <botan/assert.h>
 #include <botan/concepts.h>
 #include <botan/range_concepts.h>
-#include <botan/strong_type.h>
+#include <botan/strong_type_helpers.h>
 #include <array>
 #include <iterator>
 #include <ranges>
@@ -42,10 +42,11 @@ constexpr OutR concatenate(Rs&&... ranges)
          const size_t total_size = (ranges.size() + ... + 0);
          result.reserve(total_size);
 
-         // fill the result buffer using a back-inserter
+         // append each input as a whole range, so contiguous byte
+         // buffers are copied with memcpy rather than element by element
          return [&result](auto&& range) {
-            std::copy(
-               std::ranges::begin(range), std::ranges::end(range), std::back_inserter(unwrap_strong_type(result)));
+            auto& out = unwrap_strong_type(result);
+            out.insert(out.end(), std::ranges::begin(range), std::ranges::end(range));
          };
       } else {
          if constexpr((ranges::statically_spanable_range<Rs> && ... && true)) {
