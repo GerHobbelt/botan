@@ -1130,6 +1130,26 @@ class Charset_Tests final : public Text_Based_Test {
 
 BOTAN_REGISTER_TEST("utils", "charset", Charset_Tests);
 
+class Escape_Control_Chars_Tests final : public Test {
+   public:
+      std::vector<Test::Result> run() override {
+         Test::Result result("escape_control_chars");
+
+         result.test_str_eq("newline", Botan::escape_control_chars("a\nb"), "a\\x0Ab");
+         result.test_str_eq("escape", Botan::escape_control_chars("\x1b[0m"), "\\x1B[0m");
+         result.test_str_eq("embedded NUL", Botan::escape_control_chars(std::string("a\0b", 3)), "a\\x00b");
+         result.test_str_eq("DEL", Botan::escape_control_chars("\x7f"), "\\x7F");
+         result.test_str_eq("C1 control U+009B", Botan::escape_control_chars("\xc2\x9b"), "\\xC2\\x9B");
+         result.test_str_eq("printable ASCII ok", Botan::escape_control_chars("Hello.123"), "Hello.123");
+         result.test_str_eq("printable UTF-8 ok", Botan::escape_control_chars("Fräulein"), "Fräulein");
+         result.test_str_eq("U+00A0 is not a control", Botan::escape_control_chars("\xc2\xa0"), "\xc2\xa0");
+
+         return {result};
+      }
+};
+
+BOTAN_REGISTER_TEST("utils", "escape_control_chars", Escape_Control_Chars_Tests);
+
 #if defined(BOTAN_HAS_IPV4_ADDRESS)
 
 class IPv4_Parsing_Tests final : public Text_Based_Test {
@@ -1156,6 +1176,31 @@ class IPv4_Parsing_Tests final : public Text_Based_Test {
 };
 
 BOTAN_REGISTER_TEST("utils", "ipv4_parse", IPv4_Parsing_Tests);
+
+class IPv4_Subnet_Parsing_Tests final : public Text_Based_Test {
+   public:
+      IPv4_Subnet_Parsing_Tests() : Text_Based_Test("utils/ipv4_subnet.vec", "IPv4Subnet") {}
+
+      Test::Result run_one_test(const std::string& header, const VarMap& vars) override {
+         Test::Result result("IPv4 subnet parsing");
+
+         const std::string input = vars.get_req_str("IPv4Subnet");
+         const bool valid = (header == "Valid");
+
+         const auto subnet = Botan::IPv4Subnet::from_string(input);
+
+         result.test_bool_eq("IPv4Subnet::from_string accepts only valid", subnet.has_value(), valid);
+
+         if(subnet) {
+            result.test_str_eq(
+               "IPv4Subnet::from_string and IPv4Subnet::to_string round trip", subnet->to_string(), input);
+         }
+
+         return result;
+      }
+};
+
+BOTAN_REGISTER_TEST("utils", "ipv4_subnet_parse", IPv4_Subnet_Parsing_Tests);
 
 #endif
 
@@ -1204,6 +1249,7 @@ class IPv6_Noncanonical_Parsing_Tests final : public Text_Based_Test {
 
          if(ipv6.has_value() && canonical.has_value()) {
             result.test_is_true("IPv6 non-canonical decoding", *ipv6 == *canonical);
+            result.test_str_eq("IPv6 to_string is canonical", ipv6->to_string(), canonical_str);
          }
 
          return result;
@@ -1211,6 +1257,31 @@ class IPv6_Noncanonical_Parsing_Tests final : public Text_Based_Test {
 };
 
 BOTAN_REGISTER_TEST("utils", "ipv6_parse_non_canonical", IPv6_Noncanonical_Parsing_Tests);
+
+class IPv6_Subnet_Parsing_Tests final : public Text_Based_Test {
+   public:
+      IPv6_Subnet_Parsing_Tests() : Text_Based_Test("utils/ipv6_subnet.vec", "IPv6Subnet") {}
+
+      Test::Result run_one_test(const std::string& header, const VarMap& vars) override {
+         Test::Result result("IPv6 subnet parsing");
+
+         const std::string input = vars.get_req_str("IPv6Subnet");
+         const bool valid = (header == "Valid");
+
+         const auto subnet = Botan::IPv6Subnet::from_string(input);
+
+         result.test_bool_eq("IPv6Subnet::from_string accepts only valid", subnet.has_value(), valid);
+
+         if(subnet) {
+            result.test_str_eq(
+               "IPv6Subnet::from_string and IPv6Subnet::to_string round trip", subnet->to_string(), input);
+         }
+
+         return result;
+      }
+};
+
+BOTAN_REGISTER_TEST("utils", "ipv6_subnet_parse", IPv6_Subnet_Parsing_Tests);
 
 #endif
 

@@ -219,7 +219,7 @@ namespace {
 */
 bool dns_subtree_match(std::string_view name, std::string_view constraint) {
    // Embedded nulls should have been rejected during decoding before this point
-   BOTAN_ASSERT_NOMSG(name.find('\0') == std::string_view::npos);
+   BOTAN_DEBUG_ASSERT(name.find('\0') == std::string_view::npos);
 
    if(name.size() == constraint.size()) {
       return name == constraint;
@@ -726,20 +726,7 @@ bool GeneralName::matches_dn(const X509_DN& name, const X509_DN& constraint) {
    This is implementing directoryName subtree match, so the constraint's RDN
    sequence must be a prefix of the name's RDN sequence.
    */
-   const auto& name_rdns = name.rdns();
-   const auto& constraint_rdns = constraint.rdns();
-
-   if(constraint_rdns.size() > name_rdns.size()) {
-      return false;
-   }
-
-   for(size_t i = 0; i != constraint_rdns.size(); ++i) {
-      if(!rdn_equality(constraint_rdns[i], name_rdns[i])) {
-         return false;
-      }
-   }
-
-   return true;
+   return x509_dn_subtree_match(name, constraint);
 }
 
 std::ostream& operator<<(std::ostream& os, const GeneralName& gn) {

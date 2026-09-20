@@ -23,6 +23,7 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -100,6 +101,17 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
       std::string to_string() const;
 
       /**
+      * Parse the string representation of a distinguished name.
+      *
+      * The grammar accepted is a subset of RFC 4514 Section 3, but also accepts
+      * quoted-value forms ala RFC 2253. The entire input must be consumed.
+      *
+      * @param str the string to parse
+      * @return the parsed DN, or nullopt if @p str is not a well-formed DN
+      */
+      static std::optional<X509_DN> parse(std::string_view str);
+
+      /**
       * Return the DN as a sequence of RDNs. Each RDN is an X.501
       * SET OF AttributeTypeAndValue; the inner vector preserves the
       * decoded order but RDN equality is set-based per RFC 5280 7.1.
@@ -144,11 +156,21 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
       */
       static size_t lookup_ub(const OID& oid);
 
+      /**
+      * Return a canonical byte encoding
+      *
+      * Internal interface, not covered by SemVer
+      */
+      const std::vector<uint8_t>& _canonical_bytes() const { return m_canonical_dn_bits; }
+
    private:
+      void update_canonical_bits();
+
       // Outer vector: sequence of RDNs. Inner vector: AVAs within
       // one RDN (X.501 SET OF AttributeTypeAndValue).
       std::vector<std::vector<std::pair<OID, ASN1_String>>> m_rdn;
       std::vector<uint8_t> m_dn_bits;
+      std::vector<uint8_t> m_canonical_dn_bits;
 };
 
 BOTAN_PUBLIC_API(2, 0) bool operator==(const X509_DN& dn1, const X509_DN& dn2);
@@ -161,7 +183,12 @@ It is intended for allowing DNs as keys in std::map and similar containers
 BOTAN_PUBLIC_API(2, 0) bool operator<(const X509_DN& dn1, const X509_DN& dn2);
 
 BOTAN_PUBLIC_API(2, 0) std::ostream& operator<<(std::ostream& out, const X509_DN& dn);
-BOTAN_PUBLIC_API(2, 0) std::istream& operator>>(std::istream& in, X509_DN& dn);
+
+/**
+* Parse the input stream as a DN
+* Prefer X509_DN::parse
+*/
+BOTAN_DEPRECATED_API("Use X509_DN::parse") std::istream& operator>>(std::istream& in, X509_DN& dn);
 
 /**
 * Alternative Name
@@ -341,6 +368,12 @@ class BOTAN_PUBLIC_API(2, 0) AlternativeName final : public ASN1_Object {
 
       BOTAN_DEPRECATED("Use AlternativeName::othernames") std::multimap<OID, ASN1_String> get_othernames() const;
 
+      /**
+      * This returns all of the alternative name DNs combined into a single DN
+      *
+      * This result is not a valid DN. The logic is retained for compatibility,
+      * but this function should not be used. It will be removed in Botan4.
+      */
       BOTAN_DEPRECATED("Use AlternativeName::directory_names") X509_DN dn() const;
 
       BOTAN_DEPRECATED("Use plain constructor plus add_{uri,dns,email,ipv4_address}")
@@ -696,7 +729,7 @@ class BOTAN_PUBLIC_API(2, 0) Certificate_Extension /* NOLINT(*-special-member-fu
                             const std::optional<X509_Certificate>& issuer,
                             const std::vector<X509_Certificate>& cert_path,
                             std::vector<std::set<Certificate_Status_Code>>& cert_status,
-                            size_t pos);
+                            size_t pos) const;
 
       virtual ~Certificate_Extension() = default;
 
@@ -850,6 +883,15 @@ class BOTAN_PUBLIC_API(2, 0) Extensions final : public ASN1_Object {
       * as the criticality flag.
       */
       std::vector<std::pair<std::unique_ptr<Certificate_Extension>, bool>> extensions() const;
+
+      /**
+      * Invoke the validation callback for each extension.
+      */
+      void validate(const X509_Certificate& subject,
+                    const std::optional<X509_Certificate>& issuer,
+                    const std::vector<X509_Certificate>& cert_path,
+                    std::vector<std::set<Certificate_Status_Code>>& cert_status,
+                    size_t pos) const;
 
       /**
       * Returns the list of extensions as raw, encoded bytes
