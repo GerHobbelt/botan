@@ -31,10 +31,11 @@ from enum import IntEnum
 
 # This Python module requires the FFI API version introduced in Botan 3.11.0
 #
+# 3.13.0 - botan_hash_security_level
 # 3.12.0 - EcScalar/EcPoint, DRBG
 # 3.11.0 - XOF API
 # 3.10.0 - introduced botan_pubkey_load_ec*_sec1()
-BOTAN_FFI_VERSION = 20260506
+BOTAN_FFI_VERSION = 20260811
 
 #
 # Base exception for all exceptions raised from this module
@@ -168,6 +169,7 @@ def _set_prototypes(dll):
     ffi_api(dll.botan_hash_copy_state, [c_void_p, c_void_p])
     ffi_api(dll.botan_hash_output_length, [c_void_p, POINTER(c_size_t)])
     ffi_api(dll.botan_hash_block_size, [c_void_p, POINTER(c_size_t)])
+    ffi_api(dll.botan_hash_security_level, [c_void_p, POINTER(c_size_t)])
     ffi_api(dll.botan_hash_update, [c_void_p, c_char_p, c_size_t])
     ffi_api(dll.botan_hash_final, [c_void_p, c_char_p])
     ffi_api(dll.botan_hash_clear, [c_void_p])
@@ -1132,6 +1134,10 @@ class HashFunction:
         """Return block size in bytes"""
         return self.__block_size
 
+    def security_level(self) -> int:
+        """Return the estimated security level, in bits, wrt collision resistance"""
+        return _call_fn_returning_sz(lambda level: _DLL.botan_hash_security_level(self.__obj, level))
+
     def update(self, x: str | bytes):
         """Add some input"""
         bits = _ctype_bits(x)
@@ -1652,6 +1658,24 @@ class PublicKey: # pylint: disable=invalid-name
     def load_classic_mceliece(cls, cmce_mode: str, key: bytes) -> PublicKey:
         pub = PublicKey()
         _DLL.botan_pubkey_load_classic_mceliece(byref(pub.handle_()), key, len(key), _ctype_str(cmce_mode))
+        return pub
+
+    @classmethod
+    def load_x25519(cls, key: bytes) -> PublicKey:
+        """Return a public X25519 key from 32 raw bytes"""
+        if len(key) != 32:
+            raise BotanException("Invalid input length to load_x25519")
+        pub = PublicKey()
+        _DLL.botan_pubkey_load_x25519(byref(pub.handle_()), key)
+        return pub
+
+    @classmethod
+    def load_x448(cls, key: bytes) -> PublicKey:
+        """Return a public X448 key from 56 raw bytes"""
+        if len(key) != 56:
+            raise BotanException("Invalid input length to load_x448")
+        pub = PublicKey()
+        _DLL.botan_pubkey_load_x448(byref(pub.handle_()), key)
         return pub
 
     def __del__(self):

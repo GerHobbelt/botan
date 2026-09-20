@@ -668,7 +668,11 @@ BER_Decoder& BER_Decoder::operator=(BER_Decoder&&) noexcept = default;
 /*
 * Request for an object to decode itself
 */
-BER_Decoder& BER_Decoder::decode(ASN1_Object& obj, ASN1_Type /*unused*/, ASN1_Class /*unused*/) {
+BER_Decoder& BER_Decoder::decode(ASN1_Object& obj, ASN1_Type type_tag, ASN1_Class class_tag) {
+   // TODO support this case properly
+   if(type_tag != ASN1_Type::NoObject || class_tag != ASN1_Class::NoObject) {
+      throw Not_Implemented("BER_Decoder::decode(ASN1_Object) does not support implicit tagged decoding");
+   }
    obj.decode_from(*this);
    return (*this);
 }
@@ -789,28 +793,39 @@ BER_Decoder& BER_Decoder::decode(BigInt& out, ASN1_Type type_tag, ASN1_Class cla
       }
    }
 
-   const uint8_t first = obj.bits()[0];
-   const bool negative = (first & 0x80) == 0x80;
+   out = ASN1::integer_from_contents(obj.data());
+
+   return (*this);
+}
+
+BigInt ASN1::integer_from_contents(std::span<const uint8_t> contents) {
+   if(contents.empty()) {
+      throw BER_Decoding_Error("INTEGER encoding has no content octets");
+   }
+
+   BigInt out;
+
+   const bool negative = (contents[0] & 0x80) == 0x80;
 
    if(negative) {
-      secure_vector<uint8_t> vec(obj.bits(), obj.bits() + obj.length());
-      for(size_t i = obj.length(); i > 0; --i) {
+      secure_vector<uint8_t> vec(contents.begin(), contents.end());
+      for(size_t i = vec.size(); i > 0; --i) {
          const bool gt0 = (vec[i - 1] > 0);
          vec[i - 1] -= 1;
          if(gt0) {
             break;
          }
       }
-      for(size_t i = 0; i != obj.length(); ++i) {
-         vec[i] = ~vec[i];
+      for(auto& byte : vec) {
+         byte = ~byte;
       }
       out._assign_from_bytes(vec);
-      out.flip_sign();
+      out.set_sign(BigInt::Negative);
    } else {
-      out._assign_from_bytes(obj.data());
+      out._assign_from_bytes(contents);
    }
 
-   return (*this);
+   return out;
 }
 
 namespace {
