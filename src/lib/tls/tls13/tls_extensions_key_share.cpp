@@ -25,12 +25,30 @@ namespace Botan::TLS {
 
 namespace {
 
+// RFC 8446 4.2.8.2: TLS 1.3 removes ec_point_formats negotiation and
+// requires that ECDH key shares are uncompressed.
+//
+// This logic happens to also work for the existing PQ shares since they
+// place the ECDH part of the key share first
+void check_ecdh_uncompressed_format(Group_Params group, std::span<const uint8_t> bytes) {
+   const auto hybrid_ecc = group.pqc_hybrid_ecc();
+   const bool has_ecdh =
+      group.is_ecdh_named_curve() || (hybrid_ecc.has_value() && Group_Params(hybrid_ecc.value()).is_ecdh_named_curve());
+   if(!has_ecdh) {
+      return;
+   }
+   if(bytes.empty() || bytes[0] != 0x04) {
+      throw TLS_Exception(Alert::IllegalParameter, "TLS 1.3 ECDH key share must use uncompressed point format");
+   }
+}
+
 class Key_Share_Entry {
    public:
       explicit Key_Share_Entry(TLS_Data_Reader& reader) {
          // TODO check that the group actually exists before casting...
          m_group = static_cast<Named_Group>(reader.get_uint16_t());
-         m_key_exchange = reader.get_tls_length_value(2);
+         // RFC 8446 4.2.8: opaque key_exchange<1..2^16-1>
+         m_key_exchange = reader.get_range<uint8_t>(2, 1, 65535);
       }
 
       // Create an empty Key_Share_Entry with the selected group
@@ -90,6 +108,7 @@ class Key_Share_Entry {
                                          const Policy& policy,
                                          Callbacks& cb,
                                          RandomNumberGenerator& rng) {
+         check_ecdh_uncompressed_format(m_group, client_share.m_key_exchange);
          auto [encapsulated_shared_key, shared_key] =
             KEM_Encapsulation::destructure(cb.tls_kem_encapsulate(m_group, client_share.m_key_exchange, rng, policy));
          m_key_exchange = std::move(encapsulated_shared_key);
@@ -109,6 +128,7 @@ class Key_Share_Entry {
          auto scope = scoped_cleanup([&] { m_private_key.reset(); });
          BOTAN_ASSERT_NOMSG(m_group == received.m_group);
          BOTAN_STATE_CHECK(m_private_key != nullptr);
+         check_ecdh_uncompressed_format(m_group, received.m_key_exchange);
          return cb.tls_kem_decapsulate(m_group, *m_private_key, received.m_key_exchange, rng, policy);
       }
 
@@ -176,7 +196,9 @@ class Key_Share_ClientHello {
          const auto read_bytes_so_far_begin = reader.read_so_far();
          auto remaining = [&] {
             const auto read_so_far = reader.read_so_far() - read_bytes_so_far_begin;
-            BOTAN_STATE_CHECK(read_so_far <= client_key_share_length);
+            if(read_so_far > client_key_share_length) {
+               throw TLS_Exception(Alert::DecodeError, "Inconsistent length in client KeyShare extension");
+            }
             return client_key_share_length - read_so_far;
          };
 

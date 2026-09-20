@@ -445,13 +445,24 @@ void Channel_Impl_12::process_application_data(uint64_t seq_no, const secure_vec
       throw Unexpected_Message("Application data before handshake done");
    }
 
+   // ApplicationData must arrive under a non-zero read epoch
+   const uint16_t read_epoch =
+      m_is_datagram ? static_cast<uint16_t>(seq_no >> 48) : sequence_numbers().current_read_epoch();
+   if(read_epoch == 0) {
+      throw Unexpected_Message("Application data received in unexpected read epoch");
+   }
+
    callbacks().tls_record_received(seq_no, record);
 }
 
 void Channel_Impl_12::process_alert(const secure_vector<uint8_t>& record) {
    const Alert alert_msg(record);
 
-   if(alert_msg.type() == Alert::NoRenegotiation) {
+   // RFC 5246 7.2.2:
+   //    no_renegotiation
+   //       Sent by the client in response to a hello request or by the
+   //       server in response to a client hello after initial handshaking.
+   if(alert_msg.type() == Alert::NoRenegotiation && active_state() != nullptr) {
       m_pending_state.reset();
    }
 
@@ -543,7 +554,7 @@ void Channel_Impl_12::send_alert(const Alert& alert) {
       }
    }
 
-   if(alert.type() == Alert::NoRenegotiation) {
+   if(alert.type() == Alert::NoRenegotiation && active_state() != nullptr) {
       m_pending_state.reset();
    }
 
