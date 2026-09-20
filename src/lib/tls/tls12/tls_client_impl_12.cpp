@@ -54,6 +54,8 @@ class Client_Handshake_State_12 final : public Handshake_State {
 
       void mark_as_renegotiation() { m_is_reneg = true; }
 
+      size_t note_hello_verify_request() { return ++m_hello_verify_requests; }
+
       const secure_vector<uint8_t>& resume_master_secret() const {
          BOTAN_STATE_CHECK(is_a_resumption());
          return m_resumed_session->master_secret();
@@ -90,6 +92,7 @@ class Client_Handshake_State_12 final : public Handshake_State {
       // Used during session resumption
       std::optional<Session> m_resumed_session;
       bool m_is_reneg = false;
+      size_t m_hello_verify_requests = 0;
 };
 
 }  // namespace
@@ -293,6 +296,22 @@ void Client_Impl_12::process_handshake_msg(Handshake_State& state_base,
    }
 
    if(type == Handshake_Type::HelloVerifyRequest) {
+      // RFC 6347 4.2.1 requires tolerating more than one: "This may result in
+      // clients receiving multiple HelloVerifyRequest messages with different
+      // cookies. Clients SHOULD handle this by sending a new ClientHello with a
+      // cookie in response to the new HelloVerifyRequest."
+      //
+      // Each one makes us re-send the ClientHello, and a HelloVerifyRequest is
+      // unauthenticated epoch-zero data that resets the retransmission counter,
+      // so an unbounded stream of forged ones would have us flood the server
+      // indefinitely. Bound how many we will act on.
+      const size_t hello_verify_requests = state.note_hello_verify_request();
+      const std::optional<size_t> max_hello_verify_requests = policy().dtls_maximum_hello_verify_requests();
+
+      if(max_hello_verify_requests.has_value() && hello_verify_requests > max_hello_verify_requests.value()) {
+         throw TLS_Exception(Alert::UnexpectedMessage, "Too many DTLS HelloVerifyRequest messages");
+      }
+
       state.set_expected_next(Handshake_Type::ServerHello);
       state.set_expected_next(Handshake_Type::HelloVerifyRequest);  // might get it again
 
@@ -744,8 +763,8 @@ void Client_Impl_12::process_handshake_msg(Handshake_State& state_base,
 
       // Give the application a chance for a final veto before fully
       // establishing the connection.
-      callbacks().tls_session_established([&, this] {
-         Session_Summary summary(session_info, state.is_a_resumption(), external_psk_identity());
+      callbacks().tls_session_established([&] {
+         Session_Summary summary(session_info, state.is_a_resumption(), state.psk_identity());
          summary.set_session_id(state.server_hello()->session_id());
          if(const auto* nst = state.new_session_ticket()) {
             summary.set_session_ticket(nst->ticket());
@@ -779,6 +798,8 @@ void Client_Impl_12::process_handshake_msg(Handshake_State& state_base,
             }
          }
       }
+
+      note_resumption_handle(handle);
 
       activate_session();
    } else {

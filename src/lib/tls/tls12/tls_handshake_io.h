@@ -139,7 +139,8 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
                             uint64_t initial_timeout_ms,
                             uint64_t max_timeout_ms,
                             std::optional<size_t> max_retransmissions,
-                            size_t max_handshake_msg_size);
+                            size_t max_handshake_msg_size,
+                            uint16_t initial_epoch = 0);
 
       Protocol_Version initial_record_version() const override;
 
@@ -203,8 +204,17 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
                                                uint16_t message_seq,
                                                bool retransmitted_flight);
 
+      // Drop buffered messages left over from an earlier handshake, identified
+      // by an epoch below the most recently delivered one.
+      void discard_stale_epoch_messages();
+
       void retransmit_flight(size_t flight);
       void retransmit_last_flight();
+      void replay_last_flight_for_peer();
+
+      // Index of the last completed outgoing flight, or nullopt when no
+      // flight has been sent yet.
+      std::optional<size_t> last_completed_flight_index() const;
 
       std::vector<uint8_t> format_fragment(const uint8_t fragment[],
                                            size_t fragment_len,
@@ -231,6 +241,10 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
                               Handshake_Type msg_type,
                               size_t msg_length);
 
+            // Set by the first fragment, which fixes the header metadata and
+            // (in Datagram_Handshake_IO) charges the reassembly budget.
+            bool initialized() const { return m_msg_type != Handshake_Type::None; }
+
             bool complete() const;
 
             uint16_t epoch() const { return m_epoch; }
@@ -239,9 +253,6 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
             size_t msg_length() const { return m_msg_length; }
 
             std::pair<Handshake_Type, std::vector<uint8_t>> message() const;
-
-            // Release the memory buffers; called after reassembly has completed
-            void release_buffers();
 
          private:
             Handshake_Type m_msg_type = Handshake_Type::None;
@@ -254,6 +265,21 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
             std::vector<uint8_t> m_received_mask;
             std::vector<uint8_t> m_message;
       };
+
+      // Add a fragment to a reassembly slot, charging the slot's declared
+      // length against the pending-reassembly budget at its first fragment.
+      // Returns false, adding nothing, if the budget ceiling would be exceeded.
+      bool charged_add_fragment(Handshake_Reassembly& reassembly,
+                                size_t ceiling,
+                                const uint8_t fragment[],
+                                size_t fragment_length,
+                                size_t fragment_offset,
+                                uint16_t epoch,
+                                Handshake_Type msg_type,
+                                size_t msg_length);
+
+      // Uncommit a reassembly buffer's bytes from the pending-reassembly budget.
+      void release_reassembly_bytes(const Handshake_Reassembly& reassembly);
 
       struct Message_Info final {
             Message_Info(uint16_t e, Handshake_Type mt, const std::vector<uint8_t>& msg) :
@@ -274,8 +300,6 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
       std::optional<uint16_t> m_retransmitted_ccs_epoch;
       std::optional<uint16_t> m_retransmitted_finished_epoch;
       std::map<Handshake_Type, std::pair<uint16_t, Handshake_Reassembly>> m_retransmitted_messages;
-      bool m_retransmitted_server_hello_complete = false;
-      bool m_retransmitted_server_hello_done_complete = false;
       std::vector<std::vector<uint16_t>> m_flights;
       // Each entry records where in the corresponding flight a CCS was sent
       // and the epoch under which it was transmitted.
@@ -303,15 +327,38 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
       // cannot be spelled as a reserved timestamp.
       std::optional<uint64_t> m_last_write;
 
+      // Flight replays the peer has cued since the current flight was sent.
+      // Kept apart from the timer's own budget because the cue for it is
+      // unauthenticated. See replay_last_flight_for_peer.
+      size_t m_peer_replay_count = 0;
+
       uint64_t m_next_timeout = 0;
 
       uint16_t m_in_message_seq = 0;
       uint16_t m_out_message_seq = 0;
 
+      // Epoch of the first delivered incoming message; its presence also
+      // guards format(), which is not the same as m_in_message_seq being
+      // non-zero once that counter wraps.
+      std::optional<uint16_t> m_first_delivered_epoch;
+
+      // Set once m_in_message_seq wraps, after which all handshake input is
+      // refused; see process_handshake_fragment.
+      bool m_in_message_seq_wrapped = false;
+
+      // Epoch in force when this handshake began. Records from the previous one
+      // sit at or below it, and a Finished has to sit above it.
+      uint16_t m_initial_epoch;
+
+      // Epoch of the most recently delivered incoming handshake message. Used
+      // to reject records held over from a previous handshake.
+      uint16_t m_last_delivered_epoch = 0;
+
       writer_fn m_send_hs;
       steady_clock_fn m_steady_clock_ms;
       uint16_t m_mtu;
       size_t m_max_handshake_msg_size;
+      size_t m_max_pending_reassembly;
 };
 
 }  // namespace Botan::TLS

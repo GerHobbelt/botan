@@ -473,20 +473,23 @@ class BOTAN_PUBLIC_API(2, 0) Policy /* NOLINT(*-special-member-functions) */ {
       virtual std::optional<uint16_t> record_size_limit() const;
 
       /**
-       * Defines the minimum plaintext size of any protected TLS 1.3 record.
-       * If an outgoing record contains less plaintext payload than this value,
-       * it will be transparently padded to reach the specified minimum size.
+       * Defines the number of padding octets added to a protected TLS 1.3
+       * record that contains @p plaintext_bytes of plaintext. The plaintext
+       * size is counted like the record size limit, i.e. per RFC 8449 4.:
+       * "The value includes the content type and padding added in TLS 1.3
+       * (that is, the complete length of TLSInnerPlaintext)."
        *
        * This may be used to reduce the amount of information leaked by the
        * length of TLS records.
        *
-       * The value must be compatible with the negotiated record size limit.
+       * Padding that would grow a record beyond the negotiated record size
+       * limit is truncated to reach exactly that limit.
        *
        * @note This feature is available in TLS 1.3 only (see RFC 9846 5.4).
        *
-       * Default: std::nullopt (no minimum record size is enforced)
+       * Default: 0 (records are not padded)
        */
-      virtual std::optional<uint16_t> minimum_record_size() const;
+      virtual size_t record_padding_bytes(size_t plaintext_bytes) const;
 
       /**
       * Indicates whether certificate status messages should be supported
@@ -595,6 +598,21 @@ class BOTAN_PUBLIC_API(2, 0) Policy /* NOLINT(*-special-member-functions) */ {
       * protocol requirement.
       */
       virtual std::optional<size_t> dtls_maximum_retransmissions() const;
+
+      /**
+      * @return the number of HelloVerifyRequest messages a DTLS client will act
+      * on within one handshake before abandoning it. Return nullopt to accept
+      * them without limit; return 0 to reject any cookie exchange.
+      *
+      * RFC 6347 4.2.1 requires more than one to be tolerated: "This may result
+      * in clients receiving multiple HelloVerifyRequest messages with different
+      * cookies. Clients SHOULD handle this by sending a new ClientHello with a
+      * cookie in response to the new HelloVerifyRequest." A HelloVerifyRequest
+      * is unauthenticated and carries no retransmission state of its own, so
+      * without a bound a forged stream of them makes a client re-send its
+      * ClientHello indefinitely.
+      */
+      virtual std::optional<size_t> dtls_maximum_hello_verify_requests() const;
 
       /**
       * @return the maximum size of a single handshake message, in bytes.
@@ -883,7 +901,7 @@ class BOTAN_PUBLIC_API(2, 0) Text_Policy : public Policy {
 
       std::optional<uint16_t> record_size_limit() const override;
 
-      std::optional<uint16_t> minimum_record_size() const override;
+      size_t record_padding_bytes(size_t plaintext_bytes) const override;
 
       bool support_cert_status_message() const override;
 
@@ -907,6 +925,8 @@ class BOTAN_PUBLIC_API(2, 0) Text_Policy : public Policy {
       size_t dtls_initial_timeout() const override;
 
       size_t dtls_maximum_timeout() const override;
+
+      std::optional<size_t> dtls_maximum_hello_verify_requests() const override;
 
       bool require_cert_revocation_info() const override;
 

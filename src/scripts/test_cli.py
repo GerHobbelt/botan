@@ -12,7 +12,7 @@ import binascii
 import json
 import logging
 import multiprocessing
-import optparse # pylint: disable=deprecated-module
+import optparse  # pylint: disable=deprecated-module
 import os
 import platform
 import random
@@ -26,9 +26,9 @@ import tempfile
 import threading
 import time
 import traceback
-from multiprocessing.pool import ThreadPool
 from http.client import HTTPSConnection
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from multiprocessing.pool import ThreadPool
 
 # pylint: disable=global-statement,unused-argument
 
@@ -280,13 +280,12 @@ def test_cli(cmd, cmd_options,
         if expected_stderr is not None:
             logging.error('Expected output on stderr but got nothing', stack_info=True)
 
-    if expected_output is not None:
-        if stdout != expected_output:
-            logging.error("Got unexpected output running cmd %s %s", cmd, cmd_options, stack_info=True)
-            if len(stdout) != len(expected_output):
-                logging.info("Output lengths %d vs expected %d", len(stdout), len(expected_output))
-            logging.info("Got %s", stdout)
-            logging.info("Exp %s", expected_output)
+    if expected_output is not None and stdout != expected_output:
+        logging.error("Got unexpected output running cmd %s %s", cmd, cmd_options, stack_info=True)
+        if len(stdout) != len(expected_output):
+            logging.info("Output lengths %d vs expected %d", len(stdout), len(expected_output))
+        logging.info("Got %s", stdout)
+        logging.info("Exp %s", expected_output)
 
     return stdout
 
@@ -306,12 +305,12 @@ def cli_config_tests(_tmp_dir):
     if platform.system() == 'Windows':
         if len(prefix) < 4 or prefix[1] != ':' or prefix[2] != '\\':
             logging.error("Bad prefix %s", prefix)
-        if not ldflags.endswith(("-L%s\\lib" % (prefix))):
+        if not ldflags.endswith("-L%s\\lib" % (prefix)):
             logging.error("Bad ldflags %s", ldflags)
     else:
         if len(prefix) < 4 or prefix[0] != '/':
             logging.error("Bad prefix %s", prefix)
-        if not ldflags.endswith(("-L%s/lib" % (prefix))):
+        if not ldflags.endswith("-L%s/lib" % (prefix)):
             logging.error("Bad ldflags %s", ldflags)
     if ("-I%s/include/botan-3" % (prefix)) not in cflags and ("-I%s/include" % (prefix)) not in cflags:
         logging.error("Bad cflags %s", cflags)
@@ -336,6 +335,68 @@ def cli_version_tests(_tmp_dir):
     version_full_re = re.compile(r'Botan [0-9]\.[0-9]+\.[0-9](\-[a-z]+[0-9]+)?( UNSAFE .* BUILD)? \(.*\)$')
     if not version_full_re.match(output):
         logging.error("Unexpected long version output %s", output)
+
+class OCSPTestHandler(BaseHTTPRequestHandler):
+    response_body = b''
+
+    def log_message(self, _format, *_args): # pylint: disable=arguments-differ
+        return
+
+    def do_POST(self): # pylint: disable=invalid-name
+        content_length = int(self.headers.get('Content-Length', '0'))
+        self.rfile.read(content_length)
+        body = type(self).response_body
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/ocsp-response')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+def cli_ocsp_check_tests(tmp_dir):
+    global TESTS_RUN
+
+    if not run_socket_tests() or not check_for_command('ocsp_check'):
+        return
+
+    fixture_dir = os.path.join(TEST_DATA_DIR, 'x509', 'ocsp', 'cli')
+
+    def fixture(name):
+        with open(os.path.join(fixture_dir, name), "rb") as fixture_file:
+            return fixture_file.read()
+
+    issuer = os.path.join(fixture_dir, 'issuer.der')
+    subject = os.path.join(fixture_dir, 'subject.der')
+
+    # The subject.der test cert has a AIA pointing to 127.0.0.1:38493
+    server = HTTPServer(('127.0.0.1', 38493), OCSPTestHandler)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    def run(response):
+        OCSPTestHandler.response_body = fixture(response)
+        return subprocess.run(
+            [CLI_PATH, 'ocsp_check', '--timeout=1000', subject, issuer],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False)
+
+    try:
+        TESTS_RUN += 2
+
+        unsigned = run('good-empty.der')
+        if unsigned.returncode != 1 or unsigned.stdout != 'OCSP check failed OCSP signature error\n' or unsigned.stderr:
+            logging.error("ocsp_check accepted an unsigned GOOD response: rc=%d stdout=%r stderr=%r",
+                          unsigned.returncode, unsigned.stdout, unsigned.stderr)
+
+        valid = run('good-issuer.der')
+        if valid.returncode != 0 or valid.stdout != 'OCSP check OK\n' or valid.stderr:
+            logging.error("ocsp_check rejected an issuer-authenticated GOOD response: rc=%d stdout=%r stderr=%r",
+                          valid.returncode, valid.stdout, valid.stderr)
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
 
 def cli_is_prime_tests(_tmp_dir):
     test_cli("is_prime", "5", "5 is probably prime")
@@ -1087,7 +1148,7 @@ def cli_timing_test_tests(_tmp_dir):
     output_re = re.compile('[0-9]+;[0-9];[0-9]+')
 
     for suite in timing_tests:
-        output = test_cli("timing_test", [suite, "--measurement-runs=16", "--warmup-runs=3", "--test-data-dir=%s" % TEST_DATA_DIR], None).split('\n')
+        output = test_cli("timing_test", [suite, "--measurement-runs=16", "--warmup-runs=3", "--test-data-dir=%s/timing" % TEST_DATA_DIR], None).split('\n')
 
         for line in output:
             if output_re.match(line) is None:
@@ -1938,9 +1999,8 @@ def cli_speed_tests(_tmp_dir):
     format_re_ks = re.compile(r'^AES-128/GCM\(16\).* [0-9]+ key schedule/sec; [0-9]+\.[0-9]+ ms/op .*\([0-9]+ (op|ops) in [0-9\.]+ ms\)')
     format_re_cipher = re.compile(r'^AES-128/GCM\(16\) .* buffer size [0-9]+ bytes: [0-9]+\.[0-9]+ MiB\/sec .*\([0-9]+\.[0-9]+ MiB in [0-9]+\.[0-9]+ ms\)')
     for line in output:
-        if format_re_ks.match(line) is None:
-            if format_re_cipher.match(line) is None:
-                logging.error('Unexpected line %s', line)
+        if format_re_ks.match(line) is None and format_re_cipher.match(line) is None:
+            logging.error('Unexpected line %s', line)
 
     output = test_cli("speed", ["--msec=%d" % (msec), "scrypt"], None).split('\n')
 
@@ -2026,7 +2086,7 @@ def main(args=None):
     CLI_PATH = args[1]
 
     global TEST_DATA_DIR
-    TEST_DATA_DIR = os.path.join(options.test_data_dir, 'src/tests/data/timing/')
+    TEST_DATA_DIR = os.path.join(options.test_data_dir, 'src/tests/data')
 
     test_regex = None
     if len(args) == 3:
@@ -2070,6 +2130,7 @@ def main(args=None):
         cli_key_tests,
         cli_marvin_tests,
         cli_mod_inverse_tests,
+        cli_ocsp_check_tests,
         cli_pbkdf_tune_tests,
         cli_pk_encrypt_tests,
         cli_pk_workfactor_tests,

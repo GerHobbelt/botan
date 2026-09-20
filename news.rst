@@ -1,8 +1,26 @@
 Release Notes
 ========================================
 
-Version 3.13.0, Not Yet Released
+Version 3.13.0, 2026-08-13
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Fix a blind SSRF during OCSP request processing. A malicious OCSP responder or
+  network attacker could cause the application to perform a blind GET to an
+  internal service. (GH #5815)
+
+* Fix a bug in ``AutoSeeded_RNG``, affecting only platforms without a system
+  RNG, where an API sequence of calling first ``clear``, followed by ``randomize``
+  writing to an empty buffer, resulted in the RNG object being considered seeded
+  even though it was not. (GH #5839 #5838)
+
+* Fix an integer overflow in Scrypt parameter handling, affecting 32-bit platforms.
+  (GH #5820 #5629)
+
+* Fix a bug where certain DN name constraints were not correctly enforced.
+
+* Fix an integer overflow in the FFI interface which might be exploitable
+  in unusual scenarios involving attacker-control cipher specifiers and
+  the raw block cipher (ECB) APIs. (GH #5805)
 
 * Add URI and email name constraint processing to X509 path validation (GH #5598)
 
@@ -12,10 +30,17 @@ Version 3.13.0, Not Yet Released
 * The default policy for TLS now no longer lists finite field Diffie-Hellman.
   If required for compatibility it must be enabled by the application. (GH #5782)
 
-* Fix DTLS 1.2 handshake retransmission edge cases, including pacing of
-  repeated timeout checks, replay of final flights after local activation,
-  partial server-flight delivery, and delayed server-side flight handling.
-  (GH #5696 #2310 #2498 #4022 #4036)
+* By default OCSP no longer accepts soft-fail conditions such as network failure.
+  (GH #5785 #5804)
+
+* DTLS 1.2 servers now must either set a DTLS cookie secret and provide the peer
+  network identity, or explicitly opt out of the cookie exchange by overriding
+  ``dtls_server_require_cookie_exchange`` to return false. (GH #5792)
+
+* Fix DTLS 1.2 handshake edge cases, including pacing of repeated timeout checks,
+  replay of final flights after local activation, partial server-flight delivery,
+  and delayed server-side flight handling. (GH #2310 #2498 #4022 #4036 #5696 #5790
+  #5791 #5792 #5793 #5800 #5801 #5802 #5803 #5811 #5829 #5834 #5835 #5836)
 
 * Add support for SPAKE2+ from RFC 9383 (GH #5711)
 
@@ -86,6 +111,10 @@ Version 3.13.0, Not Yet Released
 * Add hash to curve support for brainpool256r1, brainpool384r1, brainpool512r1,
   and numsp512d1 (GH #5754)
 
+* The hash to curve and and hash to scalar functions now enforce RFC 9380's rules
+  on hash function security, namely that the hash must have a security level at
+  least as strong as the curve itself. (GH #5758)
+
 * Improve the HTTP 1.0 client used for OCSP and CRL fetching (GH #5609)
 
 * Extend Blowfish to support keys up to 72 bytes in length (GH #5714)
@@ -106,24 +135,25 @@ Version 3.13.0, Not Yet Released
 
 * In the default TLS policy, prefer ECDSA over RSA signatures (GH #5727)
 
-* Add support for the Brainpool ECDH groups in TLS 1.3 as specified in RFC 8734
-  (GH #5691)
+* Add support for the Brainpool ECDH/ECDSA groups in TLS 1.3 as specified in RFC 8734
+  (GH #5691 #5771 #5772)
 
-* Add ``TLS::Policy::minimum_record_size``, which allows padding TLS 1.3 records
-  out to a minimum plaintext size (GH #5752)
+* Add ``TLS::Policy::record_padding_bytes``, which allows padding TLS 1.3
+  records, for example out to a minimum plaintext size or to a multiple of
+  some block size (GH #5752 #5843)
 
-* TLS 1.3 handshake hardening and various minor TLS fixes (GH #5664 #5721 #5767)
+* TLS 1.3 handshake hardening and various minor TLS fixes (GH #5664 #5721 #5767 #5810)
 
 * Improve ``Database`` abstraction type and make it easier to support databases
   other than SQLite, and validate SQL table names. (GH #5607 #5673)
 
 * Fix various bugs in the PKCS #11 wrapper (GH #5602)
 
-* Fix various bugs in the Pipe/Filter library (GH #5724)
+* Fix various bugs in the Pipe/Filter library (GH #5724 #5809)
 
 * Fix several issues in the compression wrappers (GH #5733)
 
-* Fix several errors in the Python binding (GH #5722)
+* Fix several errors in the Python binding (GH #5722 #5796 #5807 #5814)
 
 * Add getters for the RFC 3779 extensions to the FFI interface and Python binding
   (GH #5491)

@@ -664,8 +664,8 @@ void Server_Impl_12::process_finished_msg(Server_Handshake_State& pending_state,
 
       // Give the application a chance for a final veto before fully
       // establishing the connection.
-      callbacks().tls_session_established([&, this] {
-         Session_Summary summary(session_info, pending_state.is_a_resumption(), external_psk_identity());
+      callbacks().tls_session_established([&] {
+         Session_Summary summary(session_info, pending_state.is_a_resumption(), pending_state.psk_identity());
          summary.set_session_id(pending_state.server_hello()->session_id());
          return summary;
       }());
@@ -682,6 +682,8 @@ void Server_Impl_12::process_finished_msg(Server_Handshake_State& pending_state,
                handle->ticket().value(),
                static_cast<uint32_t>(policy().session_ticket_lifetime().count())));
          }
+
+         note_resumption_handle(handle);
       }
 
       if(pending_state.new_session_ticket() == nullptr && pending_state.server_hello()->supports_session_ticket()) {
@@ -798,6 +800,8 @@ void Server_Impl_12::session_resume(Server_Handshake_State& pending_state, const
          return session_manager().establish(session.session, session.handle.id());
       }
    }();
+
+   note_resumption_handle(new_handle);
 
    if(pending_state.server_hello()->supports_session_ticket()) {
       if(new_handle.has_value() && new_handle->is_ticket()) {
