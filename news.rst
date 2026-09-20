@@ -1,12 +1,35 @@
 Release Notes
 ========================================
 
+Version 3.12.0, Not Yet Released
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Optimize and improve certificate store search operations (GH #5510)
+
+* Skip OCSP/CRL revocation checks on certificate chains which were already
+  going to be rejected due to path validation errors (GH #5512)
+
+* Add ``BER_Decoder::Limits`` which allows controlling what DER/BER syntax is
+  accepted while decoding. (GH #5507 #5514)
+
+* Add ``BigInt::signum`` to simplify sign comparisons (GH #5519)
+
+* Improve handling of unknown X.509 certificate extensions (GH #5518)
+
+* Skip checking the self-signature of self-signed certificates during parsing (GH #5515)
+
+* Add an index to ``X509_CRL`` for fast revocation checks (GH #5511)
+
+* Add ``X509_Certificate::Tag`` for fast searching/indexing of certificates (GH #5509)
+
+* Change ``X509_Object`` to share immutable state between copies (GH #5504)
+
 Version 3.11.1, 2026-03-31
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* CVE-2026-35580: Resolve certificate verification bypass bug introduced in 3.11.0 (GH #5500)
+* CVE-2026-34580: Resolve certificate verification bypass bug introduced in 3.11.0 (GH #5500)
 
-* CVE-2026-35582: Resolve TLS 1.3 client authentication bypass (GH #5599)
+* CVE-2026-34582: Resolve TLS 1.3 client authentication bypass (GH #5599)
 
 * Add optimized Argon2 implementation using AVX512 (GH #5471)
 

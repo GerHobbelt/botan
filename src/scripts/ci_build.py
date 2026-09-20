@@ -17,7 +17,6 @@ import time
 import tempfile
 import optparse # pylint: disable=deprecated-module
 import multiprocessing
-import glob
 
 def get_concurrency():
     def_concurrency = 2
@@ -67,7 +66,9 @@ def known_targets():
         'nist',
         'no_pcurves',
         'no_tls12',
+        'optional-rngs',
         'no_tls13',
+        'pkcs11',
         'policy-bsi',
         'policy-fips140',
         'policy-modern',
@@ -115,7 +116,7 @@ class LoggingGroup:
             print("> Running '%s' took %d seconds" % (self.group_title, time_taken))
 
 def build_targets(target, target_os):
-    if target in ['shared', 'minimized', 'examples', 'limbo', 'wycheproof'] or target.startswith('policy-'):
+    if target in ['shared', 'minimized', 'examples', 'limbo', 'optional-rngs', 'pkcs11', 'wycheproof'] or target.startswith('policy-'):
         yield 'shared'
     elif target in ['static', 'fuzzers', 'cross-arm32-baremetal', 'emscripten', 'strubbing']:
         yield 'static'
@@ -500,15 +501,14 @@ def determine_flags(target, target_os, target_cpu, target_cc, cc_bin, ccache,
                 #       only works for individual test names.
                 test_cmd += ["--tpm2-tcti-name=disabled"]
 
-        if is_running_in_github_actions():
-            if 'BOTAN_BUILD_WITH_JITTERENTROPY' in os.environ:
-                flags += ['--enable-modules=jitter_rng']
-            if 'BOTAN_BUILD_WITH_ESDM' in os.environ:
-                flags += ['--with-esdm_rng']
+        if target in ['coverage', 'clang-tidy', 'optional-rngs']:
+            flags += ['--enable-modules=jitter_rng,esdm_rng']
 
         if target in ['coverage']:
             flags += ['--with-tpm']
             test_cmd += ['--run-online-tests']
+
+        if target in ['coverage', 'pkcs11']:
             if pkcs11_lib and os.access(pkcs11_lib, os.R_OK):
                 test_cmd += ['--pkcs11-lib=%s' % (pkcs11_lib)]
 
@@ -805,6 +805,7 @@ def main(args=None):
             'src/scripts/test_fuzzers.py',
             'src/scripts/test_cli.py',
             'src/scripts/repo_config.py',
+            'src/scripts/wycheproof.py',
             'src/scripts/python_unittests.py',
             'src/scripts/python_unittests_unix.py',
             'src/scripts/dev_tools/run_clang_format.py',
@@ -815,9 +816,6 @@ def main(args=None):
             'src/editors/vscode/scripts/test.py',
             'src/ct_selftest/ct_selftest.py'
         ]
-
-        # Add all nightly wycheproof runner scripts
-        py_scripts += glob.glob('src/scripts/wycheproof/**/*.py', recursive=True)
 
         # These commands have to run in the repository root to generate the correct
         # relative paths in the output. Otherwise GitHub Actions will not
@@ -1000,8 +998,8 @@ def main(args=None):
             cmds.append([py_interp, '-b'] + python_tests)
 
         if target in ['wycheproof']:
-            wycheproof_online_tests_dir = os.path.join(root_dir, 'src/scripts/wycheproof')
-            cmds.append(["indir:%s" % wycheproof_online_tests_dir, py_interp, "-m", "unittest"])
+            wycheproof_test_script = os.path.join(root_dir, 'src/scripts/wycheproof.py')
+            cmds.append([py_interp, wycheproof_test_script])
 
         if target in ['shared', 'static']:
             cmds.append(make_cmd + ['install'])
@@ -1036,8 +1034,8 @@ def main(args=None):
         cmds.append(make_cmd + ['distclean'])
 
     esdm_process = None
-    # start ESDM in background, if on Linux
-    if is_running_in_github_actions() and 'BOTAN_BUILD_WITH_ESDM' in os.environ:
+    # start ESDM in background if needed
+    if target in ['coverage', 'optional-rngs']:
         print('Starting esdm-server for this target')
         esdm_process = subprocess.Popen('sudo /usr/bin/esdm-server -f', shell=True)
         assert esdm_process.poll() is None, f"esdm-server did not start for target {target}"

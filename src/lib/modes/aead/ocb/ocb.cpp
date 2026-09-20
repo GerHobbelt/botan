@@ -193,6 +193,8 @@ void OCB_Mode::reset() {
    zeroise(m_checksum);
    m_last_nonce.clear();
    m_stretch.clear();
+   zeroise(m_nonce_buf);
+   zeroise(m_offset);
 }
 
 bool OCB_Mode::valid_nonce_length(size_t length) const {
@@ -506,6 +508,7 @@ void OCB_Decryption::finish_msg(secure_vector<uint8_t>& buffer, size_t offset) {
    const uint8_t* included_tag = &buf[remaining];
 
    if(!CT::is_equal(mac.data(), included_tag, tag_size()).as_bool()) {
+      clear_mem(std::span{buffer}.subspan(offset, remaining));
       throw Invalid_Authentication_Tag("OCB tag check failed");
    }
 

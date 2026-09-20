@@ -158,6 +158,8 @@ def _set_prototypes(dll):
     ffi_api(dll.botan_rng_reseed, [c_void_p, c_size_t])
     ffi_api(dll.botan_rng_reseed_from_rng, [c_void_p, c_void_p, c_size_t])
     ffi_api(dll.botan_rng_add_entropy, [c_void_p, c_char_p, c_size_t])
+    ffi_api(dll.botan_rng_init_drbg, [c_void_p, c_char_p, c_char_p, c_size_t])
+    ffi_api(dll.botan_rng_generate_with_input, [c_void_p, c_char_p, c_size_t, c_char_p, c_size_t])
     ffi_api(dll.botan_rng_destroy, [c_void_p])
 
     #  HASH
@@ -913,6 +915,11 @@ class RandomNumberGenerator:
         * 'custom': Adapter to user-defined callbacks
                     (needs additional named arguments get_callback= and, optionally, add_entropy_callback=)
         """
+        obj = kwargs.pop("_obj", None)
+        if isinstance(obj, c_void_p):
+            self.__obj = obj
+            return
+
         self.__obj = c_void_p(0)
         if rng_type == 'custom':
             custom_rng_ctx = _CustomRngContext(kwargs.pop("get_callback", None), kwargs.pop("add_entropy_callback", None))
@@ -964,6 +971,24 @@ class RandomNumberGenerator:
         out = create_string_buffer(length)
         _DLL.botan_rng_get(self.__obj, out, c_size_t(length))
         return _ctype_bufout(out)
+
+    def generate_with_input(self, length: int, additional_input: bytes) -> bytes:
+        """Generate random bytes with additional input mixed in (for DRBGs)"""
+        out = create_string_buffer(length)
+        _DLL.botan_rng_generate_with_input(
+            self.__obj, out, c_size_t(length),
+            additional_input, c_size_t(len(additional_input)))
+        return _ctype_bufout(out)
+
+    @staticmethod
+    def drbg(drbg_name: str, seed: bytes) -> RandomNumberGenerator:
+        """Create a seeded DRBG (e.g. "HMAC_DRBG(SHA-256)")
+
+        The seed should be the concatenation of entropy, nonce, and
+        personalization string."""
+        obj = c_void_p(0)
+        _DLL.botan_rng_init_drbg(byref(obj), _ctype_str(drbg_name), seed, c_size_t(len(seed)))
+        return RandomNumberGenerator(_obj=obj)
 
 #
 # Block cipher
@@ -1688,12 +1713,13 @@ class PrivateKey:
         self.__obj = obj
 
     @classmethod
-    def load(cls, val: str | bytes, passphrase: str = "") -> PrivateKey:
+    def load(cls, val: str | bytes, passphrase: str | None = None) -> PrivateKey:
         """Return a private key (DER or PEM formats accepted)"""
         priv = PrivateKey()
         rng_obj = c_void_p(0) # unused in recent versions
         bits = _ctype_bits(val)
-        _DLL.botan_privkey_load(byref(priv.handle_()), rng_obj, bits, len(bits), _ctype_str(passphrase))
+        passwd = None if passphrase is None else _ctype_str(passphrase)
+        _DLL.botan_privkey_load(byref(priv.handle_()), rng_obj, bits, len(bits), passwd)
         return priv
 
     @classmethod
@@ -1837,6 +1863,24 @@ class PrivateKey:
     def load_classic_mceliece(cls, cmce_mode: str, key: bytes) -> PrivateKey:
         priv = PrivateKey()
         _DLL.botan_privkey_load_classic_mceliece(byref(priv.handle_()), key, len(key), _ctype_str(cmce_mode))
+        return priv
+
+    @classmethod
+    def load_x25519(cls, key: bytes) -> PrivateKey:
+        """Return a private X25519 key from 32 raw bytes"""
+        if len(key) != 32:
+            raise BotanException("Invalid input length to load_x25519")
+        priv = PrivateKey()
+        _DLL.botan_privkey_load_x25519(byref(priv.handle_()), key)
+        return priv
+
+    @classmethod
+    def load_x448(cls, key: bytes) -> PrivateKey:
+        """Return a private X448 key from 56 raw bytes"""
+        if len(key) != 56:
+            raise BotanException("Invalid input length to load_x448")
+        priv = PrivateKey()
+        _DLL.botan_privkey_load_x448(byref(priv.handle_()), key)
         return priv
 
     def __del__(self):
