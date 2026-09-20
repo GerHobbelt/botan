@@ -216,12 +216,16 @@ std::unique_ptr<X509_Certificate_Data> parse_x509_cert_body(const X509_Object& o
             data->m_key_constraints.includes(Key_Constraints::KeyCertSign) || data->m_key_constraints.empty();
 
          /*
-         * If the extended key usages are set then we must restrict the
-         * usage in accordance with it as well.
+         * If the extended key usages are set then we must restrict the usage in
+         * accordance with it as well.
          *
-         * RFC 5280 does not define any extended key usages compatible
-         * with certificate signing, but some CAs seem to use serverAuth
-         * or clientAuth here.
+         * RFC 5280 does not define any extended key usages compatible with certificate
+         * signing, but some CAs use serverAuth, clientAuth, OCSPSigning, or AnyExtendedKeyUsage
+         * for this purpose, even though clearly all of these (besides AEKU) are invalid.
+         * This check at least allows excluding a certificate which is set for only eg
+         * timestamping or code signing, and that seems about the best we can possibly enforce.
+         * OpenSSL, BoringSSL, and Go all completely ignore EKUs in determining ability to
+         * issue certs.
          */
          const bool allowed_by_ext_ku = [](const std::vector<OID>& ext_ku) -> bool {
             if(ext_ku.empty()) {
@@ -672,18 +676,23 @@ bool X509_Certificate::matches_dns_name(std::string_view name) const {
    if(auto req_ipv4 = string_to_ipv4(name)) {
       const auto& ipv4_names = subject_alt_name().ipv4_address();
       return ipv4_names.contains(req_ipv4.value());
-   } else {
-      auto issued_names = subject_info("DNS");
+   }
 
-      // Fall back to CN only if no SAN is included
-      if(!data().m_subject_alt_name_exists) {
-         issued_names = subject_info("Name");
-      }
+   if(auto req_ipv6 = IPv6Address::from_string(name)) {
+      const auto& ipv6_names = subject_alt_name().ipv6_address();
+      return ipv6_names.contains(req_ipv6.value());
+   }
 
-      for(const auto& issued_name : issued_names) {
-         if(host_wildcard_match(issued_name, name)) {
-            return true;
-         }
+   auto issued_names = subject_info("DNS");
+
+   // Fall back to CN only if no SAN is included
+   if(!data().m_subject_alt_name_exists) {
+      issued_names = subject_info("Name");
+   }
+
+   for(const auto& issued_name : issued_names) {
+      if(host_wildcard_match(issued_name, name)) {
+         return true;
       }
    }
 
