@@ -471,6 +471,22 @@ bool Policy::allow_dtls_epoch0_restart() const {
    return false;
 }
 
+bool Policy::dtls_server_require_cookie_exchange() const {
+   /*
+   RFC 9147 Section 11 "Security Considerations":
+
+      The primary additional security consideration raised by DTLS is that of
+      denial of service by excessive resource consumption. DTLS includes a
+      cookie exchange designed to protect against denial of service. [...]
+      In particular, DTLS servers that do not use the cookie exchange may be
+      used as attack amplifiers even if they themselves are not experiencing
+      DoS. Therefore, DTLS servers SHOULD use the cookie exchange unless there
+      is good reason to believe that amplification is not a threat in their
+      environment.
+   */
+   return true;
+}
+
 size_t Policy::maximum_handshake_message_size() const {
    return 65536;
 }
@@ -494,6 +510,16 @@ size_t Policy::dtls_initial_timeout() const {
 
 size_t Policy::dtls_maximum_timeout() const {
    return 60 * 1000;
+}
+
+std::optional<size_t> Policy::dtls_maximum_retransmissions() const {
+   // Matches BoringSSL's DTLS1_MAX_TIMEOUTS.
+   //
+   // With the default schedule of a 1 second initial timeout and 60
+   // second maximum, this gives up after roughly 8 minutes
+   // (1+2+4+8+16+32+7*60 s).
+
+   return 12;
 }
 
 size_t Policy::dtls_default_mtu() const {

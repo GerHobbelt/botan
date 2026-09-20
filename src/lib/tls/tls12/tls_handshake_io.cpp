@@ -7,6 +7,7 @@
 
 #include <botan/internal/tls_handshake_io.h>
 
+#include <botan/assert.h>
 #include <botan/exceptn.h>
 #include <botan/tls_exceptn.h>
 #include <botan/tls_handshake_msg.h>
@@ -142,18 +143,34 @@ std::vector<uint8_t> Stream_Handshake_IO::send(const Handshake_Message& msg) {
    return buf;
 }
 
+#if defined(BOTAN_HAS_TLS_DOWNGRADE_SUPPORT)
+
+std::vector<uint8_t> Stream_Handshake_IO::start_with_client_hello_from_downgrade(
+   const Handshake_Message& client_hello) {
+   BOTAN_ARG_CHECK(client_hello.type() == Handshake_Type::ClientHello,
+                   "Expected ClientHello message for TLS downgrade");
+
+   // In TLS we don't have to update any internal state, we just need to
+   // format the Client Hello message for absorption into the handshake hash.
+   return format(client_hello.serialize(), client_hello.wire_type());
+}
+
+#endif
+
 Datagram_Handshake_IO::Datagram_Handshake_IO(writer_fn writer,
                                              steady_clock_fn steady_clock_ms,
                                              class Connection_Sequence_Numbers& seq,
                                              uint16_t mtu,
                                              uint64_t initial_timeout_ms,
                                              uint64_t max_timeout_ms,
+                                             std::optional<size_t> max_retransmissions,
                                              size_t max_handshake_msg_size) :
       m_seqs(seq),
       m_flights(1),
       m_flight_ccs(1),
       m_initial_timeout(initial_timeout_ms),
       m_max_timeout(max_timeout_ms),
+      m_max_retransmissions(max_retransmissions),
       m_send_hs(std::move(writer)),
       m_steady_clock_ms(std::move(steady_clock_ms)),
       m_mtu(mtu),
@@ -229,6 +246,19 @@ bool Datagram_Handshake_IO::timeout_check() {
       return false;
    }
 
+   // The retransmit timer has expired. Count this attempt and, once the
+   // configured cap is reached, abandon the handshake rather than retransmit
+   // forever. RFC 6347 4.2.4.1 gives the backoff schedule but states no
+   // condition for giving up, so the cap is local policy, not a requirement.
+   // No alert is sent - the peer is by definition unresponsive.
+   m_retransmit_count += 1;
+   if(m_max_retransmissions.has_value() && m_retransmit_count > m_max_retransmissions.value()) {
+      throw TLS_Exception(Alert::None, "DTLS handshake timed out: maximum retransmissions exceeded");
+   }
+
+   // retransmit_last_flight re-anchors m_last_write. Without that, once
+   // m_next_timeout saturates at m_max_timeout the elapsed time keeps growing
+   // and every subsequent poll fires another retransmission.
    retransmit_last_flight();
 
    m_next_timeout = std::min(2 * m_next_timeout, m_max_timeout);
@@ -251,7 +281,14 @@ std::optional<std::chrono::milliseconds> Datagram_Handshake_IO::next_retransmiss
       return std::chrono::milliseconds(0);
    }
 
-   return std::chrono::milliseconds(m_next_timeout - ms_since_write);
+   // BoringSSL reports a sub-15ms remainder as zero (ssl/d1_lib.cc
+   // DTLSTimer::MicrosecondsRemaining) to absorb divergence with caller
+   // scheduling; BoGo's DTLS-Retransmit-Fudge test requires it. The cap keeps
+   // the fudge from swallowing the very short timers some tests configure.
+   const uint64_t fudge_ms = std::min<uint64_t>(15, m_initial_timeout / 2);
+   const uint64_t remaining_ms = m_next_timeout - ms_since_write;
+
+   return std::chrono::milliseconds(remaining_ms <= fudge_ms ? 0 : remaining_ms);
 }
 
 void Datagram_Handshake_IO::add_record(const uint8_t record[],
@@ -659,9 +696,25 @@ std::vector<uint8_t> Datagram_Handshake_IO::send_under_epoch(const Handshake_Mes
    m_out_message_seq += 1;
    m_last_write = m_steady_clock_ms();
    m_next_timeout = m_initial_timeout;
+   // Sending a new flight is forward progress: reset the give-up counter so the
+   // retransmission budget applies per flight, not across the whole handshake.
+   m_retransmit_count = 0;
 
    return send_message(m_out_message_seq - 1, epoch, msg_type, msg_bits);
 }
+
+#if defined(BOTAN_HAS_TLS_DOWNGRADE_SUPPORT)
+
+std::vector<uint8_t> Datagram_Handshake_IO::start_with_client_hello_from_downgrade(
+   const Handshake_Message& client_hello) {
+   BOTAN_ARG_CHECK(client_hello.type() == Handshake_Type::ClientHello,
+                   "Expected ClientHello message for DTLS downgrade");
+   BOTAN_STATE_CHECK(m_out_message_seq == 0);
+   BOTAN_STATE_CHECK(m_seqs.current_write_epoch() == 0);
+   return format_w_seq(client_hello.serialize(), client_hello.wire_type(), m_out_message_seq++);
+}
+
+#endif
 
 std::vector<uint8_t> Datagram_Handshake_IO::send_message(uint16_t msg_seq,
                                                          uint16_t epoch,
@@ -669,26 +722,26 @@ std::vector<uint8_t> Datagram_Handshake_IO::send_message(uint16_t msg_seq,
                                                          const std::vector<uint8_t>& msg_bits) {
    auto no_fragment = format_w_seq(msg_bits, msg_type, msg_seq);
 
-   if(no_fragment.size() + DTLS_HEADER_SIZE <= m_mtu) {
+   /**
+   * Since CBC suites are no longer supported/allowed in DTLS, the largest
+   * possible ciphersuite overhead is 48 bytes, from NULL_WITH_SHA384. The AEAD
+   * suites add at most 24 bytes (8 byte explicit nonce plus 16 byte tag).
+   */
+   const size_t ciphersuite_overhead = (epoch > 0) ? 48 : 0;
+
+   if(no_fragment.size() + DTLS_HEADER_SIZE + ciphersuite_overhead <= m_mtu) {
+      // We think the entire final packet will fit into the MTU
       m_send_hs(epoch, Record_Type::Handshake, no_fragment);
    } else {
       size_t frag_offset = 0;
 
-      /**
-      * Largest possible overhead is for SHA-384 CBC ciphers, with 16 byte IV,
-      * 16+ for padding and 48 bytes for MAC. 128 is probably a strict
-      * over-estimate here. When CBC ciphers are removed this can be reduced
-      * since AEAD modes have no padding, at most 16 byte mac, and smaller
-      * per-record nonce.
-      */
-      const size_t ciphersuite_overhead = (epoch > 0) ? 128 : 0;
-      const size_t header_overhead = DTLS_HEADER_SIZE + DTLS_HANDSHAKE_HEADER_SIZE;
+      constexpr size_t DTLS_HANDSHAKE_OVERHEAD = DTLS_HEADER_SIZE + DTLS_HANDSHAKE_HEADER_SIZE;
 
-      if(m_mtu <= (header_overhead + ciphersuite_overhead)) {
+      if(m_mtu <= (DTLS_HANDSHAKE_OVERHEAD + ciphersuite_overhead)) {
          throw Invalid_Argument("DTLS MTU is too small to send headers");
       }
 
-      const size_t max_rec_size = m_mtu - (header_overhead + ciphersuite_overhead);
+      const size_t max_rec_size = m_mtu - (DTLS_HANDSHAKE_OVERHEAD + ciphersuite_overhead);
 
       while(frag_offset != msg_bits.size()) {
          const size_t frag_len = std::min<size_t>(msg_bits.size() - frag_offset, max_rec_size);

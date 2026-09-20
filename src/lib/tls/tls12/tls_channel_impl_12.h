@@ -237,9 +237,38 @@ class Channel_Impl_12 : public Channel_Impl {
       /* pending handshake state (null when no handshake is in progress) */
       std::unique_ptr<Handshake_State> m_pending_state;
 
+      // Epochs in force when the pending handshake began. Whether either has
+      // moved decides if an abandoned handshake can be discarded or has to
+      // take the association with it.
+      struct Epochs_Before_Latest_Renegotiation final {
+            uint16_t read_epoch;
+            uint16_t write_epoch;
+      };
+
+      void abandon_timed_out_handshake();
+
+      bool pending_handshake_epochs_unmoved() const;
+
+      void clear_pending_handshake_state();
+
+      /*
+      A read cipher state together with the point at which it stopped being the
+      current epoch, in Callbacks::tls_current_monotonic_clock_ms units, if it has.
+
+      The two are stored together deliberately. Epoch numbers are not unique for
+      the lifetime of the channel: reset_active_association_state() rewinds them,
+      so a DTLS epoch-0 restart produces a second epoch 1. A retirement time held
+      apart from the state it describes therefore outlives it and gets applied to
+      the reused epoch, expiring a brand new cipher state.
+      */
+      struct Retained_Read_Cipher_State final {
+            std::shared_ptr<Connection_Cipher_State> state;
+            std::optional<uint64_t> retired_at;
+      };
+
       /* cipher states for each epoch */
       std::map<uint16_t, std::shared_ptr<Connection_Cipher_State>> m_write_cipher_states;
-      std::map<uint16_t, std::shared_ptr<Connection_Cipher_State>> m_read_cipher_states;
+      std::map<uint16_t, Retained_Read_Cipher_State> m_read_cipher_states;
 
       /* I/O buffers */
       secure_vector<uint8_t> m_writebuf;
@@ -249,6 +278,8 @@ class Channel_Impl_12 : public Channel_Impl {
       bool m_has_been_closed;
 
       std::optional<Active_Connection_State_12> m_active_state;
+      // TODO(Botan4) remember to remove this when renegotiation support is dropped
+      std::optional<Epochs_Before_Latest_Renegotiation> m_epochs_before_latest_renegotiation;
 };
 
 }  // namespace TLS

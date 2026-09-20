@@ -535,6 +535,31 @@ class BOTAN_PUBLIC_API(2, 0) Policy /* NOLINT(*-special-member-functions) */ {
       virtual bool allow_dtls_epoch0_restart() const;
 
       /**
+      * DTLS defines an cookie exchange protocol which is used to ensure routability on
+      * the path between the server and client. This is especially useful when using a
+      * connectionless datagram layer like UDP, where a client's source address can
+      * easily be spoofed.
+      *
+      * This cookie exchange prevents abusing the server for DoS amplification attacks,
+      * and additionally provides assurance for the server that the client's purported
+      * address is theirs, which can be helpful for attribution/logging purposes.
+      *
+      * The server creates cookies by hashing the original client hello and the peer's
+      * source address along with a secret key. The cookie value is then sent back to
+      * the client address. The client can then retry the connection, with their updated
+      * client hello including the cookie value. So this cookie exchange implies one
+      * extra round trip during the handshake.
+      *
+      * By default this function returns true. If this function returns true then the
+      * DTLS session cookie `Credentials_Manager::dtls_cookie_secret` must be set, and
+      * `TLS::Callbacks::tls_peer_network_identity` must return a non-empty string.
+      *
+      * It is unsafe to disable this cookie exchange if the server is exposed to
+      * arbitrary Internet traffic.
+      */
+      virtual bool dtls_server_require_cookie_exchange() const;
+
+      /**
       * Return allowed ciphersuites, in order of preference for the provided
       * protocol version.
       *
@@ -557,6 +582,19 @@ class BOTAN_PUBLIC_API(2, 0) Policy /* NOLINT(*-special-member-functions) */ {
       * @return the maximum timeout for DTLS
       */
       virtual size_t dtls_maximum_timeout() const;
+
+      /**
+      * @return the maximum number of times a DTLS handshake flight will be
+      * retransmitted on timeouts before the handshake is abandoned. After this
+      * many timer-driven retransmissions without progress, timeout_check()
+      * throws to signal the handshake has failed. Return nullopt to retransmit
+      * indefinitely (the historical behavior).
+      *
+      * RFC 6347 4.2.4.1 gives the retransmission timer schedule but states no
+      * condition for giving up, so this bound is local policy rather than a
+      * protocol requirement.
+      */
+      virtual std::optional<size_t> dtls_maximum_retransmissions() const;
 
       /**
       * @return the maximum size of a single handshake message, in bytes.

@@ -70,12 +70,9 @@ class Channel_Impl_13 : public Channel_Impl,
             ~AggregatedMessages() = default;
 
             /**
-             * Send the messages aggregated in the message buffer. The buffer
-             * is returned if the sender needs to also handle it somehow.
-             * Most notable use: book keeping for a potential protocol downgrade
-             * in the client implementation.
+             * Send the messages aggregated in the message buffer.
              */
-            std::vector<uint8_t> send();
+            void send() const;
 
             bool contains_messages() const { return !m_message_buffer.empty(); }
 
@@ -243,17 +240,17 @@ class Channel_Impl_13 : public Channel_Impl,
       void opportunistically_update_traffic_keys() { m_opportunistic_key_update = true; }
 
       template <typename... MsgTs>
-      std::vector<uint8_t> send_handshake_message(const std::variant<MsgTs...>& message) {
-         return aggregate_handshake_messages().add(generalize_to<Handshake_Message_13_Ref>(message)).send();
+      void send_handshake_message(const std::variant<MsgTs...>& message) {
+         aggregate_handshake_messages().add(generalize_to<Handshake_Message_13_Ref>(message)).send();
       }
 
       template <typename MsgT>
-      std::vector<uint8_t> send_handshake_message(std::reference_wrapper<MsgT> message) {
-         return send_handshake_message(generalize_to<Handshake_Message_13_Ref>(message));
+      void send_handshake_message(std::reference_wrapper<MsgT> message) {
+         send_handshake_message(generalize_to<Handshake_Message_13_Ref>(message));
       }
 
-      std::vector<uint8_t> send_post_handshake_message(Post_Handshake_Message_13 message) {
-         return aggregate_post_handshake_messages().add(std::move(message)).send();
+      void send_post_handshake_message(Post_Handshake_Message_13 message) {
+         aggregate_post_handshake_messages().add(std::move(message)).send();
       }
 
       void send_dummy_change_cipher_spec();
@@ -293,6 +290,7 @@ class Channel_Impl_13 : public Channel_Impl,
       std::unique_ptr<Cipher_State> m_cipher_state;              // NOLINT(*non-private-member-variable*)
       std::optional<Active_Connection_State_13> m_active_state;  // NOLINT(*non-private-member-variable*)
 
+#if defined(BOTAN_HAS_TLS_DOWNGRADE_SUPPORT)
       /**
        * Indicate that we have to expect a downgrade to TLS 1.2. In which case the current
        * implementation (i.e. Client_Impl_13 or Server_Impl_13) will need to be replaced
@@ -303,6 +301,7 @@ class Channel_Impl_13 : public Channel_Impl,
        * @sa `Channel_Impl::Downgrade_Information`
        */
       void expect_downgrade(const Server_Information& server_info, const std::vector<std::string>& next_protocols);
+#endif
 
       /**
        * Set the record size limits as negotiated by the "record_size_limit"

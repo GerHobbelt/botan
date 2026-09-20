@@ -50,6 +50,10 @@ class Handshake_IO {
 
       virtual std::vector<uint8_t> send_under_epoch(const Handshake_Message& msg, uint16_t epoch) = 0;
 
+#if defined(BOTAN_HAS_TLS_DOWNGRADE_SUPPORT)
+      virtual std::vector<uint8_t> start_with_client_hello_from_downgrade(const Handshake_Message& client_hello) = 0;
+#endif
+
       virtual bool timeout_check() = 0;
 
       virtual std::optional<std::chrono::milliseconds> next_retransmission_timeout() const = 0;
@@ -101,6 +105,10 @@ class Stream_Handshake_IO final : public Handshake_IO {
 
       std::vector<uint8_t> send_under_epoch(const Handshake_Message& msg, uint16_t epoch) override;
 
+#if defined(BOTAN_HAS_TLS_DOWNGRADE_SUPPORT)
+      std::vector<uint8_t> start_with_client_hello_from_downgrade(const Handshake_Message& client_hello) override;
+#endif
+
       std::vector<uint8_t> format(const std::vector<uint8_t>& handshake_msg,
                                   Handshake_Type handshake_type) const override;
 
@@ -130,6 +138,7 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
                             uint16_t mtu,
                             uint64_t initial_timeout_ms,
                             uint64_t max_timeout_ms,
+                            std::optional<size_t> max_retransmissions,
                             size_t max_handshake_msg_size);
 
       Protocol_Version initial_record_version() const override;
@@ -143,6 +152,10 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
       std::vector<uint8_t> send(const Handshake_Message& msg) override;
 
       std::vector<uint8_t> send_under_epoch(const Handshake_Message& msg, uint16_t epoch) override;
+
+#if defined(BOTAN_HAS_TLS_DOWNGRADE_SUPPORT)
+      std::vector<uint8_t> start_with_client_hello_from_downgrade(const Handshake_Message& client_hello) override;
+#endif
 
       std::vector<uint8_t> format(const std::vector<uint8_t>& handshake_msg,
                                   Handshake_Type handshake_type) const override;
@@ -277,6 +290,13 @@ class BOTAN_TEST_API Datagram_Handshake_IO final : public Handshake_IO {
 
       uint64_t m_initial_timeout = 0;
       uint64_t m_max_timeout = 0;
+
+      // Maximum timer-driven retransmissions of the current flight before the
+      // handshake is abandoned (nullopt unlimited). m_retransmit_count tracks the
+      // number fired for the in-flight wait; it resets to 0 whenever a new
+      // flight is sent (forward progress) and is incremented on each timeout.
+      std::optional<size_t> m_max_retransmissions = 0;
+      size_t m_retransmit_count = 0;
 
       // Time the current flight was last written, unset until one has been.
       // A caller's clock may legitimately read zero, so the absence of a write

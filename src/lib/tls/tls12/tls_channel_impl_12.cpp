@@ -38,6 +38,53 @@ bool is_new_dtls_association_client_hello(std::span<const uint8_t> msg_and_heade
           load_be(msg_and_header.subspan<4, 2>()) == 0;
 }
 
+// Cap on the number of non-zero-epoch cipher states retained per direction.
+// The current epoch is in active use; one earlier epoch covers any in-flight
+// DTLS records sent immediately before a rekey. Epoch 0 is the pre-handshake
+// plaintext placeholder and is always retained.
+//
+// Note the logic in prune_epochs in tls_seq_numbers.h assumes this is exactly 2
+// so adjust that code if changing this.
+constexpr size_t TLS_RETAINED_CIPHERSTATES = 2;
+
+// The "default MSL specified for TCP" of RFC 6347 4.1; RFC 793 sets it to two
+// minutes. Bounds how long a retired DTLS read epoch stays usable.
+constexpr uint64_t TCP_MSL_MS = 2 * 60 * 1000;
+
+template <typename T>
+void prune_old_cipher_states(std::map<uint16_t, T>& states) {
+   // std::map iterates in ascending key order. Drop the lowest non-zero
+   // entries until at most TLS_RETAINED_CIPHERSTATES remain. The newly
+   // installed epoch is the highest key, so it is preserved.
+   size_t non_zero = states.size() - states.count(0);
+   auto it = states.lower_bound(1);
+   while(non_zero > TLS_RETAINED_CIPHERSTATES) {
+      it = states.erase(it);
+      --non_zero;
+   }
+}
+
+// Run fn, absorbing the exceptions that report malformed input when `absorb`
+// is set. Used where the input is unauthenticated epoch-zero data that must
+// not be able to tear down an established association. Only TLS_Exception and
+// Decoding_Error are absorbed: an Internal_Error from one of the reassembly
+// accounting assertions, or a failed allocation, still propagates rather than
+// leaving the association running on state those assertions exist to protect.
+template <typename F>
+void absorb_malformed_input_errors(bool absorb, F fn) {
+   try {
+      fn();
+   } catch(const TLS_Exception&) {
+      if(!absorb) {
+         throw;
+      }
+   } catch(const Decoding_Error&) {
+      if(!absorb) {
+         throw;
+      }
+   }
+}
+
 }  // namespace
 
 Channel_Impl_12::Channel_Impl_12(const std::shared_ptr<Callbacks>& callbacks,
@@ -61,7 +108,7 @@ Channel_Impl_12::Channel_Impl_12(const std::shared_ptr<Callbacks>& callbacks,
 
    /* epoch 0 is plaintext, thus null cipher state */
    m_write_cipher_states[0] = nullptr;
-   m_read_cipher_states[0] = nullptr;
+   m_read_cipher_states[0] = {};
 
    m_writebuf.reserve(reserved_io_buffer_size);
    m_readbuf.reserve(reserved_io_buffer_size);
@@ -70,6 +117,7 @@ Channel_Impl_12::Channel_Impl_12(const std::shared_ptr<Callbacks>& callbacks,
 void Channel_Impl_12::reset_state() {
    m_active_state.reset();
    m_pending_state.reset();
+   m_epochs_before_latest_renegotiation.reset();
    m_readbuf.clear();
    m_write_cipher_states.clear();
    m_read_cipher_states.clear();
@@ -83,7 +131,7 @@ void Channel_Impl_12::reset_active_association_state() {
    m_write_cipher_states.clear();
 
    m_write_cipher_states[0] = nullptr;
-   m_read_cipher_states[0] = nullptr;
+   m_read_cipher_states[0] = {};
 
    if(m_sequence_numbers) {
       m_sequence_numbers->reset();  // NOLINT(*-ambiguous-smartptr-reset-call)
@@ -102,7 +150,23 @@ std::shared_ptr<Connection_Cipher_State> Channel_Impl_12::read_cipher_state_epoc
    if(i == m_read_cipher_states.end()) {
       throw Internal_Error("TLS::Channel_Impl_12 No read cipherstate for epoch " + std::to_string(epoch));
    }
-   return i->second;
+
+   // RFC 6347 4.1: "In general, implementations SHOULD discard packets from
+   // earlier epochs, but if packet loss causes noticeable problems they MAY
+   // choose to retain keying material from previous epochs for up to the
+   // default MSL specified for TCP [TCP] to allow for packet reordering."
+   // read_dtls_record drops the record when this throws.
+   if(const auto& retired_at = i->second.retired_at; retired_at.has_value()) {
+      const auto now = callbacks().tls_current_monotonic_clock_ms();
+      const auto retired = retired_at.value();
+      BOTAN_ASSERT_NOMSG(now >= retired);
+      if(now - retired > TCP_MSL_MS) {
+         throw Invalid_State("TLS::Channel_Impl_12 Read cipherstate for epoch " + std::to_string(epoch) +
+                             " is past its retention window");
+      }
+   }
+
+   return i->second.state;
 }
 
 std::shared_ptr<Connection_Cipher_State> Channel_Impl_12::write_cipher_state_epoch(uint16_t epoch) const {
@@ -153,6 +217,9 @@ Handshake_State& Channel_Impl_12::create_handshake_state(Protocol_Version versio
       }
    }
 
+   m_epochs_before_latest_renegotiation = Epochs_Before_Latest_Renegotiation{sequence_numbers().current_read_epoch(),
+                                                                             sequence_numbers().current_write_epoch()};
+
    using namespace std::placeholders;
 
    std::unique_ptr<Handshake_IO> io;
@@ -160,6 +227,7 @@ Handshake_State& Channel_Impl_12::create_handshake_state(Protocol_Version versio
       const uint16_t mtu = static_cast<uint16_t>(policy().dtls_default_mtu());
       const size_t initial_timeout_ms = policy().dtls_initial_timeout();
       const size_t max_timeout_ms = policy().dtls_maximum_timeout();
+      const std::optional<size_t> max_retransmissions = policy().dtls_maximum_retransmissions();
 
       auto send_record_f = [this](uint16_t epoch, Record_Type record_type, const std::vector<uint8_t>& record) {
          send_record_under_epoch(epoch, record_type, record);
@@ -171,6 +239,7 @@ Handshake_State& Channel_Impl_12::create_handshake_state(Protocol_Version versio
                                                    mtu,
                                                    initial_timeout_ms,
                                                    max_timeout_ms,
+                                                   max_retransmissions,
                                                    policy().maximum_handshake_message_size());
    } else {
       auto send_record_f = [this](Record_Type rec_type, const std::vector<uint8_t>& record) {
@@ -188,12 +257,58 @@ Handshake_State& Channel_Impl_12::create_handshake_state(Protocol_Version versio
    return *m_pending_state;
 }
 
-bool Channel_Impl_12::timeout_check() {
-   if(m_is_datagram && !m_has_been_closed && m_pending_state) {
-      return m_pending_state->handshake_io().timeout_check();
+bool Channel_Impl_12::pending_handshake_epochs_unmoved() const {
+   // Nothing pending: there is nothing to act on, and the epoch markers are
+   // unset, so the comparison would be meaningless.
+   if(!m_pending_state || !m_epochs_before_latest_renegotiation.has_value()) {
+      return true;
    }
 
-   //FIXME: scan cipher suites and remove epochs older than 2*MSL
+   // Before either ChangeCipherSpec the established association still owns both
+   // epochs, so dropping the pending handshake leaves it exactly as it was.
+   return sequence_numbers().current_read_epoch() == m_epochs_before_latest_renegotiation->read_epoch &&
+          sequence_numbers().current_write_epoch() == m_epochs_before_latest_renegotiation->write_epoch;
+}
+
+void Channel_Impl_12::clear_pending_handshake_state() {
+   m_pending_state.reset();
+   m_epochs_before_latest_renegotiation.reset();
+}
+
+/*
+* The retransmission budget is exhausted and this handshake will not complete.
+* Leaving the pending state installed makes every later timeout_check throw
+* again from unchanged state, and blocks renegotiate(), so the channel can
+* neither recover nor be retried.
+*/
+void Channel_Impl_12::abandon_timed_out_handshake() {
+   if(m_active_state.has_value() && pending_handshake_epochs_unmoved()) {
+      // A renegotiation that never reached its ChangeCipherSpec. The
+      // established association is untouched, so keep it and let the
+      // application try again.
+      clear_pending_handshake_state();
+   } else {
+      // Either there is no established association to fall back to, or a
+      // ChangeCipherSpec has already moved an epoch and there is no rollback
+      // that would leave keys, identity and sequence numbers describing the
+      // same handshake. Close.
+      m_has_been_closed = true;
+      reset_state();
+   }
+}
+
+bool Channel_Impl_12::timeout_check() {
+   if(m_is_datagram && !m_has_been_closed && m_pending_state) {
+      try {
+         return m_pending_state->handshake_io().timeout_check();
+      } catch(const TLS_Exception&) {
+         abandon_timed_out_handshake();
+         throw;
+      }
+   }
+
+   // Old cipher states are pruned at install time (see prune_old_cipher_states),
+   // so no periodic cleanup is needed here.
    return false;
 }
 
@@ -203,6 +318,14 @@ void Channel_Impl_12::renegotiate(bool force_full_renegotiation) {
    }
 
    if(m_active_state.has_value()) {
+      // A DTLS handshake consumes one read and one write epoch. Refuse here if
+      // either is spent, so the caller learns before the handshake tears the
+      // working association down partway through. See next_epoch().
+      if(m_is_datagram &&
+         (sequence_numbers().current_read_epoch() == 0xFFFF || sequence_numbers().current_write_epoch() == 0xFFFF)) {
+         throw Invalid_State("DTLS epoch counter exhausted, a new association is required");
+      }
+
       if(!force_full_renegotiation) {
          force_full_renegotiation = !policy().allow_resumption_for_renegotiation();
       }
@@ -241,7 +364,17 @@ void Channel_Impl_12::change_cipher_spec_reader(Connection_Side side) {
       pending->session_keys(),
       pending->server_hello()->supports_encrypt_then_mac());
 
-   m_read_cipher_states[epoch] = read_state;
+   // The epoch we just left is retained only to absorb reordering, so start its
+   // clock now (see read_cipher_state_epoch). Epoch 0 is the plaintext
+   // placeholder and holds no keys, so the window does not apply to it.
+   if(m_is_datagram && epoch > 1) {
+      if(auto prev = m_read_cipher_states.find(static_cast<uint16_t>(epoch - 1)); prev != m_read_cipher_states.end()) {
+         prev->second.retired_at = callbacks().tls_current_monotonic_clock_ms();
+      }
+   }
+
+   m_read_cipher_states[epoch] = Retained_Read_Cipher_State{.state = read_state, .retired_at = std::nullopt};
+   prune_old_cipher_states(m_read_cipher_states);
 }
 
 void Channel_Impl_12::change_cipher_spec_writer(Connection_Side side) {
@@ -267,6 +400,7 @@ void Channel_Impl_12::change_cipher_spec_writer(Connection_Side side) {
                                                                 pending->server_hello()->supports_encrypt_then_mac());
 
    m_write_cipher_states[epoch] = write_state;
+   prune_old_cipher_states(m_write_cipher_states);
 }
 
 bool Channel_Impl_12::is_handshake_complete() const {
@@ -321,7 +455,7 @@ void Channel_Impl_12::activate_session() {
       m_active_state = Active_Connection_State_12(state, application_protocol());
    }
 
-   m_pending_state.reset();
+   clear_pending_handshake_state();
 
    callbacks().tls_session_activated();
 }
@@ -460,16 +594,14 @@ void Channel_Impl_12::process_handshake_ccs(const secure_vector<uint8_t>& record
    const auto process_retransmitted_record = [&] {
       BOTAN_ASSERT(m_active_state.has_value(), "Have active DTLS association for retransmission");
       BOTAN_ASSERT_NONNULL(m_active_state->dtls_handshake_io());
-      try {
+      // Epoch-zero records are unauthenticated and may be spoofed, so a
+      // malformed one must not tear down an established association.
+      const bool unauthenticated = (record_sequence >> 48) == 0;
+
+      absorb_malformed_input_errors(unauthenticated, [&] {
          m_active_state->dtls_handshake_io()->add_retransmitted_record(
             record.data(), record.size(), record_type, record_sequence);
-      } catch(...) {
-         // Epoch-zero records are unauthenticated and may be spoofed. Invalid
-         // retransmissions must not tear down an established association.
-         if((record_sequence >> 48) > 0) {
-            throw;
-         }
-      }
+      });
    };
 
    if(!m_pending_state) {
@@ -488,7 +620,6 @@ void Channel_Impl_12::process_handshake_ccs(const secure_vector<uint8_t>& record
       if(m_is_datagram && !epoch0_restart) {
          if(m_sequence_numbers) {
             const uint16_t epoch = record_sequence >> 48;
-
             const uint16_t current_epoch = sequence_numbers().current_read_epoch();
             if(epoch == current_epoch) {
                // Either endpoint can initiate renegotiation from FINISHED:
@@ -516,21 +647,36 @@ void Channel_Impl_12::process_handshake_ccs(const secure_vector<uint8_t>& record
 
    // May have been created in above conditional
    if(m_pending_state) {
-      m_pending_state->handshake_io().add_record(record.data(), record.size(), record_type, record_sequence);
+      // An epoch-zero record is unauthenticated. Once an association is
+      // established, one arriving during a pending renegotiation must not be
+      // able to destroy it, exactly as for the no-pending-handshake path above.
+      // Without this a single forged CCS or handshake fragment tore down the
+      // active association and the renegotiation along with it.
+      //
+      // Delivery is inside the guard as well as reassembly. A bare 12-byte
+      // header declaring a zero-length message reassembles cleanly and only
+      // fails when the message itself is parsed or dispatched, which reaches
+      // the same teardown by a later route.
+      const bool unauthenticated_against_active_association =
+         m_is_datagram && (record_sequence >> 48) == 0 && m_active_state.has_value();
 
-      while(auto* pending = m_pending_state.get()) {
-         auto msg = pending->get_next_handshake_msg(policy().maximum_handshake_message_size());
+      absorb_malformed_input_errors(unauthenticated_against_active_association, [&] {
+         m_pending_state->handshake_io().add_record(record.data(), record.size(), record_type, record_sequence);
 
-         if(msg.first == Handshake_Type::None) {  // no full handshake yet
-            break;
+         while(auto* pending = m_pending_state.get()) {
+            auto msg = pending->get_next_handshake_msg(policy().maximum_handshake_message_size());
+
+            if(msg.first == Handshake_Type::None) {  // no full handshake yet
+               break;
+            }
+
+            process_handshake_msg(*pending, msg.first, msg.second, epoch0_restart);
+
+            if(!m_pending_state) {
+               break;
+            }
          }
-
-         process_handshake_msg(*pending, msg.first, msg.second, epoch0_restart);
-
-         if(!m_pending_state) {
-            break;
-         }
-      }
+      });
    }
 }
 
