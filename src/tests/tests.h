@@ -296,6 +296,8 @@ class Test {
 
             bool test_str_ne(std::string_view what, std::string_view produced, std::string_view expected);
 
+            bool test_str_contains(std::string_view what, std::string_view produced, std::string_view expected_substr);
+
             /* Test predicates on bool */
             bool test_bool_eq(std::string_view what, bool produced, bool expected);
 
@@ -356,6 +358,14 @@ class Test {
             bool test_opt_u8_eq(std::string_view what,
                                 std::optional<uint8_t> produced,
                                 std::optional<uint8_t> expected);
+
+            bool test_opt_u16_eq(std::string_view what,
+                                 std::optional<uint16_t> produced,
+                                 std::optional<uint16_t> expected);
+
+            bool test_opt_u32_eq(std::string_view what,
+                                 std::optional<uint32_t> produced,
+                                 std::optional<uint32_t> expected);
 
             bool test_opt_u64_eq(std::string_view what,
                                  std::optional<uint64_t> produced,

@@ -21,7 +21,6 @@
    #include <botan/x509path.h>
    #include <botan/internal/ffi_mp.h>
    #include <botan/internal/ffi_oid.h>
-   #include <botan/internal/loadstor.h>
    #include <botan/internal/stl_util.h>
 #endif
 
@@ -364,33 +363,10 @@ int botan_x509_cert_view_string_values(botan_x509_cert_t cert,
       }
    };
 
-   auto enumerate_crl_distribution_points = [view_fn, ctx](const Botan::X509_Certificate& c, size_t idx) -> int {
-      const auto* crl_dp_ext =
-         c.v3_extensions().get_extension_object_as<Botan::Cert_Extension::CRL_Distribution_Points>();
-      if(crl_dp_ext == nullptr) {
-         return BOTAN_FFI_ERROR_OUT_OF_RANGE;  // essentially an empty list
-      }
-
-      const auto& dps = crl_dp_ext->distribution_points();
-      for(size_t i = idx; const auto& dp : dps) {
-         const auto& uris = dp.point().uri_names();
-         if(i >= uris.size()) {
-            i -= uris.size();
-            continue;
-         }
-
-         auto itr = uris.begin();
-         std::advance(itr, i);
-         return invoke_view_callback(view_fn, ctx, itr->original_input());
-      }
-
-      return BOTAN_FFI_ERROR_OUT_OF_RANGE;
-   };
-
    return BOTAN_FFI_VISIT(cert, [=](const Botan::X509_Certificate& c) -> int {
       switch(value_type) {
          case BOTAN_X509_CRL_DISTRIBUTION_URLS:
-            return enumerate_crl_distribution_points(c, index);
+            return enumerate_uris(c.crl_distribution_point_uris(), index);
          case BOTAN_X509_OCSP_RESPONDER_URLS:
             return enumerate_uris(c.ocsp_responder_uris(), index);
          case BOTAN_X509_CA_ISSUERS_URLS:
@@ -1247,8 +1223,15 @@ int botan_x509_crl_view_binary_values(botan_x509_crl_t crl_obj,
 
    return BOTAN_FFI_VISIT(crl_obj, [=](const Botan::X509_CRL& crl) -> int {
       switch(value_type) {
-         case BOTAN_X509_SERIAL_NUMBER:
-            return view(Botan::store_be(crl.crl_number()));
+         case BOTAN_X509_SERIAL_NUMBER: {
+            if(const auto& crln = crl.crl_number_bigint()) {
+               // Previously CRL number was a fixed 4 byte value, continue this for small CRL numbers
+               const size_t view_bytes = std::min<size_t>(crln->bytes(), 4);
+               return view(crln->serialize<std::vector<uint8_t>>(view_bytes));
+            } else {
+               return BOTAN_FFI_ERROR_NO_VALUE;
+            }
+         }
          case BOTAN_X509_ISSUER_DN_BITS:
             return view(Botan::ASN1::put_in_sequence(crl.issuer_dn().get_bits()));
          case BOTAN_X509_AUTHORITY_KEY_IDENTIFIER:

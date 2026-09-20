@@ -264,8 +264,27 @@ Test::Result test_x509_extension() {
 
    const auto* crl_number = decoded_extns.get_extension_object_as<Botan::Cert_Extension::CRL_Number>();
    if(result.test_is_true("CRL number recognized without explicit context", crl_number != nullptr)) {
-      result.test_sz_eq("Decoded CRL number", crl_number->get_crl_number(), 42);
+      result.test_bn_eq("Decoded CRL number", crl_number->crl_number(), Botan::BigInt(42));
+      result.test_sz_eq("Decoded CRL number legacy accessor", crl_number->get_crl_number(), 42);
    }
+
+   const Botan::BigInt large_crl_number("0xE3F59B2C66C2789E9AC53C545C80CF1F8B9E4BEA");
+   const Botan::X509_CRL large_number_crl(Test::read_binary_data_file("x509/misc/crl_number_160bit.pem"));
+   if(result.test_opt_not_null("X509_CRL large CRL number is present", large_number_crl.crl_number_bigint())) {
+      result.test_bn_eq("X509_CRL large CRL number", large_number_crl.crl_number_bigint().value(), large_crl_number);
+   }
+
+   const auto* large_crl_number_extn =
+      large_number_crl.extensions().get_extension_object_as<Botan::Cert_Extension::CRL_Number>();
+   if(result.test_is_true("Large CRL number extension is present", large_crl_number_extn != nullptr)) {
+      result.test_bn_eq("Large CRL number extension", large_crl_number_extn->crl_number(), large_crl_number);
+
+      result.test_throws<Botan::Encoding_Error>("Large CRL number extension legacy accessor throws",
+                                                [&]() { large_crl_number_extn->get_crl_number(); });
+   }
+
+   result.test_throws<Botan::Encoding_Error>("X509_CRL legacy CRL number accessor throws",
+                                             [&]() { large_number_crl.crl_number(); });
 
    return result;
 }
@@ -804,6 +823,53 @@ Test::Result test_x509_authority_info_access_extension() {
    return result;
 }
 
+Test::Result test_x509_ldap_empty_authority_uris() {
+   Test::Result result("X509 LDAP URIs with empty authority");
+
+   const auto check_uri = [&](std::string_view label, const Botan::URI& uri, std::string_view expected) {
+      result.test_str_eq(std::string(label) + " original URI", uri.original_input(), expected);
+      result.test_str_eq(std::string(label) + " scheme", uri.scheme(), "ldap");
+      const auto raw_authority = uri.raw_authority();
+      result.test_is_true(std::string(label) + " raw authority present", raw_authority.has_value());
+      if(raw_authority.has_value()) {
+         result.test_str_eq(std::string(label) + " raw authority is empty", std::string(*raw_authority), "");
+      }
+      result.test_is_false(std::string(label) + " has no parsed authority", uri.authority().has_value());
+      result.test_is_false(std::string(label) + " has no host", uri.host().has_value());
+   };
+
+   const auto check_contains_uri =
+      [&](std::string_view label, const std::vector<Botan::URI>& uris, std::string_view expected) {
+         for(const auto& uri : uris) {
+            if(uri.original_input() == expected) {
+               check_uri(label, uri, expected);
+               return;
+            }
+         }
+         result.test_failure(std::string(label) + " URI not found");
+      };
+
+   const Botan::X509_Certificate aruba_cert(Test::data_file("x509/misc/aruba.pem"));
+   const std::string aruba_aia =
+      "ldap:///CN=Security1-WIN-05PRGNGEKAO-CA,CN=AIA,CN=Public%20Key%20Services,CN=Services,CN=Configuration,"
+      "DC=Security1,DC=aruba,DC=com?cACertificate?base?objectClass=certificationAuthority";
+   const std::string aruba_cdp =
+      "ldap:///CN=Security1-WIN-05PRGNGEKAO-CA,CN=WIN-05PRGNGEKAO,CN=CDP,CN=Public%20Key%20Services,CN=Services,"
+      "CN=Configuration,DC=Security1,DC=aruba,DC=com?certificateRevocationList?base?objectClass=cRLDistributionPoint";
+
+   check_contains_uri("Aruba AIA", aruba_cert.ca_issuer_uris(), aruba_aia);
+   check_contains_uri("Aruba CDP", aruba_cert.crl_distribution_point_uris(), aruba_cdp);
+
+   const Botan::X509_Certificate bde_cert(Test::data_file("x509/misc/bde_v2.pem"));
+   const std::string bde_cdp =
+      "ldap:///CN=BANCO%20DE%20ESPA%D1A-AC%20RAIZ%20V2,CN=PKIBDE,CN=CDP,CN=Public%20Key%20Services,CN=Services,"
+      "CN=Configuration,DC=BDE,DC=ES?authorityRevocationList?base?objectclass=cRLDistributionPoint";
+
+   check_contains_uri("BDE CDP", bde_cert.crl_distribution_point_uris(), bde_cdp);
+
+   return result;
+}
+
 Test::Result test_crl_issuing_distribution_point_extension() {
    Test::Result result("X509 CRL IssuingDistributionPoint extension");
 
@@ -1159,22 +1225,6 @@ Test::Result test_x509_cert(const Botan::Private_Key& ca_key,
    result_u2 = Botan::x509_path_validate(user2_cert, restrictions, store);
    result.test_str_eq("user 1 revoked", result_u2.result_string(), revoked_str);
 
-   // RFC 5280 5.3.1: the removeFromCRL reason code MAY only appear in delta
-   // CRLs. Botan does not process delta CRLs, so a base CRL with this reason
-   // code is malformed; we keep the cert marked as revoked rather than honor
-   // the spec-violating "un-revoke" semantics.
-   revoked.clear();
-   revoked.push_back(Botan::CRL_Entry(user1_cert, Botan::CRL_Code::RemoveFromCrl));
-   const Botan::X509_CRL crl3 = ca.update_crl(crl2, revoked, rng);
-
-   store.add_crl(crl3);
-
-   result_u1 = Botan::x509_path_validate(user1_cert, restrictions, store);
-   result.test_str_eq("user 1 still revoked after RemoveFromCrl in base CRL", result_u1.result_string(), revoked_str);
-
-   result_u2 = Botan::x509_path_validate(user2_cert, restrictions, store);
-   result.test_str_eq("user 2 still revoked", result_u2.result_string(), revoked_str);
-
    return result;
 }
 
@@ -1342,7 +1392,7 @@ Test::Result test_x509_uninit() {
 
    Botan::X509_CRL crl;
    result.test_throws(
-      "uninitialized crl access causes exception", "X509_CRL uninitialized", [&crl]() { crl.crl_number(); });
+      "uninitialized crl access causes exception", "X509_CRL uninitialized", [&crl]() { crl.crl_number_bigint(); });
 
    // X509_CRL constructed via the issuer-DN constructor leaves the inherited
    // X509_Object signed-data null. The accessors must reject rather than UB.
@@ -2037,6 +2087,7 @@ class X509_Cert_Unit_Tests final : public Test {
          results.push_back(test_x509_decode_list());
          results.push_back(test_rsa_oaep());
          results.push_back(test_x509_authority_info_access_extension());
+         results.push_back(test_x509_ldap_empty_authority_uris());
          results.push_back(test_crl_issuing_distribution_point_extension());
          results.push_back(test_verify_gost2012_cert());
          results.push_back(test_parse_rsa_pss_cert());

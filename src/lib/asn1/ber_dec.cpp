@@ -9,8 +9,10 @@
 
 #include <botan/bigint.h>
 #include <botan/data_src.h>
+#include <botan/internal/asn1_utils.h>
 #include <botan/internal/int_utils.h>
 #include <botan/internal/loadstor.h>
+#include <algorithm>
 #include <memory>
 
 namespace Botan {
@@ -36,6 +38,12 @@ size_t decode_tag(DataSource* ber, ASN1_Type& type_tag, ASN1_Class& class_tag) {
    if((*b & 0x1F) != 0x1F) {
       type_tag = ASN1_Type(*b & 0x1F);
       class_tag = ASN1_Class(*b & 0xE0);
+      // The EOC marker is primitive; a constructed universal tag 0 has no
+      // valid meaning and would otherwise bypass the EOC handling, which
+      // matches on (Eoc, Universal) exactly
+      if(type_tag == ASN1_Type::Eoc && class_tag == ASN1_Class::Constructed) {
+         throw BER_Decoding_Error("EOC tag with constructed encoding");
+      }
       return 1;
    }
 
@@ -48,7 +56,8 @@ size_t decode_tag(DataSource* ber, ASN1_Type& type_tag, ASN1_Class& class_tag) {
       if(!b) {
          throw BER_Decoding_Error("Long-form tag truncated");
       }
-      if((tag_buf >> 24) != 0) {
+      // Reject if shifting in another 7 bits would overflow the uint32_t tag
+      if((tag_buf >> 25) != 0) {
          throw BER_Decoding_Error("Long-form tag overflowed 32 bits");
       }
       // This is required even by BER (see X.690 section 8.1.2.4.2 sentence c).
@@ -196,6 +205,12 @@ size_t peek_tag(DataSource* src, size_t offset, ASN1_Type& type_tag, ASN1_Class&
    if((b & 0x1F) != 0x1F) {
       type_tag = ASN1_Type(b & 0x1F);
       class_tag = ASN1_Class(b & 0xE0);
+      // The EOC marker is primitive; a constructed universal tag 0 has no
+      // valid meaning and would otherwise bypass the EOC handling, which
+      // matches on (Eoc, Universal) exactly
+      if(type_tag == ASN1_Type::Eoc && class_tag == ASN1_Class::Constructed) {
+         throw BER_Decoding_Error("EOC tag with constructed encoding");
+      }
       return 1;
    }
 
@@ -207,7 +222,8 @@ size_t peek_tag(DataSource* src, size_t offset, ASN1_Type& type_tag, ASN1_Class&
       if(src->peek(&b, 1, offset + tag_bytes) == 0) {
          throw BER_Decoding_Error("Long-form tag truncated");
       }
-      if((tag_buf >> 24) != 0) {
+      // Reject if shifting in another 7 bits would overflow the uint32_t tag
+      if((tag_buf >> 25) != 0) {
          throw BER_Decoding_Error("Long-form tag overflowed 32 bits");
       }
       // Required even by BER (X.690 section 8.1.2.4.2 sentence c).
@@ -245,7 +261,8 @@ size_t peek_tag(DataSource* src, size_t offset, ASN1_Type& type_tag, ASN1_Class&
 * Returns the decoded length and sets field_size to the number of bytes consumed.
 * For indefinite-length encoding, recursively scans ahead to find the EOC marker.
 */
-size_t peek_length(DataSource* src, size_t offset, size_t& field_size, size_t allow_indef, bool constructed) {
+size_t peek_length(
+   DataSource* src, size_t offset, size_t& field_size, size_t allow_indef, bool constructed, bool der_mode) {
    uint8_t b = 0;
    if(src->peek(&b, 1, offset) == 0) {
       throw BER_Decoding_Error("Length field not found");
@@ -263,6 +280,10 @@ size_t peek_length(DataSource* src, size_t offset, size_t& field_size, size_t al
    }
 
    if(num_length_bytes == 0) {
+      // Indefinite length is not allowed in DER
+      if(der_mode) {
+         throw BER_Decoding_Error("Detected indefinite-length encoding in DER structure");
+      }
       // Indefinite length is only valid for constructed types (X.690 8.1.3.2)
       if(!constructed) {
          throw BER_Decoding_Error("Indefinite-length encoding used with non-constructed type");
@@ -302,7 +323,8 @@ size_t find_eoc(DataSource* src, size_t base_offset, size_t allow_indef) {
       }
 
       size_t length_size = 0;
-      const size_t item_size = peek_length(src, offset + tag_size, length_size, allow_indef, is_constructed(class_tag));
+      const size_t item_size =
+         peek_length(src, offset + tag_size, length_size, allow_indef, is_constructed(class_tag), false);
 
       if(auto new_offset = checked_add(offset, tag_size, length_size, item_size)) {
          offset = new_offset.value();
@@ -360,6 +382,74 @@ class DataSource_BERObject final : public DataSource {
       BER_Object m_obj;
       size_t m_offset = 0;
 };
+
+/*
+* A non-owning DataSource over a span, used to drive tag/length decoding
+* without copying the underlying buffer.
+*/
+class DataSource_Span final : public DataSource {
+   public:
+      size_t read(uint8_t out[], size_t length) override {
+         const size_t got = std::min(m_buf.size() - m_offset, length);
+         copy_mem(out, m_buf.data() + m_offset, got);
+         m_offset += got;
+         return got;
+      }
+
+      size_t peek(uint8_t out[], size_t length, size_t peek_offset) const override {
+         if(peek_offset >= m_buf.size() - m_offset) {
+            return 0;
+         }
+         const size_t got = std::min(m_buf.size() - m_offset - peek_offset, length);
+         copy_mem(out, m_buf.data() + m_offset + peek_offset, got);
+         return got;
+      }
+
+      bool check_available(size_t n) override { return n <= (m_buf.size() - m_offset); }
+
+      bool end_of_data() const override { return m_offset == m_buf.size(); }
+
+      size_t get_bytes_read() const override { return m_offset; }
+
+      explicit DataSource_Span(std::span<const uint8_t> buf) : m_buf(buf) {}
+
+   private:
+      std::span<const uint8_t> m_buf;
+      size_t m_offset = 0;
+};
+
+/*
+* Verify that the elements of a SET appear in sorted order, comparing the full
+* encoding of each element as an octet string. DER requires this canonical
+* ordering. Throws if the elements are not sorted.
+*/
+void verify_set_is_sorted(std::span<const uint8_t> content) {
+   DataSource_Span src(content);
+   size_t offset = 0;
+   std::optional<std::span<const uint8_t>> prev;
+
+   while(offset < content.size()) {
+      ASN1_Type type_tag = ASN1_Type::NoObject;
+      ASN1_Class class_tag = ASN1_Class::NoObject;
+      const size_t tag_size = peek_tag(&src, offset, type_tag, class_tag);
+
+      size_t length_size = 0;
+      const size_t item_size =
+         peek_length(&src, offset + tag_size, length_size, /*allow_indef=*/0, is_constructed(class_tag), true);
+
+      const auto end = checked_add(offset, tag_size, length_size, item_size);
+      if(!end || *end > content.size()) {
+         throw BER_Decoding_Error("SET element exceeds available data");
+      }
+
+      const auto elem = content.subspan(offset, *end - offset);
+      if(prev && std::lexicographical_compare(elem.begin(), elem.end(), prev->begin(), prev->end())) {
+         throw BER_Decoding_Error("Detected unsorted SET in DER structure");
+      }
+      prev = elem;
+      offset = *end;
+   }
+}
 
 }  // namespace
 
@@ -452,6 +542,10 @@ BER_Object BER_Decoder::get_next_object() {
          throw BER_Decoding_Error("EOC marker with non-zero length");
       }
 
+      if(const auto max_size = m_limits.max_object_size(); max_size && dl.content_length() > *max_size) {
+         throw BER_Decoding_Error("Encoded object exceeds maximum size");
+      }
+
       if(!m_source->check_available(dl.total_length())) {
          throw BER_Decoding_Error("Value truncated");
       }
@@ -473,10 +567,16 @@ BER_Object BER_Decoder::get_next_object() {
          if(m_limits.require_der_encoding()) {
             throw BER_Decoding_Error("Detected EOC marker in DER structure");
          }
-         continue;
-      } else {
-         break;
+         // An EOC marker is only valid as an indefinite-length terminator, which
+         // is consumed above when reading the indefinite-length object. A
+         // standalone EOC is rejected unless the caller opted to tolerate it.
+         if(m_limits.allow_standalone_eoc()) {
+            continue;
+         }
+         throw BER_Decoding_Error("Encountered EOC marker outside of indefinite-length encoding");
       }
+
+      break;
    }
 
    return next;
@@ -514,6 +614,12 @@ void BER_Decoder::push_back(BER_Object&& obj) {
 BER_Decoder BER_Decoder::start_cons(ASN1_Type type_tag, ASN1_Class class_tag) {
    BER_Object obj = get_next_object();
    obj.assert_is_a(type_tag, class_tag | ASN1_Class::Constructed);
+
+   // In DER mode the elements of a universal SET must appear in sorted order
+   if(m_limits.require_der_encoding() && type_tag == ASN1_Type::Set && class_tag == ASN1_Class::Universal) {
+      verify_set_is_sorted(std::span<const uint8_t>{obj.bits(), obj.length()});
+   }
+
    BER_Decoder child(std::move(obj), this);
    return child;
 }
@@ -533,6 +639,11 @@ BER_Decoder& BER_Decoder::end_cons() {
 
 BER_Decoder::BER_Decoder(BER_Object&& obj, BER_Decoder* parent) :
       m_limits(parent != nullptr ? parent->limits() : BER_Decoder::Limits::BER()), m_parent(parent) {
+   m_data_src = std::make_unique<DataSource_BERObject>(std::move(obj));
+   m_source = m_data_src.get();
+}
+
+BER_Decoder::BER_Decoder(BER_Object&& obj, Limits limits) : m_limits(limits) {
    m_data_src = std::make_unique<DataSource_BERObject>(std::move(obj));
    m_source = m_data_src.get();
 }
@@ -661,11 +772,13 @@ BER_Decoder& BER_Decoder::decode(BigInt& out, ASN1_Type type_tag, ASN1_Class cla
    const BER_Object obj = get_next_object();
    obj.assert_is_a(type_tag, class_tag);
 
+   // An INTEGER must have at least one content octet (X.690 section 8.3.1)
+   if(obj.length() == 0) {
+      throw BER_Decoding_Error("INTEGER encoding has no content octets");
+   }
+
    // DER requires minimal INTEGER encoding (X.690 section 8.3.2)
    if(m_limits.require_der_encoding()) {
-      if(obj.length() == 0) {
-         throw BER_Decoding_Error("Detected empty INTEGER encoding in DER structure");
-      }
       if(obj.length() > 1) {
          if(obj.bits()[0] == 0x00 && (obj.bits()[1] & 0x80) == 0) {
             throw BER_Decoding_Error("Detected non-minimal INTEGER encoding in DER structure");
@@ -676,29 +789,25 @@ BER_Decoder& BER_Decoder::decode(BigInt& out, ASN1_Type type_tag, ASN1_Class cla
       }
    }
 
-   if(obj.length() == 0) {
-      out.clear();
-   } else {
-      const uint8_t first = obj.bits()[0];
-      const bool negative = (first & 0x80) == 0x80;
+   const uint8_t first = obj.bits()[0];
+   const bool negative = (first & 0x80) == 0x80;
 
-      if(negative) {
-         secure_vector<uint8_t> vec(obj.bits(), obj.bits() + obj.length());
-         for(size_t i = obj.length(); i > 0; --i) {
-            const bool gt0 = (vec[i - 1] > 0);
-            vec[i - 1] -= 1;
-            if(gt0) {
-               break;
-            }
+   if(negative) {
+      secure_vector<uint8_t> vec(obj.bits(), obj.bits() + obj.length());
+      for(size_t i = obj.length(); i > 0; --i) {
+         const bool gt0 = (vec[i - 1] > 0);
+         vec[i - 1] -= 1;
+         if(gt0) {
+            break;
          }
-         for(size_t i = 0; i != obj.length(); ++i) {
-            vec[i] = ~vec[i];
-         }
-         out._assign_from_bytes(vec);
-         out.flip_sign();
-      } else {
-         out._assign_from_bytes(obj.data());
       }
+      for(size_t i = 0; i != obj.length(); ++i) {
+         vec[i] = ~vec[i];
+      }
+      out._assign_from_bytes(vec);
+      out.flip_sign();
+   } else {
+      out._assign_from_bytes(obj.data());
    }
 
    return (*this);
@@ -719,9 +828,10 @@ void asn1_decode_binary_string(std::vector<uint8_t, Alloc>& buffer,
                                bool require_der) {
    obj.assert_is_a(type_tag, class_tag);
 
-   // DER requires BIT STRING and OCTET STRING to use primitive encoding
-   if(require_der && is_constructed(obj)) {
-      throw BER_Decoding_Error("Detected constructed string encoding in DER structure");
+   // Only primitive OCTET STRING/BIT STRING are supported; constructed
+   // (fragmented) BER forms are rejected rather than concatenated.
+   if(is_constructed(obj)) {
+      throw BER_Decoding_Error("Constructed OCTET STRING/BIT STRING is not supported");
    }
 
    if(real_type == ASN1_Type::OctetString) {
@@ -758,6 +868,39 @@ void asn1_decode_binary_string(std::vector<uint8_t, Alloc>& buffer,
    }
 }
 
+uint8_t asn1_bitstring_unused_bits(const BER_Object& obj, ASN1_Type type_tag, ASN1_Class class_tag, bool require_der) {
+   obj.assert_is_a(type_tag, class_tag);
+
+   // Only primitive BIT STRING is supported; constructed (fragmented) BER
+   // forms are rejected rather than concatenated.
+   if(is_constructed(obj)) {
+      throw BER_Decoding_Error("Constructed OCTET STRING/BIT STRING is not supported");
+   }
+
+   if(obj.length() == 0) {
+      throw BER_Decoding_Error("Invalid BIT STRING");
+   }
+
+   const uint8_t unused_bits = obj.bits()[0];
+
+   if(unused_bits >= 8) {
+      throw BER_Decoding_Error("Invalid number of unused bits in BIT STRING");
+   }
+
+   if(obj.length() == 1 && unused_bits != 0) {
+      throw BER_Decoding_Error("Invalid BIT STRING");
+   }
+
+   if(require_der && unused_bits > 0) {
+      const uint8_t last_byte = obj.bits()[obj.length() - 1];
+      if((last_byte & ((1 << unused_bits) - 1)) != 0) {
+         throw BER_Decoding_Error("Detected non-zero padding bits in BIT STRING in DER structure");
+      }
+   }
+
+   return unused_bits;
+}
+
 }  // namespace
 
 /*
@@ -788,5 +931,86 @@ BER_Decoder& BER_Decoder::decode(std::vector<uint8_t>& buffer,
       buffer, get_next_object(), real_type, type_tag, class_tag, m_limits.require_der_encoding());
    return (*this);
 }
+
+BER_Decoder& BER_Decoder::decode_bitstring(ASN1_BitString& out, ASN1_Type type_tag, ASN1_Class class_tag) {
+   const BER_Object obj = get_next_object();
+   const uint8_t unused_bits = asn1_bitstring_unused_bits(obj, type_tag, class_tag, m_limits.require_der_encoding());
+
+   std::vector<uint8_t> bits;
+   bits.assign(obj.bits() + 1, obj.bits() + obj.length());
+
+   if(unused_bits > 0 && !bits.empty()) {
+      bits.back() &= static_cast<uint8_t>(0xFF << unused_bits);
+   }
+
+   out = ASN1_BitString(std::move(bits), unused_bits);
+   return (*this);
+}
+
+BER_Decoder& BER_Decoder::decode_named_bitstring(uint64_t& out,
+                                                 size_t width,
+                                                 ASN1_Type type_tag,
+                                                 ASN1_Class class_tag) {
+   if(width > 64) {
+      throw Invalid_Argument("BER_Decoder: Named BIT STRING width is too large");
+   }
+
+   ASN1_BitString bits;
+   decode_bitstring(bits, type_tag, class_tag);
+
+   if(bits.bit_length() > width) {
+      throw BER_Decoding_Error("Named BIT STRING exceeds declared width");
+   }
+
+   if(m_limits.require_der_encoding() && bits.bit_length() > 0 && !bits.bit_at(bits.bit_length() - 1)) {
+      throw BER_Decoding_Error("Named BIT STRING is not minimally encoded");
+   }
+
+   uint64_t decoded = 0;
+   for(size_t bit = 0; bit != bits.bit_length(); ++bit) {
+      if(bits.bit_at(bit)) {
+         decoded |= uint64_t(1) << (width - 1 - bit);
+      }
+   }
+
+   out = decoded;
+   return (*this);
+}
+
+namespace ASN1 {
+
+bool is_single_der_object(std::span<const uint8_t> bytes, ASN1_Type expected_type, ASN1_Class expected_class) {
+   if(bytes.empty()) {
+      return false;
+   }
+
+   try {
+      DataSource_Span src(bytes);
+
+      ASN1_Type type_tag = ASN1_Type::NoObject;
+      ASN1_Class class_tag = ASN1_Class::NoObject;
+      const size_t tag_bytes = decode_tag(&src, type_tag, class_tag);
+
+      if(type_tag != expected_type || class_tag != expected_class) {
+         return false;
+      }
+
+      const auto dl = decode_length(&src, /*allow_indef=*/0, /*der_mode=*/true, is_constructed(expected_class));
+
+      const size_t header_bytes = tag_bytes + dl.field_length();
+      if(header_bytes > bytes.size()) {
+         return false;
+      }
+      return dl.content_length() == bytes.size() - header_bytes;
+   } catch(Decoding_Error&) {
+      return false;
+   }
+}
+
+bool is_der_sequence_header(std::span<const uint8_t> bytes) {
+   return is_single_der_object(bytes, ASN1_Type::Sequence, ASN1_Class::Universal | ASN1_Class::Constructed);
+}
+
+}  // namespace ASN1
 
 }  // namespace Botan
