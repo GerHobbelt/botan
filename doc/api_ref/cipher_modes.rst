@@ -165,7 +165,7 @@ Available Unauthenticated Cipher Modes
 
 .. note::
    CTR and OFB modes are also implemented, but these are treated as
-   :cpp:class:`Stream_Cipher`\s instead.
+   :cpp:class:`StreamCipher`\s instead.
 
 CBC
 ~~~~~~~~~~~~
@@ -453,6 +453,26 @@ Algorithm specification name:
 
 - Tag size defaults to 16.
 - Examples: e.g. ``AES-128/GCM``, ``AES-128/GCM(12)``
+
+GCM-SIV
+~~~~~~~~
+
+Available if ``BOTAN_HAS_AEAD_GCM_SIV`` is defined.
+
+AES-GCM-SIV, specified in RFC 8452. Like SIV this mode is resistant to nonce
+misuse; if a nonce is ever reused, the only information leaked is if two
+messages encrypted under the same nonce were identical. Requires a 128-bit
+block cipher with either a 128-bit or 256-bit key. The nonce must be exactly
+96 bits, and the tag is always 128 bits.
+
+Note that unlike SIV, GCM-SIV is not usable as a deterministic (nonce-less)
+encryption scheme; a nonce must always be provided.
+
+Algorithm specification name:
+``<BlockCipher>/GCM-SIV`` (reported name) /
+``GCM-SIV(<BlockCipher>)``
+
+- Examples: ``AES-128/GCM-SIV``, ``AES-256/GCM-SIV``
 
 OCB
 ~~~~~

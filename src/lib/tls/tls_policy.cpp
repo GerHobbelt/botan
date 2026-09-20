@@ -97,7 +97,7 @@ std::vector<std::string> Policy::allowed_key_exchange_methods() const {
       //"ECDHE_PSK",
       //"PSK",
       "ECDH",
-      "DH",
+      //"DH",
       //"RSA",
    };
 }
@@ -207,9 +207,6 @@ std::vector<Group_Params> Policy::key_exchange_groups() const {
       Group_Params::BRAINPOOL384R1TLS13,
       Group_Params::BRAINPOOL512R1,
       Group_Params::BRAINPOOL512R1TLS13,
-
-      Group_Params::FFDHE_2048,
-      Group_Params::FFDHE_3072,
 
       // clang-format on
    };
@@ -607,6 +604,23 @@ std::vector<uint16_t> Policy::ciphersuite_list(Protocol_Version version) const {
 
       if(!value_exists(ciphers, suite.cipher_algo())) {
          continue;  // unsupported cipher
+      }
+
+      // Our non EtM TLS-CBC decryption step still has a residual Lucky13 timing
+      // channel. The leak is minor but for DTLS, which allows repeated
+      // observations, that is likely more than enough to allow plaintext
+      // recovery. Refuse CBC suites in DTLS.
+      if(version.is_datagram_protocol() && suite.cbc_ciphersuite()) {
+         continue;
+      }
+
+      // In DTLS, prohibit any potentially brute-forceable MACs
+      //
+      // DTLS allows repeated attempts without a connection teardown, and we
+      // don't currently offer any facility for an application to respond to
+      // a flood of invalid packets.
+      if(version.is_datagram_protocol() && suite.uses_short_authentication_tag()) {
+         continue;
       }
 
       // these checks are irrelevant for TLS 1.3

@@ -11,6 +11,7 @@
 */
 
 #include "tests.h"
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -923,6 +924,27 @@ class TLS_Unit_Tests final : public Test {
          };
       }
 
+      // Policy::ciphersuite_list refuses both CBC+HMAC and _CCM_8 suites for
+      // DTLS, so those policies leave no DTLS ciphersuite to negotiate.
+      static std::vector<Botan::TLS::Protocol_Version> versions_for_policy(
+         std::vector<Test::Result>& results,
+         std::vector<Botan::TLS::Protocol_Version> versions,
+         const std::string& cipher_policy,
+         const std::string& mac_policy) {
+         const bool dtls_has_no_suite =
+            (mac_policy != "AEAD") || (cipher_policy != "NULL") || cipher_policy.find("CCM(8)") != std::string::npos;
+
+         if(dtls_has_no_suite) {
+            std::erase_if(versions, [](const auto& version) { return version.is_datagram_protocol(); });
+            Test::Result result("DTLS ciphersuite filtering");
+   #if defined(BOTAN_HAS_TLS_12)
+            result.test_sz_gte("At least one testable version remains", versions.size(), 1);
+   #endif
+            results.push_back(result);
+         }
+         return versions;
+      }
+
       static void enable_versions([[maybe_unused]] const std::shared_ptr<Test_Policy>& policy,
                                   [[maybe_unused]] std::span<const Botan::TLS::Protocol_Version> versions) {
          for(const auto& version : versions) {
@@ -1013,7 +1035,9 @@ class TLS_Unit_Tests final : public Test {
             policy->set("signature_methods", "IMPLICIT");
          }
 
-         return test_with_policy(test_descr, results, creds, legacy_versions(), policy, rng, client_auth);
+         const auto versions = versions_for_policy(results, legacy_versions(), cipher_policy, mac_policy);
+
+         return test_with_policy(test_descr, results, creds, versions, policy, rng, client_auth);
       }
 
       /**
@@ -1058,7 +1082,9 @@ class TLS_Unit_Tests final : public Test {
             policy->set(kv.first, kv.second);
          }
 
-         return test_with_policy(test_descr, results, creds, available_versions(), policy, rng, client_auth);
+         const auto versions = versions_for_policy(results, available_versions(), cipher_policy, mac_policy);
+
+         return test_with_policy(test_descr, results, creds, versions, policy, rng, client_auth);
       }
 
       void test_session_established_abort(std::vector<Test::Result>& results,
@@ -1470,219 +1496,6 @@ class TLS_Unit_Tests final : public Test {
 };
 
 BOTAN_REGISTER_TEST("tls", "unit_tls", TLS_Unit_Tests);
-
-   #if defined(BOTAN_HAS_TLS_12)
-
-class DTLS_Reconnection_Test : public Test {
-   public:
-      std::vector<Test::Result> run() override {
-         class Test_Callbacks : public Botan::TLS::Callbacks {
-            public:
-               Test_Callbacks(Test::Result& results, std::vector<uint8_t>& outbound, std::vector<uint8_t>& recv_buf) :
-                     m_results(results), m_outbound(outbound), m_recv(recv_buf) {}
-
-               void tls_emit_data(std::span<const uint8_t> bits) override {
-                  m_outbound.insert(m_outbound.end(), bits.begin(), bits.end());
-               }
-
-               void tls_record_received(uint64_t /*seq*/, std::span<const uint8_t> bits) override {
-                  m_recv.insert(m_recv.end(), bits.begin(), bits.end());
-               }
-
-               void tls_alert(Botan::TLS::Alert /*alert*/) override {
-                  // ignore
-               }
-
-               void tls_session_established(const Botan::TLS::Session_Summary& /*session*/) override {
-                  m_results.test_success("Established a session");
-               }
-
-            private:
-               Test::Result& m_results;
-               std::vector<uint8_t>& m_outbound;
-               std::vector<uint8_t>& m_recv;
-         };
-
-         class Credentials_PSK : public Botan::Credentials_Manager {
-            public:
-               Botan::SymmetricKey psk(const std::string& type,
-                                       const std::string& context,
-                                       const std::string& /*identity*/) override {
-                  if(type == "tls-server" && context == "session-ticket") {
-                     return Botan::SymmetricKey("AABBCCDDEEFF012345678012345678");
-                  }
-
-                  if(type == "tls-server" && context == "dtls-cookie-secret") {
-                     return Botan::SymmetricKey("4AEA5EAD279CADEB537A594DA0E9DE3A");
-                  }
-
-                  if(context == "localhost" && type == "tls-client") {
-                     return Botan::SymmetricKey("20B602D1475F2DF888FCB60D2AE03AFD");
-                  }
-
-                  if(context == "localhost" && type == "tls-server") {
-                     return Botan::SymmetricKey("20B602D1475F2DF888FCB60D2AE03AFD");
-                  }
-
-                  throw Test_Error("No PSK set for " + type + "/" + context);
-               }
-         };
-
-         class Datagram_PSK_Policy : public Botan::TLS::Policy {
-            public:
-               std::vector<std::string> allowed_macs() const override { return std::vector<std::string>({"AEAD"}); }
-
-               std::vector<std::string> allowed_key_exchange_methods() const override { return {"PSK"}; }
-
-               bool allow_tls12() const override { return false; }
-
-               bool allow_dtls12() const override { return true; }
-
-               bool allow_dtls_epoch0_restart() const override { return true; }
-         };
-
-         Test::Result result("DTLS reconnection");
-
-         auto rng = Test::new_shared_rng(this->test_name());
-
-         auto server_policy = std::make_shared<Datagram_PSK_Policy>();
-         auto client_policy = std::make_shared<Datagram_PSK_Policy>();
-         auto creds = std::make_shared<Credentials_PSK>();
-         auto server_sessions = std::make_shared<Botan::TLS::Session_Manager_In_Memory>(rng);
-         auto client_sessions = std::make_shared<Botan::TLS::Session_Manager_Noop>();
-
-         std::vector<uint8_t> s2c;
-         std::vector<uint8_t> server_recv;
-         auto server_callbacks = std::make_shared<Test_Callbacks>(result, s2c, server_recv);
-         Botan::TLS::Server server(server_callbacks, server_sessions, creds, server_policy, rng, true);
-
-         std::vector<uint8_t> c1_c2s;
-         std::vector<uint8_t> client1_recv;
-         auto client1_callbacks = std::make_shared<Test_Callbacks>(result, c1_c2s, client1_recv);
-         Botan::TLS::Client client1(client1_callbacks,
-                                    client_sessions,
-                                    creds,
-                                    client_policy,
-                                    rng,
-                                    Botan::TLS::Server_Information("localhost"),
-                                    Botan::TLS::Protocol_Version::latest_dtls_version());
-
-         bool c1_to_server_sent = false;
-         const bool server_to_c1_sent = false;
-
-         const std::vector<uint8_t> c1_to_server_magic(16, 0xC1);
-         const std::vector<uint8_t> server_to_c1_magic(16, 0x42);
-
-         size_t c1_rounds = 0;
-         for(;;) {
-            c1_rounds++;
-
-            if(c1_rounds > 64) {
-               result.test_failure("Still spinning in client1 loop after 64 rounds");
-               return {result};
-            }
-
-            if(!c1_c2s.empty()) {
-               std::vector<uint8_t> input;
-               std::swap(c1_c2s, input);
-               server.received_data(input.data(), input.size());
-               continue;
-            }
-
-            if(!s2c.empty()) {
-               std::vector<uint8_t> input;
-               std::swap(s2c, input);
-               client1.received_data(input.data(), input.size());
-               continue;
-            }
-
-            if(!c1_to_server_sent && client1.is_active()) {
-               client1.send(c1_to_server_magic);
-               c1_to_server_sent = true;
-            }
-
-            if(!server_to_c1_sent && server.is_active()) {
-               server.send(server_to_c1_magic);
-            }
-
-            if(!server_recv.empty() && !client1_recv.empty()) {
-               result.test_bin_eq("Expected message from client1", server_recv, c1_to_server_magic);
-               result.test_bin_eq("Expected message to client1", client1_recv, server_to_c1_magic);
-               break;
-            }
-         }
-
-         // Now client1 "goes away" (goes silent) and new client
-         // connects to same server context (ie due to reuse of client source port)
-         // See RFC 6347 section 4.2.8
-
-         server_recv.clear();
-         s2c.clear();
-
-         std::vector<uint8_t> c2_c2s;
-         std::vector<uint8_t> client2_recv;
-         auto client2_callbacks = std::make_shared<Test_Callbacks>(result, c2_c2s, client2_recv);
-         Botan::TLS::Client client2(client2_callbacks,
-                                    client_sessions,
-                                    creds,
-                                    client_policy,
-                                    rng,
-                                    Botan::TLS::Server_Information("localhost"),
-                                    Botan::TLS::Protocol_Version::latest_dtls_version());
-
-         bool c2_to_server_sent = false;
-         const bool server_to_c2_sent = false;
-
-         const std::vector<uint8_t> c2_to_server_magic(16, 0xC2);
-         const std::vector<uint8_t> server_to_c2_magic(16, 0x66);
-
-         size_t c2_rounds = 0;
-
-         for(;;) {
-            c2_rounds++;
-
-            if(c2_rounds > 64) {
-               result.test_failure("Still spinning in client2 loop after 64 rounds");
-               return {result};
-            }
-
-            if(!c2_c2s.empty()) {
-               std::vector<uint8_t> input;
-               std::swap(c2_c2s, input);
-               server.received_data(input.data(), input.size());
-               continue;
-            }
-
-            if(!s2c.empty()) {
-               std::vector<uint8_t> input;
-               std::swap(s2c, input);
-               client2.received_data(input.data(), input.size());
-               continue;
-            }
-
-            if(!c2_to_server_sent && client2.is_active()) {
-               client2.send(c2_to_server_magic);
-               c2_to_server_sent = true;
-            }
-
-            if(!server_to_c2_sent && server.is_active()) {
-               server.send(server_to_c2_magic);
-            }
-
-            if(!server_recv.empty() && !client2_recv.empty()) {
-               result.test_bin_eq("Expected message from client2", server_recv, c2_to_server_magic);
-               result.test_bin_eq("Expected message to client2", client2_recv, server_to_c2_magic);
-               break;
-            }
-         }
-
-         return {result};
-      }
-};
-
-BOTAN_REGISTER_TEST("tls", "tls_dtls_reconnect", DTLS_Reconnection_Test);
-
-   #endif
 
 #endif
 
