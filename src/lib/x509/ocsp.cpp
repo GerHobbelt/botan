@@ -7,12 +7,14 @@
 
 #include <botan/ocsp.h>
 
+#include <botan/assert.h>
 #include <botan/base64.h>
 #include <botan/ber_dec.h>
 #include <botan/certstor.h>
 #include <botan/der_enc.h>
 #include <botan/hash.h>
 #include <botan/pubkey.h>
+#include <botan/uri.h>
 #include <botan/x509_ext.h>
 #include <botan/x509path.h>
 
@@ -42,23 +44,33 @@ bool CertID::is_id_for(const X509_Certificate& issuer, const X509_Certificate& s
 
       const std::string hash_algo = m_hash_id.oid().to_formatted_string();
 
-      if(hash_algo != "SHA-1" && hash_algo != "SHA-256") {
-         return false;
-      }
-
-      auto hash = HashFunction::create_or_throw(hash_algo);
-
       /*
       RFC 6960 4.1.1
          issuerNameHash is the hash of the issuer's distinguished name (DN).
          The hash shall be calculated over the DER encoding of the issuer's name
          field in the certificate being checked.
-      */
-      if(m_issuer_dn_hash != hash->process<std::vector<uint8_t>>(subject.raw_issuer_dn())) {
-         return false;
-      }
 
-      if(m_issuer_key_hash != hash->process<std::vector<uint8_t>>(issuer.subject_public_key_bitstring())) {
+         issuerKeyHash is the hash of the issuer's public key. The hash shall be
+         calculated over the value (excluding tag and length) of the subject public key
+         field in the issuer's certificate.
+      */
+
+      if(hash_algo == "SHA-1") {
+         if(!std::ranges::equal(m_issuer_dn_hash, subject.raw_issuer_dn_sha1())) {
+            return false;
+         }
+         if(!std::ranges::equal(m_issuer_key_hash, issuer.subject_public_key_bitstring_sha1())) {
+            return false;
+         }
+      } else if(hash_algo == "SHA-256") {
+         if(!std::ranges::equal(m_issuer_dn_hash, subject.raw_issuer_dn_sha256())) {
+            return false;
+         }
+         if(!std::ranges::equal(m_issuer_key_hash, issuer.subject_public_key_bitstring_sha256())) {
+            return false;
+         }
+      } else {
+         // Exotic hashes are unlikely to occur in OCSP
          return false;
       }
    } catch(...) {
@@ -122,13 +134,23 @@ void SingleResponse::decode_from(BER_Decoder& from) {
    BER_Object cert_status;
    Extensions extensions;
 
-   from.start_sequence()
-      .decode(m_certid)
+   auto seq = from.start_sequence();
+   seq.decode(m_certid)
       .get_next(cert_status)
       .decode(m_thisupdate)
-      .decode_optional(m_nextupdate, ASN1_Type(0), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
-      .decode_optional(extensions, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
-      .end_cons();
+      .decode_optional(m_nextupdate, ASN1_Type(0), ASN1_Class::ContextSpecific | ASN1_Class::Constructed);
+
+   if(seq.more_items()) {
+      const BER_Object next = seq.get_next_object();
+      if(next.is_a(1, ASN1_Class::ContextSpecific | ASN1_Class::Constructed)) {
+         BER_Decoder ext_decoder(next, BER_Decoder::Limits::DER());
+         extensions.decode_from(ext_decoder, Extension_Context::OCSP_Response);
+         ext_decoder.verify_end();
+      } else {
+         throw Decoding_Error("Unexpected tag in OCSP SingleResponse");
+      }
+   }
+   seq.end_cons();
 
    const auto cert_status_class = cert_status.get_class();
    if(cert_status_class != ASN1_Class::ContextSpecific &&
@@ -322,7 +344,8 @@ Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
       size_t responsedata_version = 0;
       Extensions extensions;
 
-      BER_Decoder(m_tbs_bits, BER_Decoder::Limits::DER())
+      BER_Decoder tbs_decoder(m_tbs_bits, BER_Decoder::Limits::DER());
+      tbs_decoder
          .decode_optional(responsedata_version, ASN1_Type(0), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
 
          .decode_optional(m_signer_name, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
@@ -332,11 +355,19 @@ Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
 
          .decode(m_produced_at)
 
-         .decode_list(m_responses)
+         .decode_list(m_responses);
 
-         .decode_optional(extensions, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
-
-         .verify_end();
+      if(tbs_decoder.more_items()) {
+         const BER_Object next = tbs_decoder.get_next_object();
+         if(next.is_a(1, ASN1_Class::ContextSpecific | ASN1_Class::Constructed)) {
+            BER_Decoder ext_decoder(next, BER_Decoder::Limits::DER());
+            extensions.decode_from(ext_decoder, Extension_Context::OCSP_Response);
+            ext_decoder.verify_end();
+         } else {
+            throw Decoding_Error("Unexpected tag in OCSP ResponseData");
+         }
+      }
+      tbs_decoder.verify_end();
 
       const bool has_signer = !m_signer_name.empty();
       const bool has_key_hash = !m_key_hash.empty();
@@ -533,9 +564,23 @@ Response online_check(const X509_Certificate& issuer,
       throw Invalid_Argument("No OCSP responder specified");
    }
 
+   if(auto uri = URI::parse(ocsp_responder)) {
+      return online_check(issuer, subject_serial, *uri, timeout);
+   } else {
+      throw Invalid_Argument("Unparsable URI for OCSP responder");
+   }
+}
+
+Response online_check(const X509_Certificate& issuer,
+                      const BigInt& subject_serial,
+                      const URI& ocsp_responder,
+                      std::chrono::milliseconds timeout) {
    const OCSP::Request req(issuer, subject_serial);
 
-   auto http = HTTP::POST_sync(ocsp_responder, "application/ocsp-request", req.BER_encode(), 1, timeout);
+   auto http = HTTP::POST_sync(ocsp_responder,
+                               "application/ocsp-request",
+                               req.BER_encode(),
+                               HTTP::RequestLimits().set_timeout(timeout).set_max_body_size(64 * 1024));
 
    http.throw_unless_ok();
 
@@ -551,7 +596,23 @@ Response online_check(const X509_Certificate& issuer,
       throw Invalid_Argument("Invalid cert pair to OCSP::online_check (mismatched issuer,subject args?)");
    }
 
-   return online_check(issuer, BigInt::from_bytes(subject.serial_number()), subject.ocsp_responder(), timeout);
+   const auto responders = URI::filter_scheme("http", subject.ocsp_responder_uris());
+
+   if(responders.empty()) {
+      throw Invalid_Argument("No HTTP OCSP responder URLs available for this certificate");
+   }
+
+   const auto subject_serial = BigInt::from_bytes(subject.serial_number());
+
+   // Try the first N - 1 responder addresses in sequence, ignoring errors
+   for(size_t i = 0; i + 1 < responders.size(); ++i) {
+      try {
+         return online_check(issuer, subject_serial, responders[i], timeout);
+      } catch(...) {}
+   }
+
+   // Now try the final responder and let any errors propagate
+   return online_check(issuer, subject_serial, responders.back(), timeout);
 }
 
 #endif

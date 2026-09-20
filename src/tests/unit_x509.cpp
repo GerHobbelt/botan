@@ -14,6 +14,7 @@
    #include <botan/pk_algs.h>
    #include <botan/pkcs10.h>
    #include <botan/pkcs8.h>
+   #include <botan/pubkey.h>
    #include <botan/rng.h>
    #include <botan/x509_ca.h>
    #include <botan/x509_ext.h>
@@ -245,6 +246,27 @@ Test::Result test_x509_extension() {
    result.test_is_true("Basic constraints is not set", !extn.extension_set(oid_bc));
    result.test_is_true("Basic constraints is not critical", !extn.critical_extension_set(oid_bc));
 
+   std::vector<uint8_t> crl_number_bits;
+   Botan::DER_Encoder(crl_number_bits).encode(size_t(42));
+
+   std::vector<uint8_t> crl_number_extn_der;
+   Botan::DER_Encoder(crl_number_extn_der)
+      .start_sequence()
+      .start_sequence()
+      .encode(Botan::Cert_Extension::CRL_Number::static_oid())
+      .encode(crl_number_bits, Botan::ASN1_Type::OctetString)
+      .end_cons()
+      .end_cons();
+
+   Botan::Extensions decoded_extns;
+   Botan::BER_Decoder dec(crl_number_extn_der);
+   decoded_extns.decode_from(dec);
+
+   const auto* crl_number = decoded_extns.get_extension_object_as<Botan::Cert_Extension::CRL_Number>();
+   if(result.test_is_true("CRL number recognized without explicit context", crl_number != nullptr)) {
+      result.test_sz_eq("Decoded CRL number", crl_number->get_crl_number(), 42);
+   }
+
    return result;
 }
 
@@ -456,12 +478,15 @@ Test::Result test_x509_encode_authority_info_access_extension() {
    const std::string padding_method{"PKCS1v15(SHA-256)"};
 
    // CA Issuer information
-   const std::vector<std::string> ca_issuers = {
-      "http://www.d-trust.net/cgi-bin/Bdrive_Test_CA_1-2_2017.crt",
-      "ldap://directory.d-trust.net/CN=Bdrive%20Test%20CA%201-2%202017,O=Bundesdruckerei%20GmbH,C=DE?cACertificate?base?"};
+   const std::vector<Botan::URI> ca_issuers = {
+      Botan::URI::parse("http://www.d-trust.net/cgi-bin/Bdrive_Test_CA_1-2_2017.crt").value(),
+      Botan::URI::parse(
+         "ldap://directory.d-trust.net/CN=Bdrive%20Test%20CA%201-2%202017,O=Bundesdruckerei%20GmbH,C=DE?cACertificate?base?")
+         .value()};
 
    // OCSP
    const std::string_view ocsp_uri{"http://staging.ocsp.d-trust.net"};
+   const auto ocsp_uri_parsed = Botan::URI::parse(ocsp_uri).value();
 
    // create a CA
    auto ca_key = make_a_private_key(sig_algo, *rng);
@@ -473,45 +498,48 @@ Test::Result test_x509_encode_authority_info_access_extension() {
    auto key = make_a_private_key(sig_algo, *rng);
 
    Botan::X509_Cert_Options opts1 = req_opts1(sig_algo);
-   opts1.extensions.add(std::make_unique<Botan::Cert_Extension::Authority_Information_Access>("", ca_issuers));
+   opts1.extensions.add(
+      std::make_unique<Botan::Cert_Extension::Authority_Information_Access>(std::vector<Botan::URI>{}, ca_issuers));
 
    Botan::PKCS10_Request req = Botan::X509::create_cert_req(opts1, *key, hash_fn, *rng);
 
    Botan::X509_Certificate cert = ca.sign_request(req, *rng, from_date(-1, 01, 01), from_date(2, 01, 01));
 
-   if(!result.test_sz_eq("number of ca_issuers URIs", cert.ca_issuers().size(), 2)) {
+   if(!result.test_sz_eq("number of ca_issuers URIs", cert.ca_issuer_uris().size(), 2)) {
       return result;
    }
 
-   for(const auto& ca_issuer : cert.ca_issuers()) {
+   for(const auto& ca_issuer : cert.ca_issuer_uris()) {
       result.test_is_true("CA issuer URI present in certificate",
                           std::ranges::find(ca_issuers, ca_issuer) != ca_issuers.end());
    }
 
-   result.test_is_true("no OCSP url available", cert.ocsp_responder().empty());
+   result.test_is_true("no OCSP url available", cert.ocsp_responder_uris().empty());
 
    // create a certificate with only OCSP URI information
    Botan::X509_Cert_Options opts2 = req_opts1(sig_algo);
-   opts2.extensions.add(std::make_unique<Botan::Cert_Extension::Authority_Information_Access>(ocsp_uri));
+   opts2.extensions.add(
+      std::make_unique<Botan::Cert_Extension::Authority_Information_Access>(std::vector<Botan::URI>{ocsp_uri_parsed}));
 
    req = Botan::X509::create_cert_req(opts2, *key, hash_fn, *rng);
 
    cert = ca.sign_request(req, *rng, from_date(-1, 01, 01), from_date(2, 01, 01));
 
-   result.test_is_true("OCSP URI available", !cert.ocsp_responder().empty());
-   result.test_is_true("no CA Issuer URI available", cert.ca_issuers().empty());
-   result.test_str_eq("OCSP responder URI matches", cert.ocsp_responder(), std::string(ocsp_uri));
+   result.test_is_true("OCSP URI available", !cert.ocsp_responder_uris().empty());
+   result.test_is_true("no CA Issuer URI available", cert.ca_issuer_uris().empty());
+   result.test_str_eq("OCSP responder URI matches", cert.ocsp_responder_uris().at(0).original_input(), ocsp_uri);
 
    // create a certificate with OCSP URI and CA Issuer information
    Botan::X509_Cert_Options opts3 = req_opts1(sig_algo);
-   opts3.extensions.add(std::make_unique<Botan::Cert_Extension::Authority_Information_Access>(ocsp_uri, ca_issuers));
+   opts3.extensions.add(std::make_unique<Botan::Cert_Extension::Authority_Information_Access>(
+      std::vector<Botan::URI>{ocsp_uri_parsed}, ca_issuers));
 
    req = Botan::X509::create_cert_req(opts3, *key, hash_fn, *rng);
 
    cert = ca.sign_request(req, *rng, from_date(-1, 01, 01), from_date(2, 01, 01));
 
-   result.test_is_true("OCSP URI available", !cert.ocsp_responder().empty());
-   result.test_is_true("CA Issuer URI available", !cert.ca_issuers().empty());
+   result.test_is_true("OCSP URI available", !cert.ocsp_responder_uris().empty());
+   result.test_is_true("CA Issuer URI available", !cert.ca_issuer_uris().empty());
 
    // create a certificate with multiple OCSP URIs
    Botan::X509_Cert_Options opts_multi_ocsp = req_opts1(sig_algo);
@@ -531,12 +559,14 @@ Test::Result test_x509_encode_authority_info_access_extension() {
    result.test_str_eq("First OCSP responder URI matches", ocsp_responders[0], "http://ocsp.example.com");
    result.test_str_eq("Second OCSP responder URI matches", ocsp_responders[1], "http://backup-ocsp.example.com");
 
-   const auto cert_ocsp_responders = cert.ocsp_responders();
+   const auto& cert_ocsp_responders = cert.ocsp_responder_uris();
    result.test_sz_eq("Certificate: number of OCSP responder URIs", cert_ocsp_responders.size(), 2);
-   result.test_str_eq(
-      "Certificate: First OCSP responder URI matches", cert_ocsp_responders[0], "http://ocsp.example.com");
-   result.test_str_eq(
-      "Certificate: Second OCSP responder URI matches", cert_ocsp_responders[1], "http://backup-ocsp.example.com");
+   result.test_str_eq("Certificate: First OCSP responder URI matches",
+                      cert_ocsp_responders[0].original_input(),
+                      "http://ocsp.example.com");
+   result.test_str_eq("Certificate: Second OCSP responder URI matches",
+                      cert_ocsp_responders[1].original_input(),
+                      "http://backup-ocsp.example.com");
    #endif
 
    return result;
@@ -716,51 +746,60 @@ Test::Result test_x509_authority_info_access_extension() {
    // contains no AIA extension
    const Botan::X509_Certificate no_aia_cert(Test::data_file("x509/misc/contains_utf8string.pem"));
 
-   result.test_sz_eq("number of ca_issuers URLs", no_aia_cert.ca_issuers().size(), 0);
-   result.test_str_eq("CA issuer URL matches", no_aia_cert.ocsp_responder(), "");
+   result.test_sz_eq("number of ca_issuers URLs", no_aia_cert.ca_issuer_uris().size(), 0);
+   result.test_is_true("no OCSP responder", no_aia_cert.ocsp_responder_uris().empty());
 
    // contains AIA extension with 1 CA issuer URL and 1 OCSP responder
    const Botan::X509_Certificate aia_cert(Test::data_file("x509/misc/contains_authority_info_access.pem"));
 
-   const auto ca_issuers = aia_cert.ca_issuers();
+   const auto& ca_issuers = aia_cert.ca_issuer_uris();
 
    result.test_sz_eq("number of ca_issuers URLs", ca_issuers.size(), 1);
    if(result.tests_failed() > 0) {
       return result;
    }
 
-   result.test_str_eq("CA issuer URL matches", ca_issuers[0], "http://gp.symcb.com/gp.crt");
-   result.test_str_eq("OCSP responder URL matches", aia_cert.ocsp_responder(), "http://gp.symcd.com");
+   result.test_str_eq("CA issuer URL matches", ca_issuers[0].original_input(), "http://gp.symcb.com/gp.crt");
+   result.test_sz_eq("one OCSP responder URI", aia_cert.ocsp_responder_uris().size(), 1);
+   result.test_str_eq(
+      "OCSP responder URL matches", aia_cert.ocsp_responder_uris().at(0).original_input(), "http://gp.symcd.com");
 
    // contains AIA extension with 2 CA issuer URL and 1 OCSP responder
    const Botan::X509_Certificate aia_cert_2ca(
       Test::data_file("x509/misc/contains_authority_info_access_with_two_ca_issuers.pem"));
 
-   const auto ca_issuers2 = aia_cert_2ca.ca_issuers();
+   const auto& ca_issuers2 = aia_cert_2ca.ca_issuer_uris();
 
    result.test_sz_eq("number of ca_issuers URLs", ca_issuers2.size(), 2);
    if(result.tests_failed() > 0) {
       return result;
    }
 
-   result.test_str_eq(
-      "CA issuer URL matches", ca_issuers2[0], "http://www.d-trust.net/cgi-bin/Bdrive_Test_CA_1-2_2017.crt");
+   result.test_str_eq("CA issuer URL matches",
+                      ca_issuers2[0].original_input(),
+                      "http://www.d-trust.net/cgi-bin/Bdrive_Test_CA_1-2_2017.crt");
    result.test_str_eq(
       "CA issuer URL matches",
-      ca_issuers2[1],
+      ca_issuers2[1].original_input(),
       "ldap://directory.d-trust.net/CN=Bdrive%20Test%20CA%201-2%202017,O=Bundesdruckerei%20GmbH,C=DE?cACertificate?base?");
-   result.test_str_eq("OCSP responder URL matches", aia_cert_2ca.ocsp_responder(), "http://staging.ocsp.d-trust.net");
+   result.test_sz_eq("one OCSP responder URI", aia_cert_2ca.ocsp_responder_uris().size(), 1);
+   result.test_str_eq("OCSP responder URL matches",
+                      aia_cert_2ca.ocsp_responder_uris().at(0).original_input(),
+                      "http://staging.ocsp.d-trust.net");
 
    // contains AIA extension with multiple OCSP responders
    const Botan::X509_Certificate aia_cert_multi_ocsp(
       Test::data_file("x509/misc/contains_multiple_ocsp_responders.pem"));
 
-   const auto& ocsp_responders_multi = aia_cert_multi_ocsp.ocsp_responders();
+   const auto& ocsp_responders_multi = aia_cert_multi_ocsp.ocsp_responder_uris();
    result.test_sz_eq("number of OCSP responders", ocsp_responders_multi.size(), 3);
-   result.test_str_eq("First OCSP responder URL matches", ocsp_responders_multi[0], "http://ocsp1.example.com");
-   result.test_str_eq("Second OCSP responder URL matches", ocsp_responders_multi[1], "http://ocsp2.example.com");
-   result.test_str_eq("Third OCSP responder URL matches", ocsp_responders_multi[2], "http://ocsp3.example.com");
-   result.test_is_true("no CA Issuer URI available", aia_cert_multi_ocsp.ca_issuers().empty());
+   result.test_str_eq(
+      "First OCSP responder URL matches", ocsp_responders_multi[0].original_input(), "http://ocsp1.example.com");
+   result.test_str_eq(
+      "Second OCSP responder URL matches", ocsp_responders_multi[1].original_input(), "http://ocsp2.example.com");
+   result.test_str_eq(
+      "Third OCSP responder URL matches", ocsp_responders_multi[2].original_input(), "http://ocsp3.example.com");
+   result.test_is_true("no CA Issuer URI available", aia_cert_multi_ocsp.ca_issuer_uris().empty());
 
    return result;
 }
@@ -1120,6 +1159,10 @@ Test::Result test_x509_cert(const Botan::Private_Key& ca_key,
    result_u2 = Botan::x509_path_validate(user2_cert, restrictions, store);
    result.test_str_eq("user 1 revoked", result_u2.result_string(), revoked_str);
 
+   // RFC 5280 5.3.1: the removeFromCRL reason code MAY only appear in delta
+   // CRLs. Botan does not process delta CRLs, so a base CRL with this reason
+   // code is malformed; we keep the cert marked as revoked rather than honor
+   // the spec-violating "un-revoke" semantics.
    revoked.clear();
    revoked.push_back(Botan::CRL_Entry(user1_cert, Botan::CRL_Code::RemoveFromCrl));
    const Botan::X509_CRL crl3 = ca.update_crl(crl2, revoked, rng);
@@ -1127,9 +1170,7 @@ Test::Result test_x509_cert(const Botan::Private_Key& ca_key,
    store.add_crl(crl3);
 
    result_u1 = Botan::x509_path_validate(user1_cert, restrictions, store);
-   if(!result.test_is_true("user 1 validates", result_u1.successful_validation())) {
-      result.test_note("user 1 validation result", result_u1.result_string());
-   }
+   result.test_str_eq("user 1 still revoked after RemoveFromCrl in base CRL", result_u1.result_string(), revoked_str);
 
    result_u2 = Botan::x509_path_validate(user2_cert, restrictions, store);
    result.test_str_eq("user 2 still revoked", result_u2.result_string(), revoked_str);
@@ -1441,6 +1482,8 @@ class String_Extension final : public Botan::Certificate_Extension {
 
       std::string oid_name() const override { return "String Extension"; }
 
+      bool is_appropriate_context(Botan::Extension_Context /*context*/) const override { return true; }
+
       std::vector<uint8_t> encode_inner() const override {
          std::vector<uint8_t> bits;
          Botan::DER_Encoder(bits).encode(Botan::ASN1_String(m_contents, Botan::ASN1_Type::Utf8String));
@@ -1456,6 +1499,65 @@ class String_Extension final : public Botan::Certificate_Extension {
    private:
       std::string m_contents;
 };
+
+Test::Result test_x509_wrong_context_certificate_extensions() {
+   Test::Result result("X509 wrong-context certificate extensions");
+
+   #if defined(BOTAN_TARGET_OS_HAS_FILESYSTEM)
+   const std::string base = "x509/wrong_context_ext/";
+
+   const auto test_rejected = [&](const std::string& filename, std::string_view what) {
+      result.test_throws<Botan::Decoding_Error>(
+         std::string(what), [&]() { const Botan::X509_Certificate cert(Test::data_file(base + filename)); });
+   };
+
+   test_rejected("cert_with_crl_number.pem", "CRL number rejected in certificate");
+   test_rejected("cert_with_reason_code.pem", "CRL reason rejected in certificate");
+   test_rejected("cert_with_idp.pem", "CRL issuing distribution point rejected in certificate");
+   #endif
+
+   return result;
+}
+
+Test::Result test_x509_wrong_context_crl_extensions() {
+   Test::Result result("X509 wrong-context CRL extensions");
+
+   #if defined(BOTAN_TARGET_OS_HAS_FILESYSTEM)
+   const std::string base_dir = "x509/wrong_context_ext";
+
+   auto load_crl_from_pem = [&](std::string_view filename) -> Botan::X509_CRL {
+      return Botan::X509_CRL(Test::data_file(base_dir, filename));
+   };
+
+   result.test_throws<Botan::Decoding_Error>("SubjectAltName rejected in CRL",
+                                             [&]() { load_crl_from_pem("crl_with_san.pem"); });
+   result.test_throws<Botan::Decoding_Error>("SubjectAltName rejected in CRL entry",
+                                             [&]() { load_crl_from_pem("crl_entry_with_san.pem"); });
+
+   const Botan::X509_Certificate ca_cert(Test::data_file(base_dir + "/ca.pem"));
+   const Botan::X509_Certificate user_cert(Test::data_file(base_dir + "/user.pem"));
+   const std::vector<Botan::X509_Certificate> cert_path = {user_cert, ca_cert};
+   const auto validation_time = Botan::calendar_point(2027, 1, 1, 0, 0, 0).to_std_timepoint();
+
+   const auto check_crl_unusable = [&](const std::string& filename, std::string_view what) {
+      const auto crl = load_crl_from_pem(filename);
+      result.test_is_true("CRL records the unknown critical extension", crl.has_unknown_critical_extension());
+
+      const std::vector<std::optional<Botan::X509_CRL>> crls = {crl};
+      const auto crl_status = Botan::PKIX::check_crl(cert_path, crls, validation_time);
+
+      const bool contains_expected_code =
+         !crl_status.empty() &&
+         crl_status[0].contains(Botan::Certificate_Status_Code::CRL_HAS_UNKNOWN_CRITICAL_EXTENSION);
+      result.test_is_true(what, contains_expected_code);
+   };
+
+   check_crl_unusable("crl_with_unknown_critical.pem", "critical unknown CRL extension rejects CRL");
+   check_crl_unusable("crl_entry_with_unknown_critical.pem", "critical unknown CRL entry extension rejects CRL");
+   #endif
+
+   return result;
+}
 
 Test::Result test_custom_dn_attr(const Botan::Private_Key& ca_key,
                                  const std::string& sig_algo,
@@ -1490,7 +1592,7 @@ Test::Result test_custom_dn_attr(const Botan::Private_Key& ca_key,
 
    const Botan::X509_DN& req_dn = req.subject_dn();
 
-   result.test_sz_eq("Expected number of DN entries", req_dn.dn_info().size(), 2);
+   result.test_sz_eq("Expected number of DN entries", req_dn.count(), 2);
 
    const Botan::ASN1_String req_val1 = req_dn.get_first_attribute(attr1);
    const Botan::ASN1_String req_val2 = req_dn.get_first_attribute(attr2);
@@ -1506,7 +1608,7 @@ Test::Result test_custom_dn_attr(const Botan::Private_Key& ca_key,
 
    const Botan::X509_DN& cert_dn = cert.subject_dn();
 
-   result.test_sz_eq("Expected number of DN entries", cert_dn.dn_info().size(), 2);
+   result.test_sz_eq("Expected number of DN entries", cert_dn.count(), 2);
 
    const Botan::ASN1_String cert_val1 = cert_dn.get_first_attribute(attr1);
    const Botan::ASN1_String cert_val2 = cert_dn.get_first_attribute(attr2);
@@ -1604,12 +1706,12 @@ Test::Result test_x509_extensions(const Botan::Private_Key& ca_key,
       }
 
       // Ensure X509_Certificate's cached accessor returns the same bare URIs
-      const auto cert_dp = self_signed_cert.crl_distribution_points();
+      const auto& cert_dp = self_signed_cert.crl_distribution_point_uris();
       result.test_sz_eq(
          "X509_Certificate::crl_distribution_points size (self-signed)", cert_dp.size(), cdp_urls.size());
       for(const auto& url : cert_dp) {
          result.test_is_true("X509_Certificate::crl_distribution_points entry is a bare URI (self-signed)",
-                             std::ranges::find(cdp_urls, url) != cdp_urls.end());
+                             std::ranges::find(cdp_urls, url.original_input()) != cdp_urls.end());
       }
    }
 
@@ -1656,11 +1758,11 @@ Test::Result test_x509_extensions(const Botan::Private_Key& ca_key,
                              std::ranges::find(cdp_urls, url) != cdp_urls.end());
       }
 
-      const auto cert_dp = ca_signed_cert.crl_distribution_points();
+      const auto& cert_dp = ca_signed_cert.crl_distribution_point_uris();
       result.test_sz_eq("X509_Certificate::crl_distribution_points size (CA-signed)", cert_dp.size(), cdp_urls.size());
       for(const auto& url : cert_dp) {
          result.test_is_true("X509_Certificate::crl_distribution_points entry is a bare URI (CA-signed)",
-                             std::ranges::find(cdp_urls, url) != cdp_urls.end());
+                             std::ranges::find(cdp_urls, url.original_input()) != cdp_urls.end());
       }
    }
 
@@ -1944,6 +2046,8 @@ class X509_Cert_Unit_Tests final : public Test {
          results.push_back(test_x509_encode_authority_info_access_extension());
          results.push_back(test_x509_extension());
          results.push_back(test_x509_extension_decode_duplicate());
+         results.push_back(test_x509_wrong_context_certificate_extensions());
+         results.push_back(test_x509_wrong_context_crl_extensions());
          results.push_back(test_x509_dates());
          results.push_back(test_cert_status_strings());
          results.push_back(test_x509_uninit());

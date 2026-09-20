@@ -22,6 +22,7 @@
 #include <vector>
 
 #if defined(BOTAN_HAS_ONLINE_REVOCATION_CHECKS)
+   #include <botan/uri.h>
    #include <botan/internal/http_util.h>
    #include <future>
 #endif
@@ -372,11 +373,12 @@ CertificatePathStatusCodes PKIX::check_chain(const std::vector<X509_Certificate>
 
       // Check the subject's DN components' length
 
-      for(const auto& dn_pair : subject.subject_dn().dn_info()) {
-         const size_t dn_ub = X509_DN::lookup_ub(dn_pair.first);
-         // dn_pair = <OID,str>
-         if(dn_ub > 0 && dn_pair.second.size() > dn_ub) {
-            status.insert(Certificate_Status_Code::DN_TOO_LONG);
+      for(const auto& rdn : subject.subject_dn().rdns()) {
+         for(const auto& ava : rdn) {
+            const size_t dn_ub = X509_DN::lookup_ub(ava.first);
+            if(dn_ub > 0 && ava.second.size() > dn_ub) {
+               status.insert(Certificate_Status_Code::DN_TOO_LONG);
+            }
          }
       }
 
@@ -529,6 +531,15 @@ Certificate_Status_Code verify_ocsp_signing_cert(const X509_Certificate& signing
    // Note: This needs special care to prevent endless loops on specifically
    //       forged chains of OCSP responses referring to each other.
    //
+   // RFC 6960 4.2.2.2.1 seems to imply that generally OCSP checking of OCSP
+   // signers is not realistic; it suggests either using the nocheck extension,
+   // "using CRL Distribution Points if the check should be done using CRLs",
+   // or just punts with
+   //    A CA may choose not to specify any method of revocation checking
+   //    for the responder's certificate, in which case it would be up to
+   //    the OCSP client's local security policy to decide whether that
+   //    certificate should be checked for revocation or not.
+   //
    // Currently, we're disabling OCSP-based revocation checks by setting the
    // timeout to 0. Additionally, the library's API would not allow an
    // application to pass in the required "second order" OCSP responses. I.e.
@@ -540,7 +551,11 @@ Certificate_Status_Code verify_ocsp_signing_cert(const X509_Certificate& signing
       Path_Validation_Restrictions(false /* do not enforce revocation data */,
                                    restrictions.minimum_key_strength(),
                                    false /* OCSP is not available, so don't try for intermediates */,
-                                   restrictions.trusted_hashes());
+                                   restrictions.trusted_hashes(),
+                                   /* max_ocsp_age */ std::chrono::seconds(0),
+                                   /* trusted_responders */ {},
+                                   restrictions.ignore_trusted_root_time_range(),
+                                   restrictions.require_self_signed_trust_anchors());
 
    const auto validation_result = x509_path_validate(concat(std::vector{signing_cert}, extra_certs),
                                                      relaxed_restrictions,
@@ -660,25 +675,28 @@ CertificatePathStatusCodes PKIX::check_crl(const std::vector<X509_Certificate>& 
          if(crls[i]->check_signature(*ca_key) == false) {
             status.insert(Certificate_Status_Code::CRL_BAD_SIGNATURE);
          } else {
-            status.insert(Certificate_Status_Code::VALID_CRL_CHECKED);
+            /*
+            RFC 5280 5.2 "If a CRL contains a critical extension that the
+            application cannot process, then the application MUST NOT use that
+            CRL to determine the status of certificates."
 
-            if(crls[i]->is_revoked(subject)) {
-               status.insert(Certificate_Status_Code::CERT_IS_REVOKED);
-            }
+            RFC 5280 5.3 "If a CRL contains a critical CRL entry extension that
+            the application cannot process, then the application MUST NOT use
+            that CRL to determine the status of any certificates."
+            */
+            const bool crl_is_not_usable = crls[i]->has_unknown_critical_extension();
 
-            if(!crls[i]->has_matching_distribution_point(subject)) {
-               status.insert(Certificate_Status_Code::NO_MATCHING_CRLDP);
-            }
+            if(crl_is_not_usable) {
+               status.insert(Certificate_Status_Code::CRL_HAS_UNKNOWN_CRITICAL_EXTENSION);
+            } else {
+               status.insert(Certificate_Status_Code::VALID_CRL_CHECKED);
 
-            for(const auto& [extension, critical] : crls[i]->extensions().extensions()) {
-               if(critical) {
-                  /* NIST Certificate Path Validation Testing document: "When an implementation does
-                  * not recognize a critical extension in the crlExtensions field, it shall assume
-                  * that identified certificates have been revoked and are no longer valid"
-                  */
-                  if(dynamic_cast<const Cert_Extension::Unknown_Extension*>(extension.get()) != nullptr) {
-                     status.insert(Certificate_Status_Code::CERT_IS_REVOKED);
-                  }
+               if(crls[i]->is_revoked(subject)) {
+                  status.insert(Certificate_Status_Code::CERT_IS_REVOKED);
+               }
+
+               if(!crls[i]->has_matching_distribution_point(subject)) {
+                  status.insert(Certificate_Status_Code::NO_MATCHING_CRLDP);
                }
             }
          }
@@ -749,32 +767,34 @@ CertificatePathStatusCodes PKIX::check_ocsp_online(const std::vector<X509_Certif
       if(skip_revocation_check(subject)) {
          ocsp_response_futures.emplace_back(
             std::async(std::launch::deferred, []() -> std::optional<OCSP::Response> { return std::nullopt; }));
-      } else if(subject.ocsp_responder().empty()) {
-         ocsp_response_futures.emplace_back(std::async(std::launch::deferred, []() -> std::optional<OCSP::Response> {
-            return OCSP::Response(Certificate_Status_Code::OCSP_NO_REVOCATION_URL);
-         }));
       } else {
-         auto ocsp_url = subject.ocsp_responder();
-         auto ocsp_req = OCSP::Request(issuer, BigInt::from_bytes(subject.serial_number()));
-         ocsp_response_futures.emplace_back(
-            std::async(std::launch::async, [ocsp_url, ocsp_req, timeout]() -> std::optional<OCSP::Response> {
-               HTTP::Response http;
-               try {
-                  http = HTTP::POST_sync(ocsp_url,
-                                         "application/ocsp-request",
-                                         ocsp_req.BER_encode(),
-                                         /*redirects*/ 1,
-                                         timeout);
+         const auto ocsp_urls = URI::filter_scheme("http", subject.ocsp_responder_uris());
 
-                  if(http.status_code() != 200) {
+         if(ocsp_urls.empty()) {
+            ocsp_response_futures.emplace_back(std::async(std::launch::deferred, []() -> std::optional<OCSP::Response> {
+               return OCSP::Response(Certificate_Status_Code::OCSP_NO_REVOCATION_URL);
+            }));
+         } else {
+            auto ocsp_req = OCSP::Request(issuer, BigInt::from_bytes(subject.serial_number()));
+            ocsp_response_futures.emplace_back(
+               std::async(std::launch::async, [ocsp_urls, ocsp_req, timeout]() -> std::optional<OCSP::Response> {
+                  HTTP::Response http;
+                  try {
+                     http = HTTP::POST_sync(ocsp_urls[0],
+                                            "application/ocsp-request",
+                                            ocsp_req.BER_encode(),
+                                            HTTP::RequestLimits().set_timeout(timeout).set_max_body_size(64 * 1024));
+
+                     if(http.status_code() != 200) {
+                        return OCSP::Response(Certificate_Status_Code::OCSP_SERVER_NOT_AVAILABLE);
+                     }
+
+                     return OCSP::Response(http.body());
+                  } catch(std::exception&) {
                      return OCSP::Response(Certificate_Status_Code::OCSP_SERVER_NOT_AVAILABLE);
                   }
-
-                  return OCSP::Response(http.body());
-               } catch(std::exception&) {
-                  return OCSP::Response(Certificate_Status_Code::OCSP_SERVER_NOT_AVAILABLE);
-               }
-            }));
+               }));
+         }
       }
    }
 
@@ -828,22 +848,23 @@ CertificatePathStatusCodes PKIX::check_crl_online(const std::vector<X509_Certifi
          so that indexes match up
          */
          future_crls.emplace_back(std::future<std::optional<X509_CRL>>());
-      } else if(cert.crl_distribution_point().empty()) {
-         // Avoid creating a thread for this case
-         future_crls.emplace_back(std::async(std::launch::deferred, []() -> std::optional<X509_CRL> {
-            throw Not_Implemented("No CRL distribution point for this certificate");
-         }));
       } else {
-         auto cdp = cert.crl_distribution_point();
-         future_crls.emplace_back(std::async(std::launch::async, [cdp, timeout]() -> std::optional<X509_CRL> {
-            auto http = HTTP::GET_sync(cdp,
-                                       /*redirects*/ 1,
-                                       timeout);
+         const auto cdp_uris = URI::filter_scheme("http", cert.crl_distribution_point_uris());
 
-            http.throw_unless_ok();
-            // check the mime type?
-            return X509_CRL(http.body());
-         }));
+         if(cdp_uris.empty()) {
+            future_crls.emplace_back(std::async(std::launch::deferred, []() -> std::optional<X509_CRL> {
+               throw Not_Implemented("No CRL distribution point for this certificate");
+            }));
+         } else {
+            future_crls.emplace_back(std::async(std::launch::async, [cdp_uris, timeout]() -> std::optional<X509_CRL> {
+               auto http = HTTP::GET_sync(
+                  cdp_uris[0], HTTP::RequestLimits().set_timeout(timeout).set_max_body_size(32 * 1024 * 1024));
+
+               http.throw_unless_ok();
+               // check the mime type?
+               return X509_CRL(http.body());
+            }));
+         }
       }
    }
 

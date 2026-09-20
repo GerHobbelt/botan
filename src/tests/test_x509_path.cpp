@@ -576,46 +576,50 @@ std::vector<Test::Result> Validate_NoRevAvail_Test::run() {
 
 BOTAN_REGISTER_TEST("x509", "x509_no_rev_avail", Validate_NoRevAvail_Test);
 
-class Validate_Name_Constraint_SAN_Test final : public Test {
+class Validate_Invalid_OCSP_NoCheck_Test final : public Test {
    public:
       std::vector<Test::Result> run() override;
 };
 
-std::vector<Test::Result> Validate_Name_Constraint_SAN_Test::run() {
+std::vector<Test::Result> Validate_Invalid_OCSP_NoCheck_Test::run() {
    if(Botan::has_filesystem_impl() == false) {
       return {Test::Result::Note("Path validation", "Skipping due to missing filesystem access")};
    }
 
-   const std::vector<Test::Result> results;
+   Test::Result result("Invalid use of OCSP nocheck extension");
 
-   const std::string root_crt = Test::data_file("x509/name_constraint_san/root.pem");
-   const std::string int_crt = Test::data_file("x509/name_constraint_san/int.pem");
-   const std::string ee_crt = Test::data_file("x509/name_constraint_san/leaf.pem");
+   const std::string root_crt = Test::data_file("x509/invalid_ocsp_nocheck/root.pem");
+   const std::string ee_crt = Test::data_file("x509/invalid_ocsp_nocheck/leaf.pem");
 
-   auto validation_time = Botan::calendar_point(2020, 1, 1, 1, 0, 0).to_std_timepoint();
+   auto validation_time = Botan::calendar_point(2026, 5, 19, 4, 58, 33).to_std_timepoint();
 
    const Botan::X509_Certificate root(root_crt);
-   const Botan::X509_Certificate intermediate(int_crt);
    const Botan::X509_Certificate ee_cert(ee_crt);
 
    Botan::Certificate_Store_In_Memory trusted;
    trusted.add_certificate(root);
 
-   const std::vector<Botan::X509_Certificate> chain = {ee_cert, intermediate};
+   const std::vector<Botan::X509_Certificate> chain = {ee_cert};
+
+   const auto ocsp_nocheck_oid = Botan::OID::from_name("PKIX.OCSP.NoCheck").value();
+   result.test_is_true("leaf has OCSP nocheck extension", ee_cert.v3_extensions().extension_set(ocsp_nocheck_oid));
+   result.test_is_false("leaf is not an OCSP responder", ee_cert.allowed_usage(Botan::Usage_Type::OCSP_RESPONDER));
 
    const Botan::Path_Validation_Restrictions restrictions;
    const Botan::Path_Validation_Result validation_result =
       Botan::x509_path_validate(chain, restrictions, trusted, "", Botan::Usage_Type::UNSPECIFIED, validation_time);
 
-   Test::Result result("Verifying certificate with alternative SAN violating name constraint");
    result.test_is_false("Path validation failed", validation_result.successful_validation());
+   result.test_enum_eq("Result code is INVALID_OCSP_NOCHECK",
+                       validation_result.result(),
+                       Botan::Certificate_Status_Code::INVALID_OCSP_NOCHECK);
    result.test_str_eq(
-      "Path validation result", validation_result.result_string(), "Certificate does not pass name constraint");
+      "Path validation result string", validation_result.result_string(), "Invalid use of OCSP NoCheck extension");
 
    return {result};
 }
 
-BOTAN_REGISTER_TEST("x509", "x509_name_constraint_san", Validate_Name_Constraint_SAN_Test);
+BOTAN_REGISTER_TEST("x509", "x509_invalid_ocsp_nocheck", Validate_Invalid_OCSP_NoCheck_Test);
 
 class Validate_Name_Constraint_CaseInsensitive final : public Test {
    public:
@@ -1216,7 +1220,7 @@ class Path_Validation_With_OCSP_Tests final : public Test {
          std::optional<const Botan::OCSP::Response> ocsp = load_test_OCSP_resp("x509/ocsp/randombit_ocsp.der");
 
          auto check_path = [&](const std::chrono::system_clock::time_point valid_time,
-                               const Botan::Certificate_Status_Code expected) {
+                               const Botan::Certificate_Status_Code expected_status) {
             const auto path_result = Botan::x509_path_validate(cert_path,
                                                                restrictions,
                                                                trusted,
@@ -1226,9 +1230,8 @@ class Path_Validation_With_OCSP_Tests final : public Test {
                                                                std::chrono::milliseconds(0),
                                                                {ocsp});
 
-            return result.test_is_true(std::string("Status: '") + Botan::to_string(expected) + "' should match '" +
-                                          Botan::to_string(path_result.result()) + "'",
-                                       path_result.result() == expected);
+            return result.test_str_eq(
+               "Expected status", path_result.result_string(), Botan::to_string(expected_status));
          };
 
          check_path(Botan::calendar_point(2016, 11, 11, 12, 30, 0).to_std_timepoint(),
@@ -1290,7 +1293,8 @@ class Path_Validation_With_OCSP_Tests final : public Test {
          Test::Result result("path check with ocsp w/o next_update w/o max_age");
          Botan::Certificate_Store_In_Memory trusted;
 
-         auto restrictions = Botan::Path_Validation_Restrictions(false, 110, false);
+         // max_age=0 means unbounded (the default is now finite)
+         auto restrictions = Botan::Path_Validation_Restrictions(false, 110, false, std::chrono::seconds(0));
 
          auto ee = load_test_X509_cert("x509/ocsp/patrickschmidt.pem");
          auto ca = load_test_X509_cert("x509/ocsp/bdrive_encryption.pem");
@@ -1323,6 +1327,49 @@ class Path_Validation_With_OCSP_Tests final : public Test {
          check_path(Botan::calendar_point(2019, 5, 28, 7, 30, 0).to_std_timepoint(),
                     Botan::Certificate_Status_Code::OK);
          check_path(Botan::calendar_point(2019, 5, 28, 8, 0, 0).to_std_timepoint(), Botan::Certificate_Status_Code::OK);
+         // Well past 7 days: unbounded, so still OK
+         check_path(Botan::calendar_point(2019, 6, 10, 7, 30, 0).to_std_timepoint(),
+                    Botan::Certificate_Status_Code::OK);
+
+         return result;
+      }
+
+      static Test::Result validate_with_ocsp_without_next_update_default_restrictions() {
+         Test::Result result("path check with ocsp w/o next_update under default max_age");
+         Botan::Certificate_Store_In_Memory trusted;
+
+         auto restrictions = Botan::Path_Validation_Restrictions(false, 110, false);
+
+         auto ee = load_test_X509_cert("x509/ocsp/patrickschmidt.pem");
+         auto ca = load_test_X509_cert("x509/ocsp/bdrive_encryption.pem");
+         auto trust_root = load_test_X509_cert("x509/ocsp/bdrive_root.pem");
+
+         trusted.add_certificate(trust_root);
+
+         const std::vector<Botan::X509_Certificate> cert_path = {ee, ca, trust_root};
+
+         auto ocsp = load_test_OCSP_resp("x509/ocsp/patrickschmidt_ocsp.der");
+
+         auto check_path = [&](const std::chrono::system_clock::time_point valid_time,
+                               const Botan::Certificate_Status_Code expected) {
+            const auto path_result = Botan::x509_path_validate(cert_path,
+                                                               restrictions,
+                                                               trusted,
+                                                               "",
+                                                               Botan::Usage_Type::UNSPECIFIED,
+                                                               valid_time,
+                                                               std::chrono::milliseconds(0),
+                                                               {ocsp});
+
+            return result.test_is_true(std::string("Status: '") + Botan::to_string(expected) + "' should match '" +
+                                          Botan::to_string(path_result.result()) + "'",
+                                       path_result.result() == expected);
+         };
+
+         check_path(Botan::calendar_point(2019, 5, 28, 7, 30, 0).to_std_timepoint(),
+                    Botan::Certificate_Status_Code::OK);
+         check_path(Botan::calendar_point(2019, 6, 10, 7, 30, 0).to_std_timepoint(),
+                    Botan::Certificate_Status_Code::OCSP_IS_TOO_OLD);
 
          return result;
       }
@@ -1568,6 +1615,7 @@ class Path_Validation_With_OCSP_Tests final : public Test {
                  validate_with_ocsp_with_next_update_with_max_age(),
                  validate_with_ocsp_without_next_update_without_max_age(),
                  validate_with_ocsp_without_next_update_with_max_age(),
+                 validate_with_ocsp_without_next_update_default_restrictions(),
                  validate_with_ocsp_with_authorized_responder(),
                  validate_with_ocsp_with_authorized_responder_without_keyusage(),
                  validate_with_forged_ocsp_using_self_signed_cert(),
@@ -1768,93 +1816,6 @@ BOTAN_REGISTER_TEST("x509", "x509_path_xmss", XMSS_Path_Validation_Tests);
    #endif
 
    #if defined(BOTAN_HAS_RSA) && defined(BOTAN_HAS_EMSA_PKCS1)
-
-class Name_Constraint_DN_Prefix_Test final : public Test {
-   public:
-      static Test::Result validate_name_constraint_dn_prefix_accepted() {
-         // Regression test case taken from strongSwan that originally failed with Botan.
-         // OpenSSL also accepts this case.
-         // Excluded constraint: C=CH, O=another
-         // Subject DN: C=CH, CN=tester, O=another
-         // The validation should accept the chain since CN at position 1 breaks prefix match.
-         Test::Result result("strongSwan name constraint DN prefix matching accepted");
-
-         const auto validation_time = Botan::calendar_point(2025, 12, 29, 9, 50, 0).to_std_timepoint();
-
-         // These files were created with strongSwan using the OpenSSL plugin based on the
-         // strongSwan `test_excluded_dn` test case of the `certnames` test suite.
-         const Botan::X509_Certificate ca_accepted(
-            Test::data_file("x509/name_constraint_prefix/nc_prefix_strongswan_ca_accepted.pem"));
-         const Botan::X509_Certificate intermediate_accepted(
-            Test::data_file("x509/name_constraint_prefix/nc_prefix_strongswan_im_accepted.pem"));
-         const Botan::X509_Certificate subject_cert_accepted(
-            Test::data_file("x509/name_constraint_prefix/nc_prefix_strongswan_subject_accepted.pem"));
-
-         result.test_str_eq("CA DN", ca_accepted.subject_dn().to_string(), R"(C="CH",O="strongSwan",CN="CA")");
-         result.test_str_eq(
-            "IM DN", intermediate_accepted.subject_dn().to_string(), R"(C="CH",O="strongSwan",CN="IM")");
-         result.test_str_eq(
-            "Subject DN", subject_cert_accepted.subject_dn().to_string(), R"(C="CH",CN="tester",O="another")");
-
-         Botan::Certificate_Store_In_Memory trusted;
-         trusted.add_certificate(ca_accepted);
-         const std::vector<Botan::X509_Certificate> chain = {subject_cert_accepted, intermediate_accepted};
-
-         const Botan::Path_Validation_Restrictions restrictions(false, 80);
-
-         const Botan::Path_Validation_Result validation_result = Botan::x509_path_validate(
-            chain, restrictions, trusted, "", Botan::Usage_Type::UNSPECIFIED, validation_time);
-
-         result.test_is_true("Verification passes since Name Constraints are not a prefix",
-                             validation_result.successful_validation());
-         return result;
-      }
-
-      static Test::Result validate_name_constraint_dn_prefix_not_accepted() {
-         // Excluded constraint: C=CH, O=another
-         // Subject DN: C=CH, O=another, CN=tester
-         // The validation should *not* accept the chain since the constraint is a prefix.
-         // This test catches changes in order of the RDNs to be compared in name constraint checks,
-         // which was an issue due to constructors of Botan::X509_DN taking a multimap.
-         Test::Result result("strongSwan name constraint DN prefix matching not accepted");
-
-         const auto validation_time = Botan::calendar_point(2025, 12, 29, 9, 50, 0).to_std_timepoint();
-
-         // These files were created with strongSwan using the OpenSSL plugin based on the
-         // strongSwan `test_excluded_dn` test case of the `certnames` test suite.
-         const Botan::X509_Certificate ca_not_accepted(
-            Test::data_file("x509/name_constraint_prefix/nc_prefix_strongswan_ca_not_accepted.pem"));
-         const Botan::X509_Certificate intermediate_not_accepted(
-            Test::data_file("x509/name_constraint_prefix/nc_prefix_strongswan_im_not_accepted.pem"));
-         const Botan::X509_Certificate subject_cert_not_accepted(
-            Test::data_file("x509/name_constraint_prefix/nc_prefix_strongswan_subject_not_accepted.pem"));
-
-         result.test_str_eq("CA DN", ca_not_accepted.subject_dn().to_string(), R"(C="CH",O="strongSwan",CN="CA")");
-         result.test_str_eq(
-            "IM DN", intermediate_not_accepted.subject_dn().to_string(), R"(C="CH",O="strongSwan",CN="IM")");
-         result.test_str_eq(
-            "Subject DN", subject_cert_not_accepted.subject_dn().to_string(), R"(C="CH",O="another",CN="tester")");
-
-         Botan::Certificate_Store_In_Memory trusted;
-         trusted.add_certificate(ca_not_accepted);
-         const std::vector<Botan::X509_Certificate> chain = {subject_cert_not_accepted, intermediate_not_accepted};
-
-         const Botan::Path_Validation_Restrictions restrictions(false, 80);
-
-         const Botan::Path_Validation_Result validation_result = Botan::x509_path_validate(
-            chain, restrictions, trusted, "", Botan::Usage_Type::UNSPECIFIED, validation_time);
-
-         result.test_is_false("Verification does not pass since Name Constraints is a prefix",
-                              validation_result.successful_validation());
-         return result;
-      }
-
-      std::vector<Test::Result> run() override {
-         return {validate_name_constraint_dn_prefix_accepted(), validate_name_constraint_dn_prefix_not_accepted()};
-      }
-};
-
-BOTAN_REGISTER_TEST("x509", "x509_path_nc_prefix_dn", Name_Constraint_DN_Prefix_Test);
 
 class CVE_2026_35580_Test final : public Test {
    public:

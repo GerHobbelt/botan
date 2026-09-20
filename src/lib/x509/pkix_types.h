@@ -13,9 +13,12 @@
 
 #include <botan/asn1_obj.h>
 
+#include <botan/dns_name.h>
+#include <botan/email.h>
 #include <botan/ipv4_address.h>
 #include <botan/ipv6_address.h>
 #include <botan/pkix_enums.h>
+#include <botan/uri.h>
 #include <initializer_list>
 #include <iosfwd>
 #include <map>
@@ -87,15 +90,28 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
 
       bool empty() const { return m_rdn.empty(); }
 
+      /**
+      * Number of relative distinguished names (RDNs) in the DN. Note: prior
+      * to multi-AVA RDN support this returned the total number of AVAs; the
+      * two differ only when the DN contains a multi-valued RDN.
+      */
       size_t count() const { return m_rdn.size(); }
 
       std::string to_string() const;
 
       /**
-      * Return the DN components as a vector. Note that the order of the components is
-      * preserved only when using the initializer list constructor.
+      * Return the DN as a sequence of RDNs. Each RDN is an X.501
+      * SET OF AttributeTypeAndValue; the inner vector preserves the
+      * decoded order but RDN equality is set-based per RFC 5280 7.1.
       */
-      const std::vector<std::pair<OID, ASN1_String>>& dn_info() const { return m_rdn; }
+      const std::vector<std::vector<std::pair<OID, ASN1_String>>>& rdns() const { return m_rdn; }
+
+      /**
+      * Return the DN attributes as a flat sequence of AVAs in decoded order.
+      * RDN structure is not preserved in this view; prefer rdns() to retain it.
+      */
+      BOTAN_DEPRECATED("Use rdns() which preserves RDN structure")
+      std::vector<std::pair<OID, ASN1_String>> dn_info() const;
 
       std::multimap<OID, std::string> get_attributes() const;
       std::multimap<std::string, std::string> contents() const;
@@ -110,6 +126,13 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
 
       void add_attribute(const OID& oid, const ASN1_String& val);
 
+      /**
+      * Append a complete RDN. The provided AVAs become one
+      * RelativeDistinguishedName (X.501 SET OF AttributeTypeAndValue).
+      * An empty input is ignored.
+      */
+      void add_rdn(std::vector<std::pair<OID, ASN1_String>> rdn);
+
       static std::string deref_info_field(std::string_view key);
 
       /**
@@ -122,7 +145,9 @@ class BOTAN_PUBLIC_API(2, 0) X509_DN final : public ASN1_Object {
       static size_t lookup_ub(const OID& oid);
 
    private:
-      std::vector<std::pair<OID, ASN1_String>> m_rdn;
+      // Outer vector: sequence of RDNs. Inner vector: AVAs within
+      // one RDN (X.501 SET OF AttributeTypeAndValue).
+      std::vector<std::vector<std::pair<OID, ASN1_String>>> m_rdn;
       std::vector<uint8_t> m_dn_bits;
 };
 
@@ -175,14 +200,23 @@ class BOTAN_PUBLIC_API(2, 0) AlternativeName final : public ASN1_Object {
       /// Create an empty name
       AlternativeName() = default;
 
-      /// Add a URI to this AlternativeName
+      /// Add a URI to this AlternativeName, parsing and validating the input
       void add_uri(std::string_view uri);
 
-      /// Add a URI to this AlternativeName
+      /// Add a previously parsed URI to this AlternativeName
+      void add_uri(URI uri);
+
+      /// Add an email address to this AlternativeName, parsing and validating the input
       void add_email(std::string_view addr);
 
-      /// Add a DNS name to this AlternativeName
+      /// Add a previously parsed email address to this AlternativeName
+      void add_email(EmailAddress addr);
+
+      /// Add a DNS name to this AlternativeName, parsing and validating the input
       void add_dns(std::string_view dns);
+
+      /// Add a previously parsed DNS name to this AlternativeName
+      void add_dns(DNSName dns);
 
       /// Add an "OtherName" identified by object identifier to this AlternativeName
       void add_other_name(const OID& oid, const ASN1_String& value);
@@ -200,28 +234,56 @@ class BOTAN_PUBLIC_API(2, 0) AlternativeName final : public ASN1_Object {
       void add_dn(const X509_DN& dn);
 
       /// Add an IP address to this alternative name
-      void add_ipv4_address(uint32_t ipv4);
+      BOTAN_DEPRECATED("Use variant taking IPv4Address") void add_ipv4_address(uint32_t ipv4) {
+         this->add_ipv4_address(IPv4Address(ipv4));
+      }
 
       /// Add an IP address to this alternative name
-      void add_ipv4_address(IPv4Address ipv4) { add_ipv4_address(ipv4.value()); }
+      void add_ipv4_address(const IPv4Address& ipv4);
 
       /// Add an IPv6 address to this alternative name
       void add_ipv6_address(const IPv6Address& ipv6);
 
       /// Return the set of URIs included in this alternative name
-      const std::set<std::string>& uris() const { return m_uri; }
+      ///
+      /// Deprecated: use uri_names() instead, which exposes the parsed
+      /// URI values. This accessor constructs a copy.
+      BOTAN_DEPRECATED("Use AlternativeName::uri_names") std::set<std::string> uris() const;
+
+      /// Return the set of URIs included in this alternative name
+      const std::set<URI>& uri_names() const { return m_uri; }
 
       /// Return the set of email addresses included in this alternative name
-      const std::set<std::string>& email() const { return m_email; }
+      ///
+      /// Deprecated: use email_addresses() instead, which exposes the
+      /// parsed EmailAddress values. This accessor constructs a copy.
+      BOTAN_DEPRECATED("Use AlternativeName::email_addresses") std::set<std::string> email() const;
+
+      /// Return the set of email addresses included in this alternative name
+      const std::set<EmailAddress>& email_addresses() const { return m_email; }
 
       /// Return the set of DNS names included in this alternative name
-      const std::set<std::string>& dns() const { return m_dns; }
+      ///
+      /// Deprecated: use dns_names() instead, which exposes the parsed
+      /// DNSName values. This accessor constructs a copy.
+      BOTAN_DEPRECATED("Use AlternativeName::dns_names") std::set<std::string> dns() const;
+
+      /// Return the set of DNS names included in this alternative name
+      const std::set<DNSName>& dns_names() const { return m_dns; }
 
       /// Return the set of IPv4 addresses included in this alternative name
-      const std::set<uint32_t>& ipv4_address() const { return m_ipv4_addr; }
+      BOTAN_DEPRECATED("Use ipv4_addresses") std::set<uint32_t> ipv4_address() const;
 
       /// Return the set of IPv6 addresses included in this alternative name
-      const std::set<IPv6Address>& ipv6_address() const { return m_ipv6_addr; }
+      BOTAN_DEPRECATED("Use ipv6_addresses") const std::set<IPv6Address>& ipv6_address() const {
+         return ipv6_addresses();
+      }
+
+      /// Return the set of IPv4 addresses included in this alternative name
+      const std::set<IPv4Address>& ipv4_addresses() const { return m_ipv4_addrs; }
+
+      /// Return the set of IPv6 addresses included in this alternative name
+      const std::set<IPv6Address>& ipv6_addresses() const { return m_ipv6_addrs; }
 
       /// Return the set of "other names" whose value was a recognized ASN1_String type
       BOTAN_DEPRECATED("Use AlternativeName::other_name_values")
@@ -231,6 +293,11 @@ class BOTAN_PUBLIC_API(2, 0) AlternativeName final : public ASN1_Object {
 
       /// Return all "OtherName" entries with their inner ANY value as raw BER
       const std::set<OtherNameValue>& other_name_values() const { return m_other_name_values; }
+
+      /// Return the set of `SmtpUTF8Mailbox` SAN entries (RFC 9598).
+      ///
+      /// Any such values are also included with their raw encoding in other_name_values
+      const std::set<SmtpUtf8Mailbox>& smtp_utf8_mailboxes() const { return m_smtp_utf8_mailboxes; }
 
       /// Return the set of registeredID OIDs
       const std::set<OID>& registered_ids() const { return m_registered_ids; }
@@ -246,6 +313,9 @@ class BOTAN_PUBLIC_API(2, 0) AlternativeName final : public ASN1_Object {
 
       /// Return true if this has any names set
       bool has_items() const;
+
+      /// Return true if this alternative name is empty (zero names)
+      bool is_empty() const;
 
       // Old, now deprecated interface follows:
       BOTAN_DEPRECATED("Use AlternativeName::{uris, email, dns, othernames, directory_names}")
@@ -280,14 +350,15 @@ class BOTAN_PUBLIC_API(2, 0) AlternativeName final : public ASN1_Object {
                                             std::string_view ip_address = "");
 
    private:
-      std::set<std::string> m_dns;
-      std::set<std::string> m_uri;
-      std::set<std::string> m_email;
-      std::set<uint32_t> m_ipv4_addr;
-      std::set<IPv6Address> m_ipv6_addr;
+      std::set<DNSName> m_dns;
+      std::set<URI> m_uri;
+      std::set<EmailAddress> m_email;
+      std::set<IPv4Address> m_ipv4_addrs;
+      std::set<IPv6Address> m_ipv6_addrs;
       std::set<X509_DN> m_dn_names;
-      std::set<std::pair<OID, ASN1_String>> m_othernames;
+      std::set<std::pair<OID, ASN1_String>> m_othernames;  // TODO(Botan4) remove this
       std::set<OtherNameValue> m_other_name_values;
+      std::set<SmtpUtf8Mailbox> m_smtp_utf8_mailboxes;
       std::set<OID> m_registered_ids;
 };
 
@@ -360,6 +431,18 @@ class BOTAN_PUBLIC_API(2, 0) GeneralName final : public ASN1_Object {
       static GeneralName ipv6_address(const IPv6Address& ipv6);
       static GeneralName ipv6_address(const IPv6Subnet& subnet);
 
+      /**
+      * Wrap a URI SAN in a GeneralName, this is used for ffi
+      * @warning internal function that may be removed at any time
+      */
+      static GeneralName _uri_san_value(std::string_view full_uri);
+
+      /**
+      * Wrap a DNS SAN in a GeneralName, this is used for ffi
+      * @warning internal function that may be removed at any time
+      */
+      static GeneralName _dns_san_value(std::string_view dns);
+
       // Encoding is not implemented
       void encode_into(DER_Encoder& to) const override;
 
@@ -393,37 +476,83 @@ class BOTAN_PUBLIC_API(2, 0) GeneralName final : public ASN1_Object {
       BOTAN_DEPRECATED("Deprecated use NameConstraints type") MatchResult matches(const X509_Certificate& cert) const;
 
       bool matches_dns(const std::string& dns_name) const;
+      bool matches_dns(const DNSName& dns_name) const;
+
       bool matches_ipv4(uint32_t ip) const;
 
-      bool matches_ipv4(IPv4Address ip) const { return matches_ipv4(ip.value()); }
+      bool matches_ipv4(const IPv4Address& ip) const { return matches_ipv4(ip.address()); }
 
       bool matches_ipv6(const IPv6Address& ip) const;
       bool matches_dn(const X509_DN& dn) const;
+      bool matches_uri(const URI& uri) const;
+      bool matches_email(const EmailAddress& addr) const;
+      bool matches_email(const SmtpUtf8Mailbox& mailbox) const;
 
    private:
       friend class NameConstraints;
-      static constexpr size_t RFC822_IDX = 0;
-      static constexpr size_t DNS_IDX = 1;
-      static constexpr size_t URI_IDX = 2;
-      static constexpr size_t DN_IDX = 3;
-      static constexpr size_t IPV4_IDX = 4;
-      static constexpr size_t IPV6_IDX = 5;
 
-      using NameVariant = std::variant<std::string, std::string, std::string, X509_DN, IPv4Subnet, IPv6Subnet>;
+      class EmailConstraint final {
+         public:
+            EmailConstraint() = default;
+
+            static std::optional<EmailConstraint> from_string(std::string_view input);
+
+            const std::string& value() const { return m_value; }
+
+            auto operator<=>(const EmailConstraint&) const = default;
+
+         private:
+            explicit EmailConstraint(std::string value) : m_value(std::move(value)) {}
+
+            std::string m_value;
+      };
+
+      class DNSConstraint final {
+         public:
+            DNSConstraint() = default;
+
+            static std::optional<DNSConstraint> from_string(std::string_view input);
+
+            static std::optional<DNSConstraint> from_san_value(std::string_view input);
+
+            const std::string& value() const { return m_value; }
+
+            auto operator<=>(const DNSConstraint&) const = default;
+
+         private:
+            explicit DNSConstraint(std::string value) : m_value(std::move(value)) {}
+
+            std::string m_value;
+      };
+
+      class URIConstraint final {
+         public:
+            URIConstraint() = default;
+
+            static std::optional<URIConstraint> from_string(std::string_view input);
+
+            static std::optional<URIConstraint> from_san_value(std::string_view full_uri);
+
+            const std::string& value() const { return m_value; }
+
+            auto operator<=>(const URIConstraint&) const = default;
+
+         private:
+            explicit URIConstraint(std::string value) : m_value(std::move(value)) {}
+
+            std::string m_value;
+      };
+
+      /*
+      TODO: consider adding OtherConstraint and UnknownConstraint types here and eliminating m_type,
+      using m_name variant choice as the single source of the constraint type
+      */
+      using NameVariant = std::variant<EmailConstraint, DNSConstraint, URIConstraint, X509_DN, IPv4Subnet, IPv6Subnet>;
 
       GeneralName(NameType type, NameVariant name) : m_type(type), m_name(std::move(name)) {}
 
-      template <size_t idx, typename T>
-         requires(idx < 6)
-      static GeneralName make(T&& value) {
-         return {NameType(idx + 1 /* implicit enum relationship! */),
-                 NameVariant(std::in_place_index_t<idx>(), std::forward<T>(value))};
-      }
-
       NameType m_type = NameType::Unknown;
       NameVariant m_name;
-
-      static bool matches_dns(std::string_view name, std::string_view constraint);
 
       /**
       * Partial DN matching according to RFC 5280, Section 7.1, i.e.,
@@ -518,6 +647,8 @@ class BOTAN_PUBLIC_API(2, 0) NameConstraints final {
       std::set<GeneralName::NameType> m_excluded_name_types;
 };
 
+enum class Extension_Context : uint8_t { Certificate, CRL, CRL_Entry, OCSP_Request, OCSP_Response };
+
 /**
 * X.509 Certificate Extension
 */
@@ -542,6 +673,8 @@ class BOTAN_PUBLIC_API(2, 0) Certificate_Extension /* NOLINT(*-special-member-fu
       */
 
       virtual std::unique_ptr<Certificate_Extension> copy() const = 0;
+
+      virtual bool is_appropriate_context(Extension_Context context) const = 0;
 
       /*
       * Callback visited during path validation.
@@ -636,6 +769,14 @@ class BOTAN_PUBLIC_API(2, 0) Extensions final : public ASN1_Object {
 
       void encode_into(DER_Encoder& to) const override;
       void decode_from(BER_Decoder& from) override;
+      void decode_from(BER_Decoder& from, std::optional<Extension_Context> context);
+
+      /**
+      * Return true if an unrecognized critical extension was encountered
+      * during the most recent decode_from. Resets on each call to decode_from
+      * and is not affected by subsequent calls to add/replace/remove.
+      */
+      bool has_unknown_critical_extension() const { return m_has_unknown_critical_extension; }
 
       /**
       * Adds a new extension to the list.
@@ -730,7 +871,8 @@ class BOTAN_PUBLIC_API(2, 0) Extensions final : public ASN1_Object {
    private:
       static std::unique_ptr<Certificate_Extension> create_extn_obj(const OID& oid,
                                                                     bool critical,
-                                                                    const std::vector<uint8_t>& body);
+                                                                    const std::vector<uint8_t>& body,
+                                                                    std::optional<Extension_Context> context);
 
       class BOTAN_UNSTABLE_API Extensions_Info final {
          public:
@@ -756,6 +898,7 @@ class BOTAN_PUBLIC_API(2, 0) Extensions final : public ASN1_Object {
 
       std::vector<OID> m_extension_oids;
       std::map<OID, Extensions_Info> m_extension_info;
+      bool m_has_unknown_critical_extension = false;
 };
 
 }  // namespace Botan

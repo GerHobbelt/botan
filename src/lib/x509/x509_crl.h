@@ -10,6 +10,7 @@
 
 #include <botan/asn1_obj.h>
 #include <botan/pkix_enums.h>
+#include <botan/uri.h>
 #include <botan/x509_obj.h>
 #include <memory>
 #include <vector>
@@ -118,6 +119,12 @@ class BOTAN_PUBLIC_API(2, 0) X509_CRL final : public X509_Object {
       const Extensions& extensions() const;
 
       /**
+      * Return true if either the CRL extensions or any CRL entry extensions
+      * contained a critical extension which we did not recognize.
+      */
+      bool has_unknown_critical_extension() const;
+
+      /**
       * Get the AuthorityKeyIdentifier of this CRL.
       * @return this CRLs AuthorityKeyIdentifier
       */
@@ -125,7 +132,7 @@ class BOTAN_PUBLIC_API(2, 0) X509_CRL final : public X509_Object {
 
       /**
       * Get the serial number of this CRL.
-      * @return CRLs serial number
+      * @return CRLs serial number (or zero if not set in the extensions)
       */
       uint32_t crl_number() const;
 
@@ -151,14 +158,22 @@ class BOTAN_PUBLIC_API(2, 0) X509_CRL final : public X509_Object {
       /**
       * Get the CRL's issuing distribution point
       */
-      BOTAN_DEPRECATED("Use issuing_distribution_points") std::string crl_issuing_distribution_point() const;
+      BOTAN_DEPRECATED("Use issuing_distribution_point_uris") std::string crl_issuing_distribution_point() const;
 
       /**
       * Get the CRL's issuing distribution points
       *
       * See https://www.rfc-editor.org/rfc/rfc5280#section-5.2.5
       */
+      BOTAN_DEPRECATED("Use issuing_distribution_point_uris")
       std::vector<std::string> issuing_distribution_points() const;
+
+      /**
+      * Get the CRL's issuing distribution points
+      *
+      * See https://www.rfc-editor.org/rfc/rfc5280#section-5.2.5
+      */
+      const std::vector<URI>& issuing_distribution_point_uris() const;
 
       /**
       * Check if this CRL's scope covers the given certificate's CRL distribution points.

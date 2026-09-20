@@ -69,10 +69,7 @@ def setup_logging(options):
     logging.getLogger().setLevel(log_level)
 
 def port_for(service):
-    # use ports in range 63000-63100 for tests, which will hopefully
-    # avoid conflicts with local services
-
-    base_port = 63000
+    base_port = 47890
 
     port_assignments = {
         'tls_server': 0,
@@ -204,7 +201,7 @@ class ServerCertificateSuite:
         test_cli("keygen", ["--algo=ECDSA", f"--params={ecdsa_algo}", f"--output={self.private_key}"], "")
         test_cli("gen_self_signed", [self.private_key, "CA", "--ca", "--country=VT", "--dns=ca.example", f"--hash={hash_algo}", f"--output={self.ca_cert}"], "")
         test_cli("cert_verify", self.ca_cert, "Certificate did not validate - Cannot establish trust")
-        test_cli("gen_pkcs10", [f"{self.private_key}", "localhost", f"--output={crt_req}"])
+        test_cli("gen_pkcs10", [f"{self.private_key}", "localhost", "--dns=localhost", f"--output={crt_req}"])
         test_cli("sign_cert", [self.ca_cert, self.private_key, crt_req, f"--output={self.cert}"])
 
 
