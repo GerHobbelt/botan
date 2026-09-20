@@ -40,6 +40,12 @@ class BOTAN_TEST_API Hash_Engine {
       virtual size_t parallelism() const = 0;
 
       /**
+      * @return bytes of the common prefix hashed again for each message,
+      * rather than being covered by a precomputed state
+      */
+      virtual size_t uncached_prefix_bytes() const { return common_prefix().size(); }
+
+      /**
       * Hash many inputs
       *
       * Computes H(common_prefix || inputs[i]) into outputs[i]. Each input
@@ -73,6 +79,9 @@ class BOTAN_TEST_API Hash_Engine {
       * @param common_prefix implicitly prepended to each message hashed;
       *        implementations may precompute the resulting hash state
       * @param provider if set, use this specific implementation
+      *
+      * The default provider splits sufficiently large batches over the
+      * global Thread_Pool, which is created on the first such batch.
       *
       * Throws Lookup_Error if the hash function or requested provider is
       * not available

@@ -12,4 +12,5 @@ hash
 
 <header:internal>
 hash_engine.h
+hash_engine_mdx.h
 </header:internal>

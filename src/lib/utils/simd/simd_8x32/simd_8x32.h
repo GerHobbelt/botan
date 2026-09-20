@@ -80,6 +80,16 @@ class SIMD_8x32 final {
       BOTAN_FN_ISA_SIMD_8X32
       static SIMD_8x32 load_be(const uint8_t* in) noexcept { return load_le(in).bswap(); }
 
+      /**
+      * Load in big endian order from ptrs[i] + Stride * n + offset,
+      * gathering lane i's n'th block out of a set of per lane buffers
+      */
+      template <size_t Stride>
+      static BOTAN_FN_ISA_SIMD_8X32 SIMD_8x32
+      load_be(const uint8_t* const* ptrs, size_t i, size_t n, size_t offset = 0) {
+         return load_be(ptrs[i] + Stride * n + offset);
+      }
+
       BOTAN_FN_ISA_SIMD_8X32
       void store_le(uint8_t out[]) const noexcept { _mm256_storeu_si256(reinterpret_cast<__m256i*>(out), m_avx2); }
 
@@ -340,6 +350,35 @@ class SIMD_8x32 final {
 
       static inline SIMD_8x32 BOTAN_FN_ISA_SIMD_8X32 byte_shuffle(const SIMD_8x32& tbl, const SIMD_8x32& idx) {
          return SIMD_8x32(_mm256_shuffle_epi8(tbl.raw(), idx.raw()));
+      }
+
+      /**
+      * Byte shuffle with masking, performed within each half
+      *
+      * If the top bit of an index byte is set the output byte is zero,
+      * otherwise the low 4 bits select a byte from the same half of tbl.
+      */
+      static inline SIMD_8x32 BOTAN_FN_ISA_SIMD_8X32 masked_byte_shuffle(const SIMD_8x32& tbl, const SIMD_8x32& idx) {
+         return SIMD_8x32(_mm256_shuffle_epi8(tbl.raw(), idx.raw()));
+      }
+
+      /**
+      * Swap the two 128-bit halves of the register
+      */
+      SIMD_8x32 BOTAN_FN_ISA_SIMD_8X32 swap_halves() const noexcept {
+         return SIMD_8x32(_mm256_permute2x128_si256(raw(), raw(), 0x01));
+      }
+
+      /**
+      * Multiply each byte by x in GF(2^8) using the reduction polynomial
+      * given by POLY (which omits the implicit x^8 term)
+      */
+      template <uint8_t POLY>
+      SIMD_8x32 BOTAN_FN_ISA_SIMD_8X32 xtime() const noexcept {
+         const auto poly = _mm256_set1_epi8(static_cast<char>(POLY));
+         const auto shifted = _mm256_add_epi8(raw(), raw());
+         // blendv selects using the top bit of each byte of the mask argument
+         return SIMD_8x32(_mm256_blendv_epi8(shifted, _mm256_xor_si256(shifted, poly), raw()));
       }
 
       BOTAN_FN_ISA_SIMD_8X32

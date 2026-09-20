@@ -1,9 +1,9 @@
 <internal_defines>
-WHIRLPOOL_AVX2 -> 20260321
+HASH_ENGINE_KECCAK_AVX2 -> 20260705
 </internal_defines>
 
 <module_info>
-name -> "Whirlpool AVX2"
+name -> "Multi-buffer Keccak using AVX2"
 </module_info>
 
 <isa>
@@ -12,5 +12,5 @@ avx2
 
 <requires>
 cpuid
-simd_8x32
+simd_4x64
 </requires>
