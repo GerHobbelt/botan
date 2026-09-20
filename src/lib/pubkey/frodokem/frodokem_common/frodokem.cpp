@@ -31,7 +31,7 @@
 
 namespace Botan {
 
-class FrodoKEM_PublicKeyInternal {
+class FrodoKEM_PublicKeyInternal final {
    public:
       FrodoKEM_PublicKeyInternal(FrodoKEMConstants constants, FrodoSeedA seed_a, FrodoMatrix b) :
             m_constants(std::move(constants)), m_seed_a(std::move(seed_a)), m_b(std::move(b)) {
@@ -57,7 +57,7 @@ class FrodoKEM_PublicKeyInternal {
       FrodoPublicKeyHash m_hash;
 };
 
-class FrodoKEM_PrivateKeyInternal {
+class FrodoKEM_PrivateKeyInternal final {
    public:
       FrodoKEM_PrivateKeyInternal(FrodoSeedS s, FrodoMatrix s_trans) :
             m_s(std::move(s)), m_s_trans(std::move(s_trans)) {}
@@ -375,7 +375,9 @@ FrodoKEM_PrivateKey::FrodoKEM_PrivateKey(std::span<const uint8_t> sk, FrodoKEMMo
    m_public = std::make_shared<FrodoKEM_PublicKeyInternal>(std::move(constants), std::move(seed_a), std::move(b));
    m_private = std::make_shared<FrodoKEM_PrivateKeyInternal>(std::move(s), std::move(s_trans));
 
-   BOTAN_STATE_CHECK(pkh == m_public->hash());
+   if(pkh != m_public->hash()) {
+      throw Decoding_Error("FrodoKEM embedded public key hash did not match recomputed value");
+   }
 }
 
 FrodoKEM_PrivateKey::FrodoKEM_PrivateKey(const AlgorithmIdentifier& alg_id, std::span<const uint8_t> key_bits) :

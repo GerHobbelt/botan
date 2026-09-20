@@ -27,6 +27,8 @@ namespace Botan {
 
 namespace {
 
+constexpr size_t MaximumKeyIdentifierLength = 64;
+
 template <std::derived_from<Certificate_Extension> T>
 auto make_extension([[maybe_unused]] const OID& oid) {
    BOTAN_DEBUG_ASSERT(oid == T::static_oid());
@@ -370,6 +372,13 @@ void Basic_Constraints::decode_inner(const std::vector<uint8_t>& in) {
       .decode_optional(m_path_length_constraint, ASN1_Type::Integer, ASN1_Class::Universal)
       .end_cons()
       .verify_end();
+
+   /* RFC 5280 Section 4.2.1.9:
+   *  "CAs MUST NOT include the pathLenConstraint field unless the cA boolean
+   *  is asserted and the key usage extension asserts the keyCertSign bit" */
+   if(!m_is_ca && m_path_length_constraint.has_value()) {
+      throw Decoding_Error("BasicConstraints pathLenConstraint must not be present when cA is FALSE");
+   }
 }
 
 /*
@@ -443,6 +452,14 @@ std::vector<uint8_t> Subject_Key_ID::encode_inner() const {
 void Subject_Key_ID::decode_inner(const std::vector<uint8_t>& in) {
    /* RFC 5280 Section 4.2.1.2 - SubjectKeyIdentifier ::= KeyIdentifier */
    BER_Decoder(in, BER_Decoder::Limits::DER()).decode(m_key_id, ASN1_Type::OctetString).verify_end();
+
+   if(m_key_id.empty()) {
+      throw Decoding_Error("SubjectKeyIdentifier must not be empty");
+   }
+   if(m_key_id.size() > MaximumKeyIdentifierLength) {
+      throw Decoding_Error(
+         fmt("SubjectKeyIdentifier length {} exceeds limit of {} bytes", m_key_id.size(), MaximumKeyIdentifierLength));
+   }
 }
 
 /*
@@ -487,12 +504,24 @@ void Authority_Key_ID::decode_inner(const std::vector<uint8_t>& in) {
    *    authorityCertIssuer       [1] GeneralNames            OPTIONAL,
    *    authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL }
    */
-   BER_Decoder(in, BER_Decoder::Limits::DER())
-      .start_sequence()
-      .decode_optional_string(m_key_id, ASN1_Type::OctetString, 0)
-      .discard_remaining()
-      .end_cons()
-      .verify_end();
+   BER_Decoder ber(in, BER_Decoder::Limits::DER());
+   BER_Decoder seq = ber.start_sequence();
+
+   const bool key_id_present = seq.peek_next_object().is_a(0, ASN1_Class::ContextSpecific);
+
+   seq.decode_optional_string(m_key_id, ASN1_Type::OctetString, 0).discard_remaining().end_cons();
+   ber.verify_end();
+
+   if(key_id_present) {
+      if(m_key_id.empty()) {
+         throw Decoding_Error("AuthorityKeyIdentifier keyIdentifier must not be empty");
+      }
+      if(m_key_id.size() > MaximumKeyIdentifierLength) {
+         throw Decoding_Error(fmt("AuthorityKeyIdentifier keyIdentifier length {} exceeds limit of {} bytes",
+                                  m_key_id.size(),
+                                  MaximumKeyIdentifierLength));
+      }
+   }
 }
 
 /*
@@ -827,11 +856,31 @@ std::vector<uint8_t> CRL_ReasonCode::encode_inner() const {
 * Decode the extension
 */
 void CRL_ReasonCode::decode_inner(const std::vector<uint8_t>& in) {
-   /* RFC 5280 Section 5.3.1 - CRLReason ::= ENUMERATED { ... } */
+   /*
+   * RFC 5280 Section 5.3.1
+   *
+   * CRLReason ::= ENUMERATED {
+   *      unspecified             (0),
+   *      keyCompromise           (1),
+   *      cACompromise            (2),
+   *      affiliationChanged      (3),
+   *      superseded              (4),
+   *      cessationOfOperation    (5),
+   *      certificateHold         (6),
+   *           -- value 7 is not used
+   *      removeFromCRL           (8),
+   *      privilegeWithdrawn      (9),
+   *      aACompromise           (10) }
+   */
    size_t reason_code = 0;
    BER_Decoder(in, BER_Decoder::Limits::DER())
       .decode(reason_code, ASN1_Type::Enumerated, ASN1_Class::Universal)
       .verify_end();
+
+   if(reason_code == 7 || reason_code > 10) {
+      throw Decoding_Error(fmt("CRLReason has unknown enumeration value {}", reason_code));
+   }
+
    m_reason = static_cast<CRL_Code>(reason_code);
 }
 

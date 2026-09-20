@@ -438,9 +438,11 @@ class EC_Group_Registration_Tests final : public Test {
             results.push_back(test_ecc_registration());
             results.push_back(test_ec_group_from_params());
             results.push_back(test_ec_group_bad_registration());
+            results.push_back(test_ec_group_off_curve_generator());
             results.push_back(test_ec_group_duplicate_orders());
             results.push_back(test_ec_group_registration_with_custom_oid());
             results.push_back(test_ec_group_unregistration());
+            results.push_back(test_supports_named_group_with_registration());
          }
 
          return results;
@@ -524,6 +526,32 @@ class EC_Group_Registration_Tests final : public Test {
          return result;
       }
 
+      Test::Result test_ec_group_off_curve_generator() {
+         Test::Result result("EC_Group rejects off-curve generator");
+
+         Botan::EC_Group::clear_registered_curve_data();
+
+         // secp256r1 params, but g_y has its low bit flipped so (g_x, g_y) is not on the curve
+         const Botan::BigInt p("0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF");
+         const Botan::BigInt a("0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFC");
+         const Botan::BigInt b("0x5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B");
+
+         const Botan::BigInt g_x("0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296");
+         const Botan::BigInt bad_g_y("0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F4");
+         const Botan::BigInt order("0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551");
+
+         result.test_throws("Deprecated EC_Group constructor rejects off-curve generator",
+                            "EC_Group generator is not on the curve",
+                            [&]() { const Botan::EC_Group g(p, a, b, g_x, bad_g_y, order, 1); });
+
+         const Botan::OID custom_oid("1.3.6.1.4.1.25258.100.42");
+         result.test_throws("Deprecated EC_Group constructor with custom OID rejects off-curve generator",
+                            "EC_Group generator is not on the curve",
+                            [&]() { const Botan::EC_Group g(p, a, b, g_x, bad_g_y, order, 1, custom_oid); });
+
+         return result;
+      }
+
       Test::Result test_ec_group_duplicate_orders() {
          Test::Result result("EC_Group with duplicate group order");
 
@@ -602,6 +630,48 @@ class EC_Group_Registration_Tests final : public Test {
             result.test_failure("Group with custom OID did not get a pcurve pointer");
          }
    #endif
+
+         return result;
+      }
+
+      Test::Result test_supports_named_group_with_registration() {
+         Test::Result result("EC_Group::supports_named_group with custom registration");
+
+         Botan::EC_Group::clear_registered_curve_data();
+
+         result.test_is_false("Unknown name is not supported",
+                              Botan::EC_Group::supports_named_group("not_a_real_curve_name_xyz"));
+
+         const Botan::OID custom_oid("1.3.6.1.4.1.25258.4.9000");
+         const std::string custom_name = "goku-curve";  // very strong
+
+         Botan::OID::register_oid(custom_oid, custom_name);
+
+         result.test_is_false("Mapped OID without registered EC_Group is not supported",
+                              Botan::EC_Group::supports_named_group(custom_name));
+
+         const Botan::BigInt p("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF43");
+         const Botan::BigInt a("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF40");
+         const Botan::BigInt b("0x25581");
+         const Botan::BigInt order("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE43C8275EA265C6020AB20294751A825");
+         const Botan::BigInt g_x("0x01");
+         const Botan::BigInt g_y("0x696F1853C1E466D7FC82C96CCEEEDD6BD02C2F9375894EC10BF46306C2B56C77");
+
+         const Botan::EC_Group reg_group(custom_oid, p, a, b, g_x, g_y, order);
+
+         result.test_is_true("After registration the custom name is supported",
+                             Botan::EC_Group::supports_named_group(custom_name));
+
+         const auto resolved = Botan::EC_Group::from_name(custom_name);
+         result.test_is_true("from_name resolves to the registered OID", resolved.get_curve_oid() == custom_oid);
+
+         result.test_is_false("known_named_groups still does not include custom name",
+                              Botan::EC_Group::known_named_groups().contains(custom_name));
+
+         result.test_is_true("Unregistering removes support for the custom name",
+                             Botan::EC_Group::unregister(custom_oid));
+         result.test_is_false("After unregister the custom name is not supported",
+                              Botan::EC_Group::supports_named_group(custom_name));
 
          return result;
       }

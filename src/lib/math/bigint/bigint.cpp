@@ -43,7 +43,7 @@ BigInt BigInt::from_s32(int32_t n) {
    if(n >= 0) {
       return BigInt::from_u64(static_cast<uint64_t>(n));
    } else {
-      return -BigInt::from_u64(static_cast<uint64_t>(-n));
+      return -BigInt::from_u64(static_cast<uint64_t>(-static_cast<int64_t>(n)));
    }
 }
 
@@ -487,7 +487,7 @@ void BigInt::ct_shift_left(size_t shift) {
    // shift results only when they are within the shift range.
    for(size_t i = 0; i < iterations; ++i) {
       // Shift left by 1 bit, dropping overflow
-      bigint_shl2(ws.data(), _data(), n, 1);
+      bigint_shl2(ws.data(), n + 1, _data(), n, 1);
       ws[n] = 0;
 
       // Conditionally assign the bit-shift result
@@ -497,7 +497,7 @@ void BigInt::ct_shift_left(size_t shift) {
       }
 
       // Shift left by 1 word, dropping the most significant word
-      bigint_shl2(ws.data(), _data(), n - 1 /* ignore msw */, WordInfo<word>::bits);
+      bigint_shl2(ws.data(), n + 1, _data(), n - 1 /* ignore msw */, WordInfo<word>::bits);
       ws[0] = 0;
 
       // Conditionally assign the word-shift result
