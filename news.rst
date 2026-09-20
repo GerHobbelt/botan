@@ -7,6 +7,15 @@ Version 3.14.0, Not Yet Released
 * Add new type ``PK_Signature_Options`` which allows precisely controlling how
   signatures are created and verified. (GH #5849)
 
+* Fix a bug introduced in 3.13.0 where, in builds without the system RNG,
+  ``RandomNumberGenerator::randomize_with_ts_input`` passed only the low 32 bits
+  of the timestamp, and never the process id, as additional input. (GH #5924)
+
+* Password hash tuning (``PasswordHashFamily::tune_params``) now measures the
+  CPU time of the calling thread where available (falling back to a monotonic
+  clock), and uses the fastest of several samples rather than the mean. This
+  makes the result much less sensitive to concurrent load and clock adjustments.
+
 * By default, ECDSA signatures are now randomized rather than deterministic even
   when RFC 6979 support is available at build time. Deterministic signatures can
   be requested using the API ``PK_Signature_Options::with_deterministic_signature``
@@ -44,6 +53,12 @@ Version 3.14.0, Not Yet Released
 
 * CI updates including moving most builds to Ubuntu 26.04, adding Windows Aarch64
   builders, and updating dependencies used in CI (GH #5846 #5848 #5860 #5861)
+
+* Add a certificate cache to the macOS system certificate store, implement
+  ``contains()`` directly, and query the keychain by issuer DN and serial
+  number instead of scanning all certificates of an issuer. Fix the
+  eviction order of the certificate cache shared with the Windows store.
+  (GH #5541)
 
 Version 3.13.0, 2026-08-13
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

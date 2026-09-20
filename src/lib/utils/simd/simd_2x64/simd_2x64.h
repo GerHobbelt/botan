@@ -7,7 +7,6 @@
 #ifndef BOTAN_SIMD_2X64_H_
 #define BOTAN_SIMD_2X64_H_
 
-#include <botan/compiler.h>
 #include <botan/types.h>
 #include <botan/internal/isa_extn.h>
 #include <botan/internal/target_info.h>
@@ -16,7 +15,6 @@
 // TODO: extend this to support AltiVec / LSX
 
 #if defined(BOTAN_TARGET_ARCH_SUPPORTS_SSSE3)
-   #include <emmintrin.h>
    #include <tmmintrin.h>
    #define BOTAN_SIMD_USE_SSSE3
 #elif defined(BOTAN_TARGET_ARCH_SUPPORTS_NEON)
