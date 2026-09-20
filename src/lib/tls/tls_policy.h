@@ -69,6 +69,12 @@ class BOTAN_PUBLIC_API(2, 0) Policy /* NOLINT(*-special-member-functions) */ {
       */
       virtual std::vector<std::string> allowed_signature_methods() const;
 
+      /**
+      * Returns a list of signature schemes we are willing to use, in order of
+      * preference. By default, this list contains all supported schemes that
+      * comply with the outputs of allowed_signature_methods() and
+      * allowed_signature_hashes().
+      */
       virtual std::vector<Signature_Scheme> allowed_signature_schemes() const;
 
       /**
@@ -467,6 +473,22 @@ class BOTAN_PUBLIC_API(2, 0) Policy /* NOLINT(*-special-member-functions) */ {
       virtual std::optional<uint16_t> record_size_limit() const;
 
       /**
+       * Defines the minimum plaintext size of any protected TLS 1.3 record.
+       * If an outgoing record contains less plaintext payload than this value,
+       * it will be transparently padded to reach the specified minimum size.
+       *
+       * This may be used to reduce the amount of information leaked by the
+       * length of TLS records.
+       *
+       * The value must be compatible with the negotiated record size limit.
+       *
+       * @note This feature is available in TLS 1.3 only (see RFC 9846 5.4).
+       *
+       * Default: std::nullopt (no minimum record size is enforced)
+       */
+      virtual std::optional<uint16_t> minimum_record_size() const;
+
+      /**
       * Indicates whether certificate status messages should be supported
       */
       virtual bool support_cert_status_message() const;
@@ -792,6 +814,10 @@ class BOTAN_PUBLIC_API(2, 0) Text_Policy : public Policy {
 
       std::vector<std::string> allowed_signature_methods() const override;
 
+      std::vector<Signature_Scheme> allowed_signature_schemes() const override;
+
+      std::vector<Signature_Scheme> acceptable_signature_schemes() const override;
+
       std::vector<Group_Params> key_exchange_groups() const override;
 
       std::vector<Group_Params> key_exchange_groups_to_offer() const override;
@@ -818,6 +844,8 @@ class BOTAN_PUBLIC_API(2, 0) Text_Policy : public Policy {
       bool require_extended_master_secret() const override;
 
       std::optional<uint16_t> record_size_limit() const override;
+
+      std::optional<uint16_t> minimum_record_size() const override;
 
       bool support_cert_status_message() const override;
 
@@ -871,6 +899,7 @@ class BOTAN_PUBLIC_API(2, 0) Text_Policy : public Policy {
 
       std::vector<Group_Params> read_group_list(std::string_view group_str) const;
       std::vector<Certificate_Type> read_cert_type_list(const std::string& cert_type_str) const;
+      std::vector<Signature_Scheme> read_sig_scheme_list(std::string_view sig_scheme_str) const;
 
       size_t get_len(const std::string& key, size_t def) const;
 

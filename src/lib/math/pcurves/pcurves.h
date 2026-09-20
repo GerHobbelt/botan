@@ -69,7 +69,9 @@ class PrimeOrderCurve /* NOLINT(*-special-member-functions) */ {
             Scalar(Scalar&& other) = default;
             Scalar& operator=(const Scalar& other) = default;
             Scalar& operator=(Scalar&& other) = default;
-            ~Scalar() = default;
+
+            // Scalars are commonly secret values so wipe on destruction
+            ~Scalar() { _zeroize(); }
 
             void _zeroize();
 
@@ -315,6 +317,14 @@ class PrimeOrderCurve /* NOLINT(*-special-member-functions) */ {
       * Return a new random scalar
       */
       virtual Scalar random_scalar(RandomNumberGenerator& rng) const = 0;
+
+      /**
+      * Return true if this curve supports RFC 9380 hash to curve
+      *
+      * If this returns false then hash_to_curve_nu and hash_to_curve_ro
+      * will throw Not_Implemented
+      */
+      virtual bool supports_hash_to_curve() const = 0;
 
       /**
       * RFC 9380 hash to curve (NU variant)
