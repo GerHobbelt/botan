@@ -61,9 +61,17 @@ DilithiumMode::Mode dilithium_mode_from_string(std::string_view str) {
    throw Invalid_Argument(fmt("'{}' is not a valid Dilithium mode name", str));
 }
 
+DilithiumMode::Mode dilithium_mode_from_oid(const OID& oid) {
+   if(const auto name = oid.registered_name()) {
+      return dilithium_mode_from_string(*name);
+   }
+
+   throw Invalid_Argument(fmt("OID '{}' is not registered as a Dilithium/ML-DSA mode", oid));
+}
+
 }  // namespace
 
-DilithiumMode::DilithiumMode(const OID& oid) : m_mode(dilithium_mode_from_string(oid.to_formatted_string())) {}
+DilithiumMode::DilithiumMode(const OID& oid) : m_mode(dilithium_mode_from_oid(oid)) {}
 
 DilithiumMode::DilithiumMode(std::string_view str) : m_mode(dilithium_mode_from_string(str)) {}
 
@@ -249,7 +257,7 @@ class Dilithium_Signature_Operation final : public PK_Ops::Signature {
 
 class Dilithium_Verification_Operation final : public PK_Ops::Verification {
    public:
-      explicit Dilithium_Verification_Operation(std::shared_ptr<Dilithium_PublicKeyInternal> pubkey) :
+      explicit Dilithium_Verification_Operation(std::shared_ptr<const Dilithium_PublicKeyInternal> pubkey) :
             m_pub_key(std::move(pubkey)),
             m_A(Dilithium_Algos::expand_A(m_pub_key->rho(), m_pub_key->mode())),
             m_t1_ntt_shifted(ntt(m_pub_key->t1() << DilithiumConstants::D)),
@@ -310,7 +318,7 @@ class Dilithium_Verification_Operation final : public PK_Ops::Verification {
       std::string hash_function() const override { return m_h->name(); }
 
    private:
-      std::shared_ptr<Dilithium_PublicKeyInternal> m_pub_key;
+      std::shared_ptr<const Dilithium_PublicKeyInternal> m_pub_key;
       DilithiumPolyMatNTT m_A;
       DilithiumPolyVecNTT m_t1_ntt_shifted;
       std::unique_ptr<DilithiumMessageHash> m_h;
@@ -342,7 +350,7 @@ std::string Dilithium_PublicKey::algo_name() const {
    //               there might be other code locations that identify Dilithium
    //               by std::string::starts_with("Dilithium-").
    //               (Above assumes that Dilithium won't be removed entirely!)
-   return (m_public->mode().is_ml_dsa()) ? std::string("ML-DSA") : object_identifier().to_formatted_string();
+   return (m_public->mode().is_ml_dsa()) ? std::string("ML-DSA") : m_public->mode().mode().to_string();
 }
 
 AlgorithmIdentifier Dilithium_PublicKey::algorithm_identifier() const {
