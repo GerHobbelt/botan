@@ -148,11 +148,10 @@ ASN1_String::ASN1_String(std::string_view str) : ASN1_String(str, choose_encodin
 * DER encode an ASN1_String
 */
 void ASN1_String::encode_into(DER_Encoder& encoder) const {
-   if(m_data.empty()) {
-      BOTAN_ASSERT_NOMSG(is_utf8_subset_string_type(tagging()));
+   if(is_utf8_subset_string_type(tagging())) {
       encoder.add_object(tagging(), ASN1_Class::Universal, m_utf8_str);
    } else {
-      // If this string was decoded, reserialize using original encoding
+      // BMP/Universal/Teletex: m_utf8_str is the UTF-8 conversion, m_data is the wire form
       encoder.add_object(tagging(), ASN1_Class::Universal, m_data.data(), m_data.size());
    }
 }
@@ -173,15 +172,15 @@ void ASN1_String::decode_from(BER_Decoder& source) {
    m_data.assign(obj.bits(), obj.bits() + obj.length());
 
    if(m_tag == ASN1_Type::BmpString) {
-      m_utf8_str = ucs2_to_utf8(m_data.data(), m_data.size());
+      m_utf8_str = ucs2_to_utf8(m_data);
    } else if(m_tag == ASN1_Type::UniversalString) {
-      m_utf8_str = ucs4_to_utf8(m_data.data(), m_data.size());
+      m_utf8_str = ucs4_to_utf8(m_data);
    } else if(m_tag == ASN1_Type::TeletexString) {
       /*
       TeletexString is nominally ITU T.61 not ISO-8859-1 but it seems
       the majority of implementations actually used that charset here.
       */
-      m_utf8_str = latin1_to_utf8(m_data.data(), m_data.size());
+      m_utf8_str = latin1_to_utf8(m_data);
    } else {
       // All other supported string types are UTF-8 or some subset thereof
       m_utf8_str = ASN1::to_string(obj);
