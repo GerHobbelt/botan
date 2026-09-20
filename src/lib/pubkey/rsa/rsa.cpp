@@ -154,7 +154,7 @@ const BigInt& RSA_PublicKey::get_e() const {
 }
 
 void RSA_PublicKey::init(BigInt&& n, BigInt&& e) {
-   if(n.is_negative() || n.is_even() || n.bits() < 5 /* n >= 3*5 */ || e.is_negative() || e.is_even()) {
+   if(n.signum() < 0 || n.is_even() || n.bits() < 5 /* n >= 3*5 */ || e.signum() < 0 || e.is_even()) {
       throw Decoding_Error("Invalid RSA public key parameters");
    }
    m_public = std::make_shared<RSA_Public_Data>(std::move(n), std::move(e));
@@ -163,7 +163,7 @@ void RSA_PublicKey::init(BigInt&& n, BigInt&& e) {
 RSA_PublicKey::RSA_PublicKey(const AlgorithmIdentifier& /*unused*/, std::span<const uint8_t> key_bits) {
    BigInt n;
    BigInt e;
-   BER_Decoder(key_bits).start_sequence().decode(n).decode(e).end_cons();
+   BER_Decoder(key_bits, BER_Decoder::Limits::DER()).start_sequence().decode(n).decode(e).end_cons().verify_end();
 
    init(std::move(n), std::move(e));
 }
@@ -272,7 +272,7 @@ RSA_PrivateKey::RSA_PrivateKey(const AlgorithmIdentifier& /*unused*/, std::span<
    BigInt d2;
    BigInt c;
 
-   BER_Decoder(key_bits)
+   BER_Decoder(key_bits, BER_Decoder::Limits::DER())
       .start_sequence()
       .decode_and_check<size_t>(0, "Unknown PKCS #1 key format version")
       .decode(n)
@@ -283,7 +283,8 @@ RSA_PrivateKey::RSA_PrivateKey(const AlgorithmIdentifier& /*unused*/, std::span<
       .decode(d1)
       .decode(d2)
       .decode(c)
-      .end_cons();
+      .end_cons()
+      .verify_end();
 
    RSA_PublicKey::init(std::move(n), std::move(e));
 

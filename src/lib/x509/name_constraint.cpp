@@ -145,7 +145,7 @@ void GeneralName::decode_from(BER_Decoder& ber) {
       m_name.emplace<URI_IDX>(ASN1::to_string(obj));
    } else if(obj.is_a(4, ASN1_Class::ContextSpecific | ASN1_Class::Constructed)) {
       X509_DN dn;
-      BER_Decoder dec(obj);
+      BER_Decoder dec(obj, ber.limits());
       dn.decode_from(dec);
       m_type = NameType::DN;
       m_name.emplace<DN_IDX>(dn);
@@ -334,6 +334,11 @@ void GeneralSubtree::encode_into(DER_Encoder& /*to*/) const {
 }
 
 void GeneralSubtree::decode_from(BER_Decoder& ber) {
+   /*
+   * RFC 5280 Section 4.2.1.10:
+   *    Within this profile, the minimum and maximum fields are not used with any
+   *    name forms, thus, the minimum MUST be zero, and maximum MUST be absent.
+   */
    size_t minimum = 0;
 
    ber.start_sequence()

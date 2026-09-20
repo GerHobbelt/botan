@@ -125,7 +125,7 @@ class SM2_Decryption_Operation final : public PK_Ops::Decryption {
          secure_vector<uint8_t> C3;
          secure_vector<uint8_t> masked_msg;
 
-         BER_Decoder(ctext)
+         BER_Decoder(ctext, BER_Decoder::Limits::DER())
             .start_sequence()
             .decode(x1)
             .decode(y1)
@@ -136,19 +136,6 @@ class SM2_Decryption_Operation final : public PK_Ops::Decryption {
 
          // Wrong length so certainly invalid, reject immediately
          if(C3.size() != m_hash->output_length()) {
-            return secure_vector<uint8_t>();
-         }
-
-         std::vector<uint8_t> recode_ctext;
-         DER_Encoder(recode_ctext)
-            .start_sequence()
-            .encode(x1)
-            .encode(y1)
-            .encode(C3, ASN1_Type::OctetString)
-            .encode(masked_msg, ASN1_Type::OctetString)
-            .end_cons();
-
-         if(!CT::is_equal<uint8_t>(recode_ctext, ctext).as_bool()) {
             return secure_vector<uint8_t>();
          }
 
@@ -172,11 +159,13 @@ class SM2_Decryption_Operation final : public PK_Ops::Decryption {
          m_hash->update(y2_bytes);
          const auto u = m_hash->final();
 
-         if(!CT::is_equal<uint8_t>(u, C3).as_bool()) {
-            return secure_vector<uint8_t>();
-         }
+         const auto mac_ok = CT::is_equal<uint8_t>(u, C3);
+         valid_mask = mac_ok.if_set_return(0xFF);
 
-         valid_mask = 0xFF;
+         // Zero the plaintext if the MAC check failed
+         (~mac_ok).if_set_zero_out(masked_msg.data(), masked_msg.size());
+         const size_t output_len = CT::Mask<size_t>::expand(mac_ok).if_set_return(masked_msg.size());
+         masked_msg.resize(output_len);
          return masked_msg;
       }
 

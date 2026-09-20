@@ -11,6 +11,7 @@
 #include <botan/ber_dec.h>
 #include <botan/certstor.h>
 #include <botan/der_enc.h>
+#include <botan/hash.h>
 #include <botan/pubkey.h>
 #include <botan/x509_ext.h>
 
@@ -19,6 +20,112 @@
 #endif
 
 namespace Botan::OCSP {
+
+CertID::CertID(const X509_Certificate& issuer, const BigInt& subject_serial) : m_subject_serial(subject_serial) {
+   /*
+   In practice it seems some responders, including, notably,
+   ocsp.verisign.com, will reject anything but SHA-1 here
+   */
+   auto hash = HashFunction::create_or_throw("SHA-1");
+
+   m_hash_id = AlgorithmIdentifier(hash->name(), AlgorithmIdentifier::USE_NULL_PARAM);
+   m_issuer_key_hash = unlock(hash->process(issuer.subject_public_key_bitstring()));
+   m_issuer_dn_hash = unlock(hash->process(issuer.raw_subject_dn()));
+}
+
+bool CertID::is_id_for(const X509_Certificate& issuer, const X509_Certificate& subject) const {
+   try {
+      if(BigInt::from_bytes(subject.serial_number()) != m_subject_serial) {
+         return false;
+      }
+
+      const std::string hash_algo = m_hash_id.oid().to_formatted_string();
+
+      if(hash_algo != "SHA-1" && hash_algo != "SHA-256") {
+         return false;
+      }
+
+      auto hash = HashFunction::create_or_throw(hash_algo);
+
+      if(m_issuer_dn_hash != unlock(hash->process(subject.raw_issuer_dn()))) {
+         return false;
+      }
+
+      if(m_issuer_key_hash != unlock(hash->process(issuer.subject_public_key_bitstring()))) {
+         return false;
+      }
+   } catch(...) {
+      return false;
+   }
+
+   return true;
+}
+
+void CertID::encode_into(DER_Encoder& to) const {
+   to.start_sequence()
+      .encode(m_hash_id)
+      .encode(m_issuer_dn_hash, ASN1_Type::OctetString)
+      .encode(m_issuer_key_hash, ASN1_Type::OctetString)
+      .encode(m_subject_serial)
+      .end_cons();
+}
+
+void CertID::decode_from(BER_Decoder& from) {
+   /*
+   * RFC 6960 Section 4.1.1
+   *
+   * CertID ::= SEQUENCE {
+   *    hashAlgorithm       AlgorithmIdentifier,
+   *    issuerNameHash      OCTET STRING,
+   *    issuerKeyHash       OCTET STRING,
+   *    serialNumber        CertificateSerialNumber }
+   */
+   from.start_sequence()
+      .decode(m_hash_id)
+      .decode(m_issuer_dn_hash, ASN1_Type::OctetString)
+      .decode(m_issuer_key_hash, ASN1_Type::OctetString)
+      .decode(m_subject_serial)
+      .end_cons();
+}
+
+void SingleResponse::encode_into(DER_Encoder& /*to*/) const {
+   throw Not_Implemented("SingleResponse::encode_into");
+}
+
+void SingleResponse::decode_from(BER_Decoder& from) {
+   /*
+   * RFC 6960 Section 4.2.1
+   *
+   * SingleResponse ::= SEQUENCE {
+   *    certID                       CertID,
+   *    certStatus                   CertStatus,
+   *    thisUpdate                   GeneralizedTime,
+   *    nextUpdate         [0]       EXPLICIT GeneralizedTime OPTIONAL,
+   *    singleExtensions   [1]       EXPLICIT Extensions OPTIONAL }
+   *
+   * CertStatus ::= CHOICE {
+   *    good        [0]     IMPLICIT NULL,
+   *    revoked     [1]     IMPLICIT RevokedInfo,
+   *    unknown     [2]     IMPLICIT UnknownInfo }
+   *
+   * RevokedInfo ::= SEQUENCE {
+   *    revocationTime              GeneralizedTime,
+   *    revocationReason    [0]     EXPLICIT CRLReason OPTIONAL }
+   */
+   BER_Object cert_status;
+   Extensions extensions;
+
+   from.start_sequence()
+      .decode(m_certid)
+      .get_next(cert_status)
+      .decode(m_thisupdate)
+      .decode_optional(m_nextupdate, ASN1_Type(0), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
+      .decode_optional(extensions, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
+      .end_cons();
+
+   // TODO: should verify the cert_status body and decode RevokedInfo
+   m_cert_status = static_cast<uint32_t>(cert_status.type());
+}
 
 namespace {
 
@@ -56,6 +163,20 @@ Request::Request(const X509_Certificate& issuer_cert, const BigInt& subject_seri
       m_issuer(issuer_cert), m_certid(m_issuer, subject_serial) {}
 
 std::vector<uint8_t> Request::BER_encode() const {
+   /*
+   * RFC 6960 Section 4.1.1
+   *
+   * OCSPRequest ::= SEQUENCE {
+   *    tbsRequest                  TBSRequest,
+   *    optionalSignature   [0]    EXPLICIT Signature OPTIONAL }
+   *
+   * TBSRequest ::= SEQUENCE {
+   *    version             [0]    EXPLICIT Version DEFAULT v1,
+   *    requestList                SEQUENCE OF Request }
+   *
+   * Request ::= SEQUENCE {
+   *    reqCert                    CertID }
+   */
    std::vector<uint8_t> output;
    DER_Encoder(output)
       .start_sequence()
@@ -83,7 +204,21 @@ Response::Response(Certificate_Status_Code status) :
 
 Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
       m_response_bits(response_bits, response_bits + response_bits_len) {
-   BER_Decoder response_outer = BER_Decoder(m_response_bits).start_sequence();
+   /*
+   * RFC 6960 Section 4.2.1
+   *
+   * OCSPResponse ::= SEQUENCE {
+   *    responseStatus         OCSPResponseStatus,
+   *    responseBytes      [0] EXPLICIT ResponseBytes OPTIONAL }
+   *
+   * OCSPResponseStatus ::= ENUMERATED { ... }
+   *
+   * ResponseBytes ::= SEQUENCE {
+   *    responseType   OBJECT IDENTIFIER,
+   *    response       OCTET STRING }
+   */
+   BER_Decoder outer_decoder(m_response_bits, BER_Decoder::Limits::DER());
+   BER_Decoder response_outer = outer_decoder.start_sequence();
 
    size_t resp_status = 0;
 
@@ -96,11 +231,22 @@ Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
    }
 
    if(response_outer.more_items()) {
-      BER_Decoder response_bytes = response_outer.start_context_specific(0).start_sequence();
+      BER_Decoder response_bytes_ctx = response_outer.start_context_specific(0);
+      BER_Decoder response_bytes = response_bytes_ctx.start_sequence();
 
       response_bytes.decode_and_check(OID({1, 3, 6, 1, 5, 5, 7, 48, 1, 1}), "Unknown response type in OCSP response");
 
-      BER_Decoder basicresponse = BER_Decoder(response_bytes.get_next_octet_string()).start_sequence();
+      /*
+      * RFC 6960 Section 4.2.1
+      *
+      * BasicOCSPResponse ::= SEQUENCE {
+      *    tbsResponseData      ResponseData,
+      *    signatureAlgorithm   AlgorithmIdentifier,
+      *    signature            BIT STRING,
+      *    certs            [0] EXPLICIT SEQUENCE OF Certificate OPTIONAL }
+      */
+      BER_Decoder basic_response_decoder(response_bytes.get_next_octet_string(), BER_Decoder::Limits::DER());
+      BER_Decoder basicresponse = basic_response_decoder.start_sequence();
 
       basicresponse.start_sequence()
          .raw_bytes(m_tbs_bits)
@@ -109,10 +255,27 @@ Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
          .decode(m_signature, ASN1_Type::BitString);
       decode_optional_list(basicresponse, ASN1_Type(0), m_certs);
 
+      basicresponse.verify_end();
+      basic_response_decoder.verify_end();
+
+      /*
+      * RFC 6960 Section 4.2.1
+      *
+      * ResponseData ::= SEQUENCE {
+      *    version              [0] EXPLICIT Version DEFAULT v1,
+      *    responderID              ResponderID,
+      *    producedAt               GeneralizedTime,
+      *    responses                SEQUENCE OF SingleResponse,
+      *    responseExtensions   [1] EXPLICIT Extensions OPTIONAL }
+      *
+      * ResponderID ::= CHOICE {
+      *    byName   [1] Name,
+      *    byKey    [2] KeyHash }
+      */
       size_t responsedata_version = 0;
       Extensions extensions;
 
-      BER_Decoder(m_tbs_bits)
+      BER_Decoder(m_tbs_bits, BER_Decoder::Limits::DER())
          .decode_optional(responsedata_version, ASN1_Type(0), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
 
          .decode_optional(m_signer_name, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
@@ -124,7 +287,9 @@ Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
 
          .decode_list(m_responses)
 
-         .decode_optional(extensions, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed);
+         .decode_optional(extensions, ASN1_Type(1), ASN1_Class::ContextSpecific | ASN1_Class::Constructed)
+
+         .verify_end();
 
       const bool has_signer = !m_signer_name.empty();
       const bool has_key_hash = !m_key_hash.empty();
@@ -135,9 +300,13 @@ Response::Response(const uint8_t response_bits[], size_t response_bits_len) :
       if(!has_signer && !has_key_hash) {
          throw Decoding_Error("OCSP response contains neither byName nor byKey in responderID field");
       }
+
+      response_bytes.verify_end();
+      response_bytes_ctx.verify_end();
    }
 
-   response_outer.end_cons();
+   response_outer.verify_end();
+   outer_decoder.verify_end();
 }
 
 bool Response::is_issued_by(const X509_Certificate& candidate) const {

@@ -56,6 +56,7 @@ struct X509_Certificate_Data {
 
       std::string m_fingerprint_sha1;
       std::string m_fingerprint_sha256;
+      std::array<uint8_t, 32> m_tag = {};
 
       AlternativeName m_subject_alt_name;
       AlternativeName m_issuer_alt_name;
@@ -110,7 +111,7 @@ std::unique_ptr<X509_Certificate_Data> parse_x509_cert_body(const X509_Object& o
    BER_Object public_key;
    BER_Object v3_exts_data;
 
-   BER_Decoder(obj.signed_body())
+   BER_Decoder(obj.signed_body(), BER_Decoder::Limits::DER())
       .decode_optional(data->m_version, ASN1_Type(0), ASN1_Class::Constructed | ASN1_Class::ContextSpecific)
       .decode(serial_bn)
       .decode(data->m_sig_algo_inner)
@@ -140,7 +141,7 @@ std::unique_ptr<X509_Certificate_Data> parse_x509_cert_body(const X509_Object& o
 
    data->m_serial = serial_bn.serialize();
    // crude method to save the serial's sign; will get lost during decoding, otherwise
-   data->m_serial_negative = serial_bn.is_negative();
+   data->m_serial_negative = serial_bn.signum() < 0;
    data->m_subject_dn_bits = ASN1::put_in_sequence(data->m_subject_dn.get_bits());
    data->m_issuer_dn_bits = ASN1::put_in_sequence(data->m_issuer_dn.get_bits());
 
@@ -148,13 +149,14 @@ std::unique_ptr<X509_Certificate_Data> parse_x509_cert_body(const X509_Object& o
 
    data->m_subject_public_key_bits_seq = ASN1::put_in_sequence(data->m_subject_public_key_bits);
 
-   BER_Decoder(data->m_subject_public_key_bits)
+   BER_Decoder(data->m_subject_public_key_bits, BER_Decoder::Limits::DER())
       .decode(data->m_subject_public_key_algid)
-      .decode(data->m_subject_public_key_bitstring, ASN1_Type::BitString);
+      .decode(data->m_subject_public_key_bitstring, ASN1_Type::BitString)
+      .verify_end();
 
    if(v3_exts_data.is_a(3, ASN1_Class::Constructed | ASN1_Class::ContextSpecific)) {
       // Path validation will reject a v1/v2 cert with v3 extensions
-      BER_Decoder(v3_exts_data).decode(data->m_v3_extensions).verify_end();
+      BER_Decoder(v3_exts_data, BER_Decoder::Limits::DER()).decode(data->m_v3_extensions).verify_end();
    } else if(v3_exts_data.is_set()) {
       throw BER_Bad_Tag("Unknown tag in X.509 cert", v3_exts_data.tagging());
    }
@@ -274,32 +276,24 @@ std::unique_ptr<X509_Certificate_Data> parse_x509_cert_body(const X509_Object& o
       data->m_crl_distribution_points = ext->crl_distribution_urls();
    }
 
-   // Check for self-signed vs self-issued certificates
+   /*
+   Determine if this certificate appears to be self-issued (subject == issuer).
+   This is only a heuristic used for path building so it's ok it is not precise.
+   The self-signature is verified during path validation.
+   */
    if(data->m_subject_dn == data->m_issuer_dn) {
-      if(data->m_subject_key_id.empty() == false && data->m_authority_key_id.empty() == false) {
+      if(!data->m_subject_key_id.empty() && !data->m_authority_key_id.empty()) {
+         /*
+         Both SKID and AKID are set so we can reliably determine self-signed vs
+         self-issued by comparing the two
+         */
          data->m_self_signed = (data->m_subject_key_id == data->m_authority_key_id);
       } else {
          /*
-         If a parse error or unknown algorithm is encountered, default
-         to assuming it is self signed. We have no way of being certain but
-         that is usually the default case (self-issued is rare in practice).
+         Without both SKID and AKID we can't determine with certainty. Assume
+         self-signed since that's by far the common case.
          */
          data->m_self_signed = true;
-
-         try {
-            auto pub_key = X509::load_key(data->m_subject_public_key_bits_seq);
-
-            const auto sig_status = obj.verify_signature(*pub_key);
-
-            if(sig_status.first == Certificate_Status_Code::OK ||
-               sig_status.first == Certificate_Status_Code::SIGNATURE_ALGO_UNKNOWN) {
-               data->m_self_signed = true;
-            } else {
-               data->m_self_signed = false;
-            }
-         } catch(...) {
-            // ignore errors here to allow parsing to continue
-         }
       }
    }
 
@@ -313,15 +307,17 @@ std::unique_ptr<X509_Certificate_Data> parse_x509_cert_body(const X509_Object& o
       data->m_fingerprint_sha1 = create_hex_fingerprint(full_encoding, "SHA-1");
    }
 
-   if(auto sha256 = HashFunction::create("SHA-256")) {
-      sha256->update(data->m_issuer_dn_bits);
-      data->m_issuer_dn_bits_sha256 = sha256->final_stdvec();
+   // SHA-256 is a hard dependency of this module
+   auto sha256 = HashFunction::create_or_throw("SHA-256");
+   sha256->update(data->m_issuer_dn_bits);
+   data->m_issuer_dn_bits_sha256 = sha256->final_stdvec();
 
-      sha256->update(data->m_subject_dn_bits);
-      data->m_subject_dn_bits_sha256 = sha256->final_stdvec();
+   sha256->update(data->m_subject_dn_bits);
+   data->m_subject_dn_bits_sha256 = sha256->final_stdvec();
 
-      data->m_fingerprint_sha256 = create_hex_fingerprint(full_encoding, "SHA-256");
-   }
+   sha256->update(full_encoding);
+   sha256->final(data->m_tag);
+   data->m_fingerprint_sha256 = format_hex_fingerprint(data->m_tag);
 
    return data;
 }
@@ -631,14 +627,14 @@ std::unique_ptr<Public_Key> X509_Certificate::load_subject_public_key() const {
    return this->subject_public_key();
 }
 
-std::vector<uint8_t> X509_Certificate::raw_issuer_dn_sha256() const {
+const std::vector<uint8_t>& X509_Certificate::raw_issuer_dn_sha256() const {
    if(data().m_issuer_dn_bits_sha256.empty()) {
       throw Encoding_Error("X509_Certificate::raw_issuer_dn_sha256 called but SHA-256 disabled in build");
    }
    return data().m_issuer_dn_bits_sha256;
 }
 
-std::vector<uint8_t> X509_Certificate::raw_subject_dn_sha256() const {
+const std::vector<uint8_t>& X509_Certificate::raw_subject_dn_sha256() const {
    if(data().m_subject_dn_bits_sha256.empty()) {
       throw Encoding_Error("X509_Certificate::raw_subject_dn_sha256 called but SHA-256 disabled in build");
    }
@@ -662,6 +658,10 @@ std::string X509_Certificate::fingerprint(std::string_view hash_name) const {
    } else {
       return create_hex_fingerprint(this->BER_encode(), hash_name);
    }
+}
+
+X509_Certificate::Tag X509_Certificate::tag() const {
+   return Tag(data().m_tag);
 }
 
 bool X509_Certificate::matches_dns_name(std::string_view name) const {

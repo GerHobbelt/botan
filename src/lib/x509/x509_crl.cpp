@@ -13,6 +13,7 @@
 #include <botan/data_src.h>
 #include <botan/x509_ext.h>
 #include <botan/x509cert.h>
+#include <set>
 
 namespace Botan {
 
@@ -22,9 +23,22 @@ class CRL_Data final {
                const X509_Time& this_update,
                const X509_Time& next_update,
                const std::vector<CRL_Entry>& revoked) :
-            m_issuer(issuer), m_this_update(this_update), m_next_update(next_update), m_entries(revoked) {}
+            m_issuer(issuer), m_this_update(this_update), m_next_update(next_update), m_entries(revoked) {
+         this->update_index();
+      }
 
       CRL_Data() = default;
+
+      void update_index() {
+         m_revoked_serials.clear();
+         for(const auto& entry : m_entries) {
+            if(entry.reason_code() == CRL_Code::RemoveFromCrl) {
+               m_revoked_serials.erase(entry.serial_number());
+            } else {
+               m_revoked_serials.insert(entry.serial_number());
+            }
+         }
+      }
 
       // NOLINTBEGIN(*non-private-member-variables-in-classes)
       X509_DN m_issuer;
@@ -33,6 +47,9 @@ class CRL_Data final {
       X509_Time m_next_update;
       std::vector<CRL_Entry> m_entries;
       Extensions m_extensions;
+
+      // cached values from entries
+      std::set<std::vector<uint8_t>> m_revoked_serials;
 
       // cached values from extensions
       size_t m_crl_number = 0;
@@ -93,22 +110,7 @@ bool X509_CRL::is_revoked(const X509_Certificate& cert) const {
       }
    }
 
-   const std::vector<uint8_t>& cert_serial = cert.serial_number();
-
-   bool is_revoked = false;
-
-   // FIXME would be nice to avoid a linear scan here - maybe sort the entries?
-   for(const CRL_Entry& entry : get_revoked()) {
-      if(cert_serial == entry.serial_number()) {
-         if(entry.reason_code() == CRL_Code::RemoveFromCrl) {
-            is_revoked = false;
-         } else {
-            is_revoked = true;
-         }
-      }
-   }
-
-   return is_revoked;
+   return data().m_revoked_serials.contains(cert.serial_number());
 }
 
 /*
@@ -119,7 +121,7 @@ namespace {
 std::unique_ptr<CRL_Data> decode_crl_body(const std::vector<uint8_t>& body, const AlgorithmIdentifier& sig_algo) {
    auto data = std::make_unique<CRL_Data>();
 
-   BER_Decoder tbs_crl(body);
+   BER_Decoder tbs_crl(body, BER_Decoder::Limits::DER());
 
    tbs_crl.decode_optional(data->m_version, ASN1_Type::Integer, ASN1_Class::Universal);
    data->m_version += 1;  // wire-format is 0-based
@@ -143,15 +145,18 @@ std::unique_ptr<CRL_Data> decode_crl_body(const std::vector<uint8_t>& body, cons
    // field in all CRLs". Obviously, not everyone complies...
    //
    // See https://github.com/randombit/botan/issues/4722 for more details.
-   tbs_crl.decode_optional(data->m_next_update, ASN1_Type::UtcTime, ASN1_Class::Universal);
-   if(!data->m_next_update.time_is_set()) {
-      tbs_crl.decode_optional(data->m_next_update, ASN1_Type::GeneralizedTime, ASN1_Class::Universal);
+   {
+      const auto& next_update = tbs_crl.peek_next_object();
+      if(next_update.is_a(ASN1_Type::UtcTime, ASN1_Class::Universal) ||
+         next_update.is_a(ASN1_Type::GeneralizedTime, ASN1_Class::Universal)) {
+         tbs_crl.decode(data->m_next_update);
+      }
    }
 
    BER_Object next = tbs_crl.get_next_object();
 
    if(next.is_a(ASN1_Type::Sequence, ASN1_Class::Constructed)) {
-      BER_Decoder cert_list(std::move(next));
+      BER_Decoder cert_list(next, tbs_crl.limits());
 
       while(cert_list.more_items()) {
          CRL_Entry entry;
@@ -162,7 +167,7 @@ std::unique_ptr<CRL_Data> decode_crl_body(const std::vector<uint8_t>& body, cons
    }
 
    if(next.is_a(0, ASN1_Class::Constructed | ASN1_Class::ContextSpecific)) {
-      BER_Decoder crl_options(std::move(next));
+      BER_Decoder crl_options(next, tbs_crl.limits());
       crl_options.decode(data->m_extensions).verify_end();
       next = tbs_crl.get_next_object();
    }
@@ -183,6 +188,8 @@ std::unique_ptr<CRL_Data> decode_crl_body(const std::vector<uint8_t>& body, cons
    if(const auto* ext = data->m_extensions.get_extension_object_as<Cert_Extension::CRL_Issuing_Distribution_Point>()) {
       data->m_idp_urls = ext->get_point().get_attribute("URL");
    }
+
+   data->update_index();
 
    return data;
 }
