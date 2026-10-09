@@ -51,8 +51,10 @@ For base blinding, as an optimization, instead of choosing a new random mask and
 inverse with each decryption, both the mask and its inverse are simply squared
 to choose the next blinding factor. This is much faster than computing a fresh
 value each time, and the additional relation is thought to provide only minimal
-useful information for an attacker. Every BOTAN_BLINDING_REINIT_INTERVAL
-(default 64) operations, a new starting point is chosen.
+useful information for an attacker. Every 64 operations, a new starting point
+is chosen. The blinding sequence is shared by all private key operations which
+use the same key object, so creating a new signer or decryptor does not require
+computing a new starting point.
 
 Exponent blinding uses new values for each signature, with 64 bit masks.
 
@@ -219,11 +221,15 @@ the computation of ``s``, normally ``((x * r) + m)/k``, is computed instead as
 x25519
 ----------------------
 
-The x25519 code is independent of the main Weierstrass form ECC code, instead
-based on curve25519-donna-c64.c by Adam Langley. The code seems immune to cache
-based side channels. It does make use of integer multiplications; on some old
-CPUs these multiplications take variable time and might allow a side channel
-attack. This is not considered a problem on modern processors.
+The x25519 code is independent of the main Weierstrass form ECC code. Key
+agreement uses a Montgomery ladder with field arithmetic based on
+curve25519-donna-c64.c by Adam Langley. Key generation instead computes the
+public key on the Ed25519 curve using the Ed25519 fixed-base tables (table
+entries are selected by scanning the whole table with masked loads) and maps the
+result to Curve25519. The code seems immune to cache based side channels. It
+does make use of integer multiplications; on some old CPUs these multiplications
+take variable time and might allow a side channel attack. This is not considered
+a problem on modern processors.
 
 The x25519 implementation does not currently include blinding or point
 rerandomization.

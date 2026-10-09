@@ -15,14 +15,13 @@
 
 namespace Botan {
 
-class RandomNumberGenerator;
-
 /*
 * Multiplication algorithm window size parameters
 */
 
 static constexpr size_t BasePointWindowBits = 6;
 static constexpr size_t VarPointWindowBits = 4;
+static constexpr size_t Mul2VartimeWindowBits = 5;
 static constexpr size_t Mul2PrecompWindowBits = 3;
 static constexpr size_t Mul2WindowBits = 2;
 
@@ -197,10 +196,10 @@ std::vector<typename C::AffinePoint> basemul_setup(const typename C::AffinePoint
    return to_affine_batch<C, true>(table);
 }
 
-template <typename C, size_t WindowBits, typename BlindedScalar>
+template <typename C, size_t WindowBits, typename BlindedScalar, typename Blinding>
 typename C::ProjectivePoint basemul_exec(std::span<const typename C::AffinePoint> table,
                                          const BlindedScalar& scalar,
-                                         RandomNumberGenerator& rng) {
+                                         const Blinding& blinding) {
    // 2^W elements, less the identity element
    static constexpr size_t WindowElements = (1 << WindowBits) - 1;
 
@@ -211,7 +210,7 @@ typename C::ProjectivePoint basemul_exec(std::span<const typename C::AffinePoint
       const auto tbl_0 = table.first(WindowElements);
       auto pt = C::ProjectivePoint::from_affine(C::AffinePoint::ct_select(tbl_0, w_0));
       CT::poison(pt);
-      pt.randomize_rep(rng);
+      blinding.randomize_rep(pt, 0);
       return pt;
    }();
 
@@ -229,8 +228,8 @@ typename C::ProjectivePoint basemul_exec(std::span<const typename C::AffinePoint
       accum += C::AffinePoint::ct_select(tbl_i, w_i);
 
       // Conditional ok: loop iteration count is public
-      if(i <= 3) {
-         accum.randomize_rep(rng);
+      if(i < Blinding::Rerandomizations) {
+         blinding.randomize_rep(accum, i);
       }
    }
 
@@ -288,10 +287,10 @@ std::vector<typename C::AffinePoint> basemul_booth_setup(const typename C::Affin
    return to_affine_batch<C, true>(table);
 }
 
-template <typename C, size_t WindowBits, typename BlindedScalar>
+template <typename C, size_t WindowBits, typename BlindedScalar, typename Blinding>
 typename C::ProjectivePoint basemul_booth_exec(std::span<const typename C::AffinePoint> table,
                                                const BlindedScalar& scalar,
-                                               RandomNumberGenerator& rng) {
+                                               const Blinding& blinding) {
    static constexpr size_t WindowElements = 1 << (WindowBits - 1);
 
    const size_t windows = (scalar.bits() + WindowBits) / WindowBits;
@@ -306,7 +305,7 @@ typename C::ProjectivePoint basemul_booth_exec(std::span<const typename C::Affin
       auto pt = C::ProjectivePoint::from_affine(C::AffinePoint::ct_select(tbl_0, tidx));
       pt.conditional_assign(tneg, pt.negate());
       CT::poison(pt);
-      pt.randomize_rep(rng);
+      blinding.randomize_rep(pt, 0);
       return pt;
    }();
 
@@ -321,12 +320,45 @@ typename C::ProjectivePoint basemul_booth_exec(std::span<const typename C::Affin
       accum = C::ProjectivePoint::add_or_sub(accum, C::AffinePoint::ct_select(tbl_i, tidx), tneg);
 
       // Conditional ok: loop iteration count is public
-      if(i <= 3) {
-         accum.randomize_rep(rng);
+      if(i < Blinding::Rerandomizations) {
+         blinding.randomize_rep(accum, i);
       }
    }
 
    CT::unpoison(accum);
+   return accum;
+}
+
+/*
+* Variable time base point multiplication using the Booth table
+*
+* Returns accum + s*P. The scalar is read directly, without blinding or
+* constant time table lookups, so this is only usable when s is public
+* (eg during signature verification).
+*/
+template <typename C, size_t WindowBits, typename ScalarBits>
+typename C::ProjectivePoint basemul_booth_exec_vartime(std::span<const typename C::AffinePoint> table,
+                                                       const ScalarBits& scalar,
+                                                       typename C::ProjectivePoint accum) {
+   static constexpr size_t WindowElements = 1 << (WindowBits - 1);
+
+   const size_t windows = (scalar.bits() + WindowBits) / WindowBits;
+   BOTAN_DEBUG_ASSERT(windows * WindowElements <= table.size());
+
+   for(size_t i = 0; i != windows; ++i) {
+      // Extract W+1 bits overlapping by 1 with the previous window; the
+      // first window has an implicit carry in of zero
+      const size_t raw =
+         (i == 0) ? ((scalar.get_window(0) & ((1 << WindowBits) - 1)) << 1) : scalar.get_window(WindowBits * i - 1);
+
+      const auto [tidx, tneg] = booth_recode<WindowBits>(raw);
+
+      // Conditional ok: this function is variable time
+      if(tidx > 0) {
+         accum = C::ProjectivePoint::add_or_sub(accum, table[WindowElements * i + tidx - 1], tneg);
+      }
+   }
+
    return accum;
 }
 
@@ -353,17 +385,17 @@ AffinePointTable<C> varpoint_setup(const typename C::AffinePoint& p) {
    return AffinePointTable<C>(table);
 }
 
-template <typename C, size_t WindowBits, typename BlindedScalar>
+template <typename C, size_t WindowBits, typename BlindedScalar, typename Blinding>
 typename C::ProjectivePoint varpoint_exec(const AffinePointTable<C>& table,
                                           const BlindedScalar& scalar,
-                                          RandomNumberGenerator& rng) {
+                                          const Blinding& blinding) {
    const size_t windows = (scalar.bits() + WindowBits - 1) / WindowBits;
 
    auto accum = [&]() {
       const size_t w_0 = scalar.get_window((windows - 1) * WindowBits);
       auto pt = C::ProjectivePoint::from_affine(table.ct_select(w_0));
       CT::poison(pt);
-      pt.randomize_rep(rng);
+      blinding.randomize_rep(pt, 0);
       return pt;
    }();
 
@@ -400,13 +432,39 @@ typename C::ProjectivePoint varpoint_exec(const AffinePointTable<C>& table,
       accum += table.ct_select(w_i);
 
       // Conditional ok: loop iteration count is public
-      if(i <= 3) {
-         accum.randomize_rep(rng);
+      if(i < Blinding::Rerandomizations) {
+         blinding.randomize_rep(accum, i);
       }
    }
 
    CT::unpoison(accum);
    return accum;
+}
+
+/*
+* Variable time table of odd multiples of a point
+*
+* Returns [P, 3*P, 5*P, ..., (2^(W-1) - 1)*P], which covers the digits of a
+* width W non-adjacent form.
+*/
+template <typename C, size_t W>
+std::vector<typename C::AffinePoint> odd_multiples_setup_vartime(const typename C::AffinePoint& p) {
+   static_assert(W >= 2 && W <= 7);
+
+   constexpr size_t TableSize = 1 << (W - 2);
+
+   std::vector<typename C::ProjectivePoint> table;
+   table.reserve(TableSize);
+
+   const auto p2 = C::ProjectivePoint::from_affine(p).dbl();
+
+   table.push_back(C::ProjectivePoint::from_affine(p));
+   for(size_t i = 1; i != TableSize; ++i) {
+      table.push_back(table[i - 1] + p2);
+   }
+
+   // Variable time batch conversion is fine since the point is public
+   return to_affine_batch<C, true>(table);
 }
 
 /*
@@ -492,11 +550,11 @@ std::vector<typename C::ProjectivePoint> mul2_setup(const typename C::AffinePoin
    return table;
 }
 
-template <typename C, size_t WindowBits, typename BlindedScalar>
+template <typename C, size_t WindowBits, typename BlindedScalar, typename Blinding>
 typename C::ProjectivePoint mul2_exec(const AffinePointTable<C>& table,
                                       const BlindedScalar& x,
                                       const BlindedScalar& y,
-                                      RandomNumberGenerator& rng) {
+                                      const Blinding& blinding) {
    const size_t Windows = (x.bits() + WindowBits - 1) / WindowBits;
 
    auto accum = [&]() {
@@ -505,7 +563,7 @@ typename C::ProjectivePoint mul2_exec(const AffinePointTable<C>& table,
       const size_t window = w_1 + (w_2 << WindowBits);
       auto pt = C::ProjectivePoint::from_affine(table.ct_select(window));
       CT::poison(pt);
-      pt.randomize_rep(rng);
+      blinding.randomize_rep(pt, 0);
       return pt;
    }();
 
@@ -518,8 +576,8 @@ typename C::ProjectivePoint mul2_exec(const AffinePointTable<C>& table,
       accum += table.ct_select(window);
 
       // Conditional ok: loop iteration count is public
-      if(i <= 3) {
-         accum.randomize_rep(rng);
+      if(i < Blinding::Rerandomizations) {
+         blinding.randomize_rep(accum, i);
       }
    }
 
