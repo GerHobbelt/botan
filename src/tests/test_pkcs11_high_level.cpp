@@ -16,6 +16,7 @@
    #include <botan/p11_randomgenerator.h>
    #include <botan/internal/fmt.h>
    #include <algorithm>
+   #include <cstring>
    #include <memory>
    #include <numeric>
    #include <sstream>
@@ -41,6 +42,7 @@
 
 #if defined(BOTAN_HAS_RSA) && defined(BOTAN_HAS_PKCS11)
    #include <botan/p11_rsa.h>
+   #include <botan/pss_params.h>
    #include <botan/rsa.h>
 #endif
 
@@ -142,6 +144,34 @@ Test::Result test_module_reload() {
    return result;
 }
 
+Test::Result test_module_reload_failure() {
+   Test::Result result("Module reload failure");
+
+   Module module(Test::pkcs11_lib());
+   Slot slot(module, Slot::get_available_slots(module, true).at(0));
+
+   {
+      const Session session(slot, true);
+
+      // pReserved must be NULL, so C_Initialize fails
+      uint8_t reserved = 0;
+      const C_InitializeArgs bad_args = {
+         nullptr, nullptr, nullptr, nullptr, static_cast<CK_FLAGS>(Flag::OsLockingOk), &reserved};
+      result.test_throws("reload with invalid arguments fails", [&]() { module.reload(bad_args); });
+
+      result.test_throws<Botan::Invalid_State>("module is unusable after failed reload", [&]() { module.get_info(); });
+
+      // the session destructor runs against the uninitialized module
+   }
+   result.test_success("Session destructor did not crash after failed reload");
+
+   module.reload();
+   module.get_info();
+   result.test_success("Module can be reloaded after a failed reload");
+
+   return result;
+}
+
 Test::Result test_multiple_modules() {
    Test::Result result("Module copy");
    const Module first_module(Test::pkcs11_lib());
@@ -170,7 +200,8 @@ class Module_Tests final : public Test {
             {STRING_AND_FUNCTION(test_module_ctor)},
             {STRING_AND_FUNCTION(test_multiple_modules)},
             {STRING_AND_FUNCTION(test_module_get_info)},
-            {STRING_AND_FUNCTION(test_module_reload)}};
+            {STRING_AND_FUNCTION(test_module_reload)},
+            {STRING_AND_FUNCTION(test_module_reload_failure)}};
 
          return run_pkcs11_tests("Module", fns);
       }
@@ -448,17 +479,36 @@ Test::Result test_attribute_container() {
    result.test_sz_eq("8 elements in attribute container", attributes.count(), 8);
 
    const std::vector<Botan::PKCS11::Attribute>& storedAttributes = attributes.attributes();
-   result.test_u64_eq(
-      "ObjectId type", storedAttributes.at(4).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::ObjectId));
-   result.test_u64_eq("ObjectId value", *reinterpret_cast<uint64_t*>(storedAttributes.at(4).pValue), 10);
-   result.test_u64_eq("Id type", storedAttributes.at(5).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::Id));
-   result.test_u64_eq("Id value", *reinterpret_cast<uint64_t*>(storedAttributes.at(5).pValue), 21);
-   result.test_u64_eq(
-      "PixelX type", storedAttributes.at(6).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::PixelX));
-   result.test_u64_eq("PixelX value", *reinterpret_cast<uint64_t*>(storedAttributes.at(6).pValue), 30);
-   result.test_u64_eq(
-      "PixelY type", storedAttributes.at(7).type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::PixelY));
-   result.test_u64_eq("PixelY value", *reinterpret_cast<uint64_t*>(storedAttributes.at(7).pValue), 40);
+
+   // Compare the exact bytes the module would read, independent of host endianness
+   auto published_ulong = [&](const std::string& what, size_t idx, AttributeType type, Ulong expected) {
+      const auto& attr = storedAttributes.at(idx);
+      result.test_u64_eq(what + " type", attr.type, static_cast<CK_ATTRIBUTE_TYPE>(type));
+      result.test_u64_eq(what + " length", attr.ulValueLen, sizeof(Ulong));
+      Ulong value = 0;
+      std::memcpy(&value, attr.pValue, sizeof(Ulong));
+      result.test_u64_eq(what + " value", value, expected);
+   };
+
+   published_ulong("Class", 0, AttributeType::Class, static_cast<CK_OBJECT_CLASS>(ObjectClass::PrivateKey));
+
+   const auto& sensitive = storedAttributes.at(3);
+   result.test_u64_eq("Sensitive type", sensitive.type, static_cast<CK_ATTRIBUTE_TYPE>(AttributeType::Sensitive));
+   result.test_u64_eq("Sensitive length", sensitive.ulValueLen, sizeof(Bbool));
+   result.test_u64_eq("Sensitive value", *static_cast<const Bbool*>(sensitive.pValue), CK_TRUE);
+
+   published_ulong("ObjectId", 4, AttributeType::ObjectId, 10);
+   published_ulong("Id", 5, AttributeType::Id, 21);
+   published_ulong("PixelX", 6, AttributeType::PixelX, 30);
+   published_ulong("PixelY", 7, AttributeType::PixelY, 40);
+
+   // Overwriting a bool must not disturb the numerics or vice versa
+   attributes.add_bool(AttributeType::Sensitive, false);
+   result.test_u64_eq("Sensitive overwritten", *static_cast<const Bbool*>(storedAttributes.at(3).pValue), CK_FALSE);
+   published_ulong("PixelY after bool overwrite", 7, AttributeType::PixelY, 40);
+
+   result.test_throws<Botan::Invalid_Argument>("negative numeric rejected",
+                                               [&]() { attributes.add_numeric(AttributeType::PixelX, -1); });
 
    return result;
 }
@@ -816,6 +866,36 @@ Test::Result test_rsa_encrypt_decrypt() {
    encrypt_and_decrypt(plaintext, "OAEP(SHA-1)", false);
    encrypt_and_decrypt(plaintext, "OAEP(SHA-1)", true);
 
+   /*
+   * A ciphertext whose leading byte is zero has the same integer value with
+   * that byte removed, but RFC 8017 requires the ciphertext be exactly k bytes
+   */
+   auto test_short_ciphertext = [&](const std::string& padding) {
+      const Botan::RSA_PublicKey soft_pubkey(keypair.first.get_n(), keypair.first.get_e());
+      const Botan::PK_Encryptor_EME encryptor(soft_pubkey, *rng, padding);
+
+      std::vector<uint8_t> ctext;
+      for(size_t i = 0; i != 100000; ++i) {
+         ctext = encryptor.encrypt(plaintext, *rng);
+         if(ctext[0] == 0) {
+            break;
+         }
+      }
+
+      if(!result.test_u8_eq("found ciphertext with leading zero byte", ctext[0], 0)) {
+         return;
+      }
+
+      keypair.second.set_use_software_padding(true);
+      const Botan::PK_Decryptor_EME decryptor(keypair.second, *rng, padding);
+      result.test_bin_eq("full length ciphertext decrypts", decryptor.decrypt(ctext), plaintext);
+      result.test_throws("short ciphertext is rejected: " + padding,
+                         [&]() { decryptor.decrypt(std::span{ctext}.subspan(1)); });
+   };
+
+   test_short_ciphertext("EME-PKCS1-v1_5");
+   test_short_ciphertext("OAEP(SHA-1)");
+
    keypair.first.destroy();
    keypair.second.destroy();
 
@@ -836,25 +916,35 @@ Test::Result test_rsa_sign_verify() {
 
    auto sign_and_verify = [&](const std::string& padding, bool multipart) {
       Botan::PK_Signer signer(keypair.second, *rng, padding, Botan::Signature_Format::Standard);
-      std::vector<uint8_t> signature;
-      if(multipart) {
-         signer.update(plaintext.data(), plaintext.size() / 2);
-         signature = signer.sign_message(plaintext.data() + plaintext.size() / 2, plaintext.size() / 2, *rng);
-      } else {
-         signature = signer.sign_message(plaintext, *rng);
-      }
-
       Botan::PK_Verifier verifier(keypair.first, padding, Botan::Signature_Format::Standard);
-      bool rsa_ok = false;
-      if(multipart) {
-         verifier.update(plaintext.data(), plaintext.size() / 2);
-         rsa_ok = verifier.verify_message(
-            plaintext.data() + plaintext.size() / 2, plaintext.size() / 2, signature.data(), signature.size());
-      } else {
-         rsa_ok = verifier.verify_message(plaintext, signature);
-      }
+      const Botan::RSA_PublicKey soft_pubkey(keypair.first.get_n(), keypair.first.get_e());
+      Botan::PK_Verifier soft_verifier(soft_pubkey, padding, Botan::Signature_Format::Standard);
 
-      result.test_is_true("RSA PKCS11 sign and verify: " + padding, rsa_ok);
+      // Reuse the operations with different messages and switch between single
+      // and multiple part input to ensure both buffer and token state are reset.
+      auto message = plaintext;
+      for(const bool use_multipart : {multipart, !multipart, multipart}) {
+         message.back() ^= 0x80;
+         const auto first_part = std::span{message}.first(use_multipart ? message.size() / 2 : message.size());
+         const auto last_part = std::span{message}.subspan(first_part.size());
+
+         // Empty updates before, between, and after data must have no effect.
+         signer.update(std::span<const uint8_t>{});
+         signer.update(first_part);
+         signer.update(std::span<const uint8_t>{});
+         signer.update(last_part);
+         signer.update(std::span<const uint8_t>{});
+         const auto signature = signer.signature(*rng);
+
+         verifier.update(std::span<const uint8_t>{});
+         verifier.update(first_part);
+         verifier.update(std::span<const uint8_t>{});
+         verifier.update(last_part);
+         verifier.update(std::span<const uint8_t>{});
+         result.test_is_true("RSA PKCS11 sign and verify: " + padding, verifier.check_signature(signature));
+         result.test_is_true("RSA PKCS11 signature verifies in software: " + padding,
+                             soft_verifier.verify_message(message, signature));
+      }
    };
 
    // single-part sign
@@ -865,6 +955,56 @@ Test::Result test_rsa_sign_verify() {
    // multi-part sign
    sign_and_verify("PKCS1v15(SHA-256)", true);
    sign_and_verify("PSS(SHA-256)", true);
+
+   // single part only mechanisms, with the input split over several updates
+   sign_and_verify("Raw", true);
+
+   // PSS AlgorithmIdentifier, checked by the software verifier
+   {
+      Botan::PK_Signer signer(keypair.second, *rng, "PSS(SHA-256)");
+      const auto alg_id = signer.algorithm_identifier();
+      result.test_is_true(
+         "PSS AlgorithmIdentifier",
+         alg_id == Botan::AlgorithmIdentifier("RSA/PSS", Botan::PSS_Params("SHA-256", 32).serialize()));
+
+      const auto signature = signer.sign_message(plaintext, *rng);
+      const Botan::RSA_PublicKey soft_pubkey(keypair.first.get_n(), keypair.first.get_e());
+      Botan::PK_Verifier verifier(soft_pubkey, alg_id);
+      result.test_is_true("PSS signature verifies using AlgorithmIdentifier",
+                          verifier.verify_message(plaintext, signature));
+   }
+
+   // abandoned multi-part operations must not leave the session unusable
+   {
+      Botan::PK_Signer abandoned(keypair.second, *rng, "PKCS1v15(SHA-256)");
+      abandoned.update(plaintext.data(), 16);
+      abandoned.update(plaintext.data() + 16, 16);
+   }
+   {
+      Botan::PK_Verifier abandoned(keypair.first, "PKCS1v15(SHA-256)");
+      abandoned.update(plaintext.data(), 16);
+      abandoned.update(plaintext.data() + 16, 16);
+   }
+   sign_and_verify("PKCS1v15(SHA-256)", true);
+
+   // empty message, both without any update and with an empty update
+   auto sign_and_verify_empty = [&](const std::string& padding, bool empty_update) {
+      Botan::PK_Signer signer(keypair.second, *rng, padding, Botan::Signature_Format::Standard);
+      if(empty_update) {
+         signer.update(std::span<const uint8_t>{});
+      }
+      const auto signature = signer.signature(*rng);
+
+      Botan::PK_Verifier verifier(keypair.first, padding, Botan::Signature_Format::Standard);
+      if(empty_update) {
+         verifier.update(std::span<const uint8_t>{});
+      }
+      result.test_is_true("RSA PKCS11 sign and verify empty message: " + padding, verifier.check_signature(signature));
+   };
+
+   sign_and_verify_empty("PKCS1v15(SHA-256)", false);
+   sign_and_verify_empty("PKCS1v15(SHA-256)", true);
+   sign_and_verify_empty("PSS(SHA-256)", false);
 
    keypair.first.destroy();
    keypair.second.destroy();
@@ -1136,6 +1276,38 @@ Test::Result test_ecdsa_sign_verify_core(EC_Group_Encoding enc, const std::strin
       #else
       sign_and_verify("Raw", Botan::Signature_Format::Standard, false);
       #endif
+
+      // CKM_ECDSA is single part only, so input split over several updates must be buffered
+      {
+         Botan::PK_Signer signer(keypair.second, *rng, "Raw");
+         Botan::PK_Verifier verifier(keypair.first, "Raw");
+         // Reuse the same signer and verifier to ensure each buffered message
+         // is consumed exactly once, regardless of how it was split into parts.
+         auto message = plaintext;
+         for(const size_t first_size : {size_t(7), message.size(), size_t(5)}) {
+            message.back() ^= 0x80;
+            signer.update(std::span<const uint8_t>{});
+            signer.update(std::span{message}.first(first_size));
+            signer.update(std::span<const uint8_t>{});
+            signer.update(std::span{message}.subspan(first_size));
+            const auto signature = signer.signature(*rng);
+            result.test_sz_eq("ECDSA PKCS11 signature length", signature.size(), signer.signature_length());
+
+            verifier.update(std::span<const uint8_t>{});
+            verifier.update(std::span{message}.first(first_size));
+            verifier.update(std::span<const uint8_t>{});
+            verifier.update(std::span{message}.subspan(first_size));
+            result.test_is_true("ECDSA PKCS11 multi-update sign and verify: Raw", verifier.check_signature(signature));
+            result.test_is_true("ECDSA PKCS11 verify of single update: Raw",
+                                Botan::PK_Verifier(keypair.first, "Raw").verify_message(message, signature));
+         }
+      }
+
+      // Aliases accepted for the mechanism are reported under the canonical hash name
+      {
+         const Botan::PK_Signer signer(keypair.second, *rng, Botan::PK_Signature_Options().with_hash("EMSA1(SHA-256)"));
+         result.test_str_eq("ECDSA PKCS11 EMSA1 alias hash name", signer.hash_function(), "SHA-256");
+      }
 
       keypair.first.destroy();
       keypair.second.destroy();
