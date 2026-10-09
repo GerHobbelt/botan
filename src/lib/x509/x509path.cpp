@@ -357,7 +357,11 @@ CertificatePathStatusCodes PKIX::check_chain(const std::vector<X509_Certificate>
    CertificatePathStatusCodes cert_status(cert_path.size());
 
    // Before anything else verify the entire chain of signatures
-   for(size_t i = 0; i != cert_path.size(); ++i) {
+   // starting from the root certificate and working towards the
+   // leaf. This precludes denial of service attacks based on long
+   // certificate chains which are valid except for the final
+   // forged (invalid) signature purportedly by the trust root.
+   for(size_t i = cert_path.size(); i-- > 0;) {
       std::set<Certificate_Status_Code>& status = cert_status.at(i);
 
       const bool at_trust_anchor = (i == cert_path.size() - 1);
@@ -408,19 +412,16 @@ CertificatePathStatusCodes PKIX::check_chain(const std::vector<X509_Certificate>
             }
          }
       }
-   }
 
-   // If any of the signatures were invalid, return immediately; we know the
-   // chain is invalid and signature failure is always considered the most
-   // critical result. This does mean other problems in the certificate (eg
-   // expired) will not be reported, but we'd have to assume any such data is
-   // anyway arbitrary considering we couldn't verify the signature chain
-
-   for(size_t i = 0; i != cert_path.size(); ++i) {
-      for(auto status : cert_status.at(i)) {
+      // If any of the signatures were invalid, return immediately; we know the
+      // chain is invalid and signature failure is always considered the most
+      // critical result. This does mean other problems in the certificate (eg
+      // expired) will not be reported, but we'd have to assume any such data is
+      // anyway arbitrary considering we couldn't verify the signature chain
+      for(const auto s : status) {
          // This ignores errors relating to the key or hash being weak since
          // these are somewhat advisory
-         if(static_cast<uint32_t>(status) >= 5000) {
+         if(static_cast<uint32_t>(s) >= 5000) {
             return cert_status;
          }
       }
@@ -690,14 +691,14 @@ std::set<Certificate_Status_Code> evaluate_ocsp_response(const OCSP::Response& o
    }
 
    // Verify the signing certificate is trusted
-   auto cert_status = verify_ocsp_signing_cert(
+   const auto cert_status = verify_ocsp_signing_cert(
       signing_cert.value(), ca, concat(ocsp_response.certificates(), cert_path), certstores, ref_time, restrictions);
    if(cert_status >= Certificate_Status_Code::FIRST_ERROR_STATUS) {
       return {cert_status, Certificate_Status_Code::OCSP_ISSUER_NOT_TRUSTED};
    }
 
    // Verify the cryptographic signature on the OCSP response
-   auto sig_status = ocsp_response.verify_signature(signing_cert.value(), restrictions);
+   const auto sig_status = ocsp_response.verify_signature(signing_cert.value(), restrictions);
    if(sig_status != Certificate_Status_Code::OCSP_SIGNATURE_OK) {
       return {sig_status};
    }
@@ -791,7 +792,7 @@ CertificatePathStatusCodes PKIX::check_crl(const std::vector<X509_Certificate>& 
             status.insert(Certificate_Status_Code::CRL_HAS_EXPIRED);
          }
 
-         auto ca_key = ca.subject_public_key();
+         const auto ca_key = ca.subject_public_key();
          const auto sig_status = crls[i]->verify_signature(*ca_key);
          const auto& trusted_hashes = restrictions.trusted_hashes();
 
@@ -863,7 +864,7 @@ CertificatePathStatusCodes PKIX::check_crl(const std::vector<X509_Certificate>& 
       if(cert_path[i].skip_revocation_check()) {
          continue;
       }
-      for(auto* certstore : certstores) {
+      for(const auto* certstore : certstores) {
          crls[i] = certstore->find_crl_for(cert_path[i]);
          if(crls[i]) {
             break;
@@ -911,7 +912,7 @@ CertificatePathStatusCodes PKIX::check_ocsp_online(const std::vector<X509_Certif
                return OCSP::Response::dummy_no_revocation_url_response();
             }));
          } else {
-            auto ocsp_req = OCSP::Request(issuer, subject);
+            const auto ocsp_req = OCSP::Request(issuer, subject);
             ocsp_response_futures.emplace_back(
                std::async(std::launch::async, [ocsp_urls, ocsp_req, timeout]() -> std::optional<OCSP::Response> {
                   HTTP::Response http;
@@ -989,7 +990,7 @@ CertificatePathStatusCodes PKIX::check_crl_online(const std::vector<X509_Certifi
          continue;
       }
 
-      for(auto* certstore : certstores) {
+      for(const auto* certstore : certstores) {
          crls[i] = certstore->find_crl_for(cert);
          if(crls[i].has_value()) {
             break;
@@ -1014,7 +1015,7 @@ CertificatePathStatusCodes PKIX::check_crl_online(const std::vector<X509_Certifi
             }));
          } else {
             future_crls.emplace_back(std::async(std::launch::async, [cdp_uris, timeout]() -> std::optional<X509_CRL> {
-               auto http = HTTP::GET_sync(
+               const auto http = HTTP::GET_sync(
                   cdp_uris[0], HTTP::RequestLimits().set_timeout(timeout).set_max_body_size(32 * 1024 * 1024));
 
                http.throw_unless_ok();
@@ -1191,7 +1192,7 @@ Certificate_Status_Code PKIX::overall_status(const CertificatePathStatusCodes& c
    // take the "worst" error as overall
    for(const std::set<Certificate_Status_Code>& s : cert_status) {
       if(!s.empty()) {
-         auto worst = *s.rbegin();
+         const auto worst = *s.rbegin();
          // Leave informative OCSP/CRL confirmations on cert-level status only
          if(worst >= Certificate_Status_Code::FIRST_ERROR_STATUS && worst > overall_status) {
             overall_status = worst;
@@ -1469,7 +1470,7 @@ std::string Path_Validation_Result::warnings_string() const {
    const std::string sep(", ");
    std::ostringstream oss;
    for(size_t i = 0; i < m_warnings.size(); i++) {
-      for(auto code : m_warnings[i]) {
+      for(const auto code : m_warnings[i]) {
          oss << "[" << std::to_string(i) << "] " << status_string(code) << sep;
       }
    }

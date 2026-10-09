@@ -333,6 +333,7 @@ void Client_Impl_13::handle(const Server_Hello_13& sh) {
    if(sh.extensions().has<PSK>()) {
       std::tie(m_handshake->psk_identity, m_cipher_state) =
          ch.extensions().get<PSK>()->take_selected_psk_info(*sh.extensions().get<PSK>(), cipher.value());
+      m_cipher_state->set_secret_logger(secret_logger());
 
       // If we offered a session for resumption *and* an externally provided PSK
       // and the latter was chosen by the server over the offered resumption, we
@@ -344,13 +345,12 @@ void Client_Impl_13::handle(const Server_Hello_13& sh) {
       // TODO: When implementing early data, `advance_with_client_hello` must
       //       happen _before_ encrypting any early application data.
       //       Same when we want to support early key export.
-      m_cipher_state->advance_with_client_hello(m_transcript_hash.previous(), *this);
-      m_cipher_state->advance_with_server_hello(
-         cipher.value(), std::move(shared_secret), m_transcript_hash.current(), *this);
+      m_cipher_state->advance_with_client_hello(m_transcript_hash.previous());
+      m_cipher_state->advance_with_server_hello(cipher.value(), std::move(shared_secret), m_transcript_hash.current());
    } else {
       m_handshake->resumed_session.reset();  // might have been set if we attempted a resumption
       m_cipher_state = Cipher_State::init_with_server_hello(
-         m_side, std::move(shared_secret), cipher.value(), m_transcript_hash.current(), *this);
+         m_side, std::move(shared_secret), cipher.value(), m_transcript_hash.current(), secret_logger());
    }
 
    callbacks().tls_examine_extensions(sh.extensions(), Connection_Side::Server, Handshake_Type::ServerHello);
@@ -447,8 +447,8 @@ void Client_Impl_13::handle(const Encrypted_Extensions& encrypted_extensions_msg
       //
       // Hence, the "outgoing" limit is what the server requested and the
       // "incoming" limit is what we requested in the Client Hello.
-      auto* const outgoing_limit = exts.get<Record_Size_Limit>();
-      auto* const incoming_limit = m_handshake->state.client_hello().extensions().get<Record_Size_Limit>();
+      const auto* const outgoing_limit = exts.get<Record_Size_Limit>();
+      const auto* const incoming_limit = m_handshake->state.client_hello().extensions().get<Record_Size_Limit>();
       set_record_size_limits(outgoing_limit->limit(), incoming_limit->limit());
    }
 
@@ -629,7 +629,7 @@ void Client_Impl_13::handle(const Finished_13& finished_msg) {
 
    // Derives the secrets for receiving application data but defers
    // the derivation of sending application data.
-   m_cipher_state->advance_with_server_finished(m_transcript_hash.current(), *this);
+   m_cipher_state->advance_with_server_finished(m_transcript_hash.current());
 
    auto flight = aggregate_handshake_messages();
 
@@ -660,7 +660,7 @@ void Client_Impl_13::handle(const Finished_13& finished_msg) {
    // After this point, only m_active_state should be consulted
    // for connection properties.
    {
-      auto extract_certs = [&]() -> std::vector<X509_Certificate> {
+      const auto extract_certs = [&]() -> std::vector<X509_Certificate> {
          if(m_handshake->state.has_server_certificate_msg() &&
             m_handshake->state.server_certificate().has_certificate_chain()) {
             return m_handshake->state.server_certificate().cert_chain();
@@ -671,7 +671,7 @@ void Client_Impl_13::handle(const Finished_13& finished_msg) {
          return {};
       };
 
-      auto extract_raw_pk = [&]() -> std::shared_ptr<const Public_Key> {
+      const auto extract_raw_pk = [&]() -> std::shared_ptr<const Public_Key> {
          if(m_handshake->state.has_server_certificate_msg() &&
             m_handshake->state.server_certificate().is_raw_public_key()) {
             return m_handshake->state.server_certificate().public_key();

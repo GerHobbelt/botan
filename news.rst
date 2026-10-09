@@ -24,6 +24,11 @@ Version 3.14.0, Not Yet Released
 * Optimize SLH-DSA, XMSS, HSS-LSM, FrodoKEM, and ML-KEM using parallel hash
   function execution. (GH #5866 #5868 #5870 #5876 #5878)
 
+* Add interoperability between the RFC 3779 ``IPAddressBlocks`` address types
+  and ``IPv4Address``/``IPv6Address``/``IPv4Subnet``/``IPv6Subnet``, and
+  deprecate the parts of the RFC 3779 API which will not survive merging the
+  two sets of types in a future major release.
+
 * Add a certificate cache to the macOS system certificate store, implement
   ``contains()`` directly, and query the keychain by issuer DN and serial
   number instead of scanning all certificates of an issuer. (GH #5541 #5929)
@@ -99,6 +104,13 @@ Version 3.14.0, Not Yet Released
   when RFC 6979 support is available at build time. Deterministic signatures can
   be requested using the API ``PK_Signature_Options::with_deterministic_signature``
   or by appending ",Deterministic" to the normal hash specifier string. (GH #5489)
+
+* Add ``TelephoneNumber`` and ``TelephoneNumberRange`` types modeling the
+  telephone numbers and number ranges used in RFC 8226 STIR certificates.
+  (GH #5979)
+
+* Fix lenient decoding of the RFC 8226 TNAuthList extension, and add
+  support for encoding it. (GH #5977)
 
 * Add ``PKCS12::mac_protected`` which indicates if the PKCS #12 file was
   protected using a MAC. (GH #5902)

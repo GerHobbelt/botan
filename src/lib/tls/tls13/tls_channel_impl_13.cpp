@@ -227,7 +227,7 @@ void Channel_Impl_13::handle(const Key_Update& key_update) {
    }
 
    BOTAN_ASSERT_NONNULL(m_cipher_state);
-   m_cipher_state->update_read_keys(*this);
+   m_cipher_state->update_read_keys();
 
    // Only an actual reciprocation settles our outstanding request. RFC 9846
    // 4.7.3 would allow requesting again after any KeyUpdate from the peer,
@@ -304,7 +304,7 @@ void Channel_Impl_13::to_peer(std::span<const uint8_t> data) {
    //
    // The ChaCha-based suites don't have any practical usage limit but we
    // apply the limit for all suites for simplicity.
-   auto needs_traffic_based_key_update = [&]() {
+   const auto needs_traffic_based_key_update = [&]() {
       const uint64_t limit = policy().records_per_traffic_key();
 
       // Have to skip this if the handshake is not yet completed since we can't
@@ -396,10 +396,18 @@ void Channel_Impl_13::update_traffic_keys(bool request_peer_update) {
    BOTAN_STATE_CHECK(!is_downgrading() && is_handshake_complete() && is_active());
    BOTAN_ASSERT_NONNULL(m_cipher_state);
    send_post_handshake_message(Key_Update(request_peer_update));
-   m_cipher_state->update_write_keys(*this);
+   m_cipher_state->update_write_keys();
    if(request_peer_update) {
       m_key_update_requested = true;
    }
+}
+
+SecretLoggerFn Channel_Impl_13::secret_logger() const {
+   return [weak = weak_from_this()](std::string_view label, std::span<const uint8_t> secret) {
+      if(const auto self = dynamic_pointer_cast<const Channel_Impl_13>(weak.lock())) {
+         self->maybe_log_secret(label, secret);
+      };
+   };
 }
 
 void Channel_Impl_13::send_record(Record_Type type, const std::vector<uint8_t>& record) {

@@ -18,17 +18,17 @@
 namespace Botan::PKCS11 {
 
 namespace {
-using PSS_Params = std::tuple<size_t, MechanismType, MGF>;
+using PKCS11_PSS_Params = std::tuple<size_t, MechanismType, MGF>;
 
 // maps a PSS mechanism type to the number of bytes used for the salt, the mechanism type of the underlying hash algorithm and the MGF
-const std::map<MechanismType, PSS_Params>& PssOptions() {
-   static const std::map<MechanismType, PSS_Params> pss_options = {
-      {MechanismType::RsaPkcsPss, PSS_Params(0, MechanismType::Sha1, MGF::Mgf1Sha1)},
-      {MechanismType::Sha1RsaPkcsPss, PSS_Params(20, MechanismType::Sha1, MGF::Mgf1Sha1)},
-      {MechanismType::Sha224RsaPkcsPss, PSS_Params(28, MechanismType::Sha224, MGF::Mgf1Sha224)},
-      {MechanismType::Sha256RsaPkcsPss, PSS_Params(32, MechanismType::Sha256, MGF::Mgf1Sha256)},
-      {MechanismType::Sha384RsaPkcsPss, PSS_Params(48, MechanismType::Sha384, MGF::Mgf1Sha384)},
-      {MechanismType::Sha512RsaPkcsPss, PSS_Params(64, MechanismType::Sha512, MGF::Mgf1Sha512)}};
+const std::map<MechanismType, PKCS11_PSS_Params>& PssOptions() {
+   static const std::map<MechanismType, PKCS11_PSS_Params> pss_options = {
+      {MechanismType::RsaPkcsPss, PKCS11_PSS_Params(0, MechanismType::Sha1, MGF::Mgf1Sha1)},
+      {MechanismType::Sha1RsaPkcsPss, PKCS11_PSS_Params(20, MechanismType::Sha1, MGF::Mgf1Sha1)},
+      {MechanismType::Sha224RsaPkcsPss, PKCS11_PSS_Params(28, MechanismType::Sha224, MGF::Mgf1Sha224)},
+      {MechanismType::Sha256RsaPkcsPss, PKCS11_PSS_Params(32, MechanismType::Sha256, MGF::Mgf1Sha256)},
+      {MechanismType::Sha384RsaPkcsPss, PKCS11_PSS_Params(48, MechanismType::Sha384, MGF::Mgf1Sha384)},
+      {MechanismType::Sha512RsaPkcsPss, PKCS11_PSS_Params(64, MechanismType::Sha512, MGF::Mgf1Sha512)}};
 
    return pss_options;
 }
@@ -56,7 +56,7 @@ class RSA_SignMechanism final : public MechanismData {
    public:
       explicit RSA_SignMechanism(MechanismType typ) :
             MechanismData(typ), m_hash(static_cast<MechanismType>(0)), m_mgf(MGF::MgfUnused), m_salt_size(0) {
-         auto pss_option = PssOptions().find(type());
+         const auto pss_option = PssOptions().find(type());
          if(pss_option != PssOptions().end()) {
             m_hash = std::get<1>(pss_option->second);
             m_mgf = std::get<2>(pss_option->second);
@@ -132,7 +132,7 @@ MechanismWrapper MechanismWrapper::create_rsa_crypt_mechanism(const PK_Encryptio
       }
 
       const std::string& hash_name = options.hash_function_name();
-      auto hash = OaepHashes.find(hash_name);
+      const auto hash = OaepHashes.find(hash_name);
       if(hash == OaepHashes.end()) {
          throw Lookup_Error(fmt("PKCS#11 RSA OAEP does not support hash function '{}'", hash_name));
       }
@@ -140,7 +140,7 @@ MechanismWrapper MechanismWrapper::create_rsa_crypt_mechanism(const PK_Encryptio
       MGF mgf = hash->second.mgf;
       if(options.using_mgf1_hash()) {
          const std::string mgf1_hash_name = options.mgf1_hash_function().value();
-         auto mgf1_hash = OaepHashes.find(mgf1_hash_name);
+         const auto mgf1_hash = OaepHashes.find(mgf1_hash_name);
          if(mgf1_hash == OaepHashes.end()) {
             throw Lookup_Error(fmt("PKCS#11 RSA OAEP does not support MGF1 hash function '{}'", mgf1_hash_name));
          }
@@ -270,7 +270,7 @@ MechanismWrapper MechanismWrapper::create_rsa_sign_mechanism(const PK_Signature_
       return scheme;  // NOLINT(*-no-automatic-move)
    }();
 
-   auto mechanism_info_it = SignMechanisms.find(padding);
+   const auto mechanism_info_it = SignMechanisms.find(padding);
    if(mechanism_info_it == SignMechanisms.end()) {
       // at this point it would be possible to support additional configurations that are not predefined above by parsing `padding`
       throw Lookup_Error(fmt("PKCS#11 RSA sign/verify does not support padding with '{}'", padding));
@@ -357,7 +357,7 @@ MechanismWrapper MechanismWrapper::create_ecdh_mechanism(std::string_view params
       throw Invalid_Argument(fmt("PKCS #11 ECDH key derivation bad params {}", params));
    }
 
-   auto kdf = EcdhHash.find(kdf_name);
+   const auto kdf = EcdhHash.find(kdf_name);
    if(kdf == EcdhHash.end()) {
       throw Lookup_Error("PKCS#11 ECDH key derivation does not support KDF " + kdf_name);
    }

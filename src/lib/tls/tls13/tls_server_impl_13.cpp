@@ -312,6 +312,7 @@ void Server_Impl_13::handle_reply_to_client_hello(Server_Hello_13 server_hello) 
                           Connection_Side::Server, psk_type, psk.extract_master_secret(), cipher.prf_algo());
                     }},
          psk_extension->take_session_to_resume_or_psk());
+      psk_cipher_state->set_secret_logger(secret_logger());
 
       // RFC 8446 4.2.11
       //    Prior to accepting PSK key establishment, the server MUST validate
@@ -360,14 +361,14 @@ void Server_Impl_13::handle_reply_to_client_hello(Server_Hello_13 server_hello) 
 
       if(uses_psk) {
          BOTAN_ASSERT_NONNULL(psk_cipher_state);
-         psk_cipher_state->advance_with_client_hello(m_transcript_hash.previous(), *this);
+         psk_cipher_state->advance_with_client_hello(m_transcript_hash.previous());
          psk_cipher_state->advance_with_server_hello(
-            cipher, my_keyshare->take_shared_secret(), m_transcript_hash.current(), *this);
+            cipher, my_keyshare->take_shared_secret(), m_transcript_hash.current());
 
          return std::move(psk_cipher_state);
       } else {
          return Cipher_State::init_with_server_hello(
-            m_side, my_keyshare->take_shared_secret(), cipher, m_transcript_hash.current(), *this);
+            m_side, my_keyshare->take_shared_secret(), cipher, m_transcript_hash.current(), secret_logger());
       }
    }();
 
@@ -403,7 +404,7 @@ void Server_Impl_13::handle_reply_to_client_hello(Server_Hello_13 server_hello) 
       //
       // Note: TLS 1.3 carries this extension in the Encrypted Extensions
       //       message instead of the Server Hello.
-      if(auto* client_cert_type = enc_exts.get<Client_Certificate_Type>()) {
+      if(const auto* client_cert_type = enc_exts.get<Client_Certificate_Type>()) {
          set_selected_certificate_type(client_cert_type->selected_certificate_type());
       }
 
@@ -413,7 +414,7 @@ void Server_Impl_13::handle_reply_to_client_hello(Server_Hello_13 server_hello) 
       //    was negotiated, then each CertificateEntry contains a DER-encoded
       //    X.509 certificate.
       const auto cert_type = [&] {
-         if(auto* server_cert_type = enc_exts.get<Server_Certificate_Type>()) {
+         if(const auto* server_cert_type = enc_exts.get<Server_Certificate_Type>()) {
             return server_cert_type->selected_certificate_type();
          } else {
             return Certificate_Type::X509;
@@ -452,14 +453,15 @@ void Server_Impl_13::handle_reply_to_client_hello(Server_Hello_13 server_hello) 
       //
       // Hence, the "outgoing" limit is what the client requested and the
       // "incoming" limit is what we will request in the Encrypted Extensions.
-      auto* const outgoing_limit = client_hello.extensions().get<Record_Size_Limit>();
-      auto* const incoming_limit = m_handshake->state.encrypted_extensions().extensions().get<Record_Size_Limit>();
+      const auto* const outgoing_limit = client_hello.extensions().get<Record_Size_Limit>();
+      const auto* const incoming_limit =
+         m_handshake->state.encrypted_extensions().extensions().get<Record_Size_Limit>();
       set_record_size_limits(outgoing_limit->limit(), incoming_limit->limit());
    }
 
    flight.send();
 
-   m_cipher_state->advance_with_server_finished(m_transcript_hash.current(), *this);
+   m_cipher_state->advance_with_server_finished(m_transcript_hash.current());
 
    if(m_handshake->state.has_certificate_request()) {
       // RFC 8446 4.4.2
@@ -687,7 +689,7 @@ void Server_Impl_13::handle(const Finished_13& finished_msg) {
 
    // Extract post-handshake state before signaling activation.
    {
-      auto extract_certs = [&]() -> std::vector<X509_Certificate> {
+      const auto extract_certs = [&]() -> std::vector<X509_Certificate> {
          if(m_handshake->state.has_client_certificate_msg() &&
             m_handshake->state.client_certificate().has_certificate_chain()) {
             return m_handshake->state.client_certificate().cert_chain();
@@ -698,7 +700,7 @@ void Server_Impl_13::handle(const Finished_13& finished_msg) {
          return {};
       };
 
-      auto extract_raw_pk = [&]() -> std::shared_ptr<const Public_Key> {
+      const auto extract_raw_pk = [&]() -> std::shared_ptr<const Public_Key> {
          if(m_handshake->state.has_client_certificate_msg() &&
             m_handshake->state.client_certificate().is_raw_public_key()) {
             return m_handshake->state.client_certificate().public_key();
