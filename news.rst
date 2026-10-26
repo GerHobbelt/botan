@@ -20,11 +20,16 @@ New APIs and Features
   how public key operations (signature, encryption, decryption, KEM, etc) are
   performed. (GH #5489 #5864)
 
+* Add an implementation of HPKE from RFC 9180 (GH #5989)
+
 * Add an implementation of the BLS12-381 pairing friendly curve, including the
   groups G1, G2, and Gt and the pairing operation. (GH #5718)
 
 * Add ``Work_Executor``, which allows an application to replace the library's
   internal thread pool with its own executor. (GH #5990)
+
+* ML-DSA signatures now support the application context string of FIPS 204, passed
+  via ``PK_Signature_Options::with_context``. (GH #5531)
 
 * Add an experimental C API for TLS in the new ``ffi_tls`` module. Experimental
   modules are not built by default and not covered by SemVer. (GH #2492 #5941)
@@ -153,10 +158,17 @@ Optimizations
 
 * Refactor and optimize Ed25519 (GH #5893)
 
-* Refactor and optimize X25519 key agreement, especially key generation (GH #6010)
+* Refactor and optimize X25519, especially improving key generation (GH #6010)
 
 * Elliptic curve optimizations, especially improving P-256 and SM2.
-  (GH #6012 #6013)
+  (GH #6012 #6013 #6020 #6021 #6024 #6031)
+
+* Add AVX-512+IFMA modular exponentation support, improving RSA and FFDHE by 3-4x
+  (GH #6026)
+
+* Add AVX2 codepath for ML-KEM (GH #5964 #6032 #6033)
+
+* Enable many SIMD optimizations on POWER systems (GH #6027 #6028)
 
 * Improve the performance of one-shot RSA private key operations (GH #6004)
 
