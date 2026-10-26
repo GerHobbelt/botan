@@ -623,14 +623,18 @@ the API documentation inline.
       ``TLS::Session`` constructors that deserialize a session from DER or PEM.
       If no session was found for the given *handle*, return std::nullopt. This
       method is called in TLS servers to find a specific session for a given
-      handle.
+      handle. Sessions that were stored by a TLS client (via ``store``) must not
+      be returned, as a single manager may be shared between a client and a
+      server role.
 
  .. cpp:function:: std::vector<Session_with_Handle> find_some(const Server_Information& info, size_t max_sessions_hint)
 
       Try to find some saved sessions using information about the server. TLS
       1.3 clients may offer more than one session for resumption to the server.
       It is okay to ignore the *max_sessions_hint* and just return exactly one
-      or no sessions at all.
+      or no sessions at all. Sessions that were established by a TLS server
+      (via ``establish``) must not be returned, as a single manager may be
+      shared between a client and a server role.
 
  .. cpp:function:: recursive_mutex_type& mutex()
 
@@ -1055,6 +1059,20 @@ policy settings from a file.
      This has no effect on TLS 1.2 connections.
 
      Default: 2^23 records
+
+ .. cpp:function:: std::optional<size_t> max_useless_records() const
+
+     The maximum number of consecutive records received from the peer which are
+     dropped without having any effect: empty records, warning alerts other than
+     ``close_notify``, and in TLS 1.3 the ChangeCipherSpec records of middlebox
+     compatibility mode. If more than this many such records arrive without any
+     useful record in between, the connection is closed with an alert. Return
+     ``std::nullopt`` to disable the limit.
+
+     In DTLS, records received in epoch 0 are unauthenticated and so are not
+     counted.
+
+     Default: 32
 
  .. cpp:function:: bool tls_13_middlebox_compatibility_mode() const
 
